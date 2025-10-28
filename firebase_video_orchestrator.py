@@ -146,7 +146,7 @@ class FirebaseVideoOrchestrator:
                 }
 
                 async with session.post(
-                    f"{self.local_comfyui_url.replace('8188', '8328')}/api/generate",
+                    f"{self.local_comfyui_url}/api/generate",
                     json=payload,
                     timeout=7200  # 2 hours max for local
                 ) as response:
