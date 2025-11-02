@@ -13,6 +13,8 @@ from psycopg2 import OperationalError, DatabaseError, InterfaceError
 import logging
 import time
 import json
+import os
+from dataclasses import dataclass, field
 from typing import Dict, Any, Optional, List, Union, Callable, AsyncGenerator
 from contextlib import contextmanager, asynccontextmanager
 from dataclasses import dataclass, asdict
@@ -38,7 +40,32 @@ class DatabaseConfig:
     primary_port: int = 5432
     primary_database: str = "anime_production"
     primary_user: str = "patrick"
-    primary_password: str = "***REMOVED***"
+    primary_password: str = field(default_factory=lambda: get_vault_secret())
+
+def get_vault_secret() -> str:
+    """Get database password from HashiCorp Vault"""
+    try:
+        import hvac
+        client = hvac.Client(url='http://127.0.0.1:8200')
+
+        # Try to get vault token from environment or file
+        vault_token = os.environ.get('VAULT_TOKEN')
+        if not vault_token:
+            try:
+                with open('/opt/vault/.vault-token', 'r') as f:
+                    vault_token = f.read().strip()
+            except FileNotFoundError:
+                pass
+
+        if vault_token:
+            client.token = vault_token
+            secret = client.secrets.kv.v2.read_secret_version(path='anime/database')
+            return secret['data']['data']['password']
+    except Exception as e:
+        logger.warning(f"Could not get password from Vault: {e}")
+
+    # Fallback to environment variable
+    return os.environ.get('ANIME_DB_PASSWORD', '***REMOVED***')
 
     # Connection pool settings
     min_connections: int = 2

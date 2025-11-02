@@ -113,16 +113,15 @@ class AnimateDiffVideoGenerator:
             },
             "10": {
                 "inputs": {
-                    "fps": 24,
+                    "images": ["9", 0],
+                    "frame_rate": 24,
                     "loop_count": 0,
                     "filename_prefix": f"animated_goblin_{segment_num:03d}",
                     "format": "video/h264-mp4",
-                    "pix_fmt": "yuv420p",
-                    "crf": 18,
-                    "save_metadata": True,
-                    "images": ["9", 0]
+                    "save_output": true,
+                    "pingpong": false
                 },
-                "class_type": "ADE_AnimateDiffCombine"
+                "class_type": "VHS_VideoCombine"
             }
         }
 
