@@ -5,18 +5,26 @@
     <Toolbar style="background: #1a1a1a; border-bottom: 1px solid #333; padding: 0.5rem 1rem;">
       <template #start>
         <h2 style="margin: 0; font-size: 1.5rem; font-weight: 600;">
-          <i class="pi pi-video" style="margin-right: 0.5rem;"></i>
-          Anime Director Studio
+          <i class="pi pi-terminal" style="margin-right: 0.5rem;"></i>
+          Echo Brain Anime Studio
         </h2>
       </template>
       <template #end>
-        <Button label="New Project" icon="pi pi-plus" @click="showNewProjectDialog = true" style="margin-right: 0.5rem;" />
-        <Button label="New Scene" icon="pi pi-file" @click="showNewSceneDialog = true" :disabled="!selectedProject" severity="secondary" style="margin-right: 0.5rem;" />
-        <Button label="Generate" icon="pi pi-play" @click="generateScene" :disabled="!selectedScene" severity="success" />
+        <Button :label="viewMode === 'console' ? 'Studio View' : 'Console View'"
+                :icon="viewMode === 'console' ? 'pi pi-desktop' : 'pi pi-terminal'"
+                @click="toggleView"
+                severity="secondary" style="margin-right: 0.5rem;" />
+        <Button label="New Project" icon="pi pi-plus" @click="showNewProjectDialog = true" style="margin-right: 0.5rem;" v-if="viewMode === 'studio'" />
+        <Button label="New Scene" icon="pi pi-file" @click="showNewSceneDialog = true" :disabled="!selectedProject" severity="secondary" style="margin-right: 0.5rem;" v-if="viewMode === 'studio'" />
+        <Button label="Generate" icon="pi pi-play" @click="generateScene" :disabled="!selectedScene" severity="success" v-if="viewMode === 'studio'" />
       </template>
     </Toolbar>
 
-    <Splitter style="height: calc(100vh - 60px);">
+    <!-- Console View -->
+    <EchoAnimeConsole v-if="viewMode === 'console'" />
+
+    <!-- Studio View -->
+    <Splitter v-if="viewMode === 'studio'" style="height: calc(100vh - 60px);">
       <!-- Left Panel: Projects -->
       <SplitterPanel :size="20" :minSize="15">
         <div style="padding: 1rem; height: 100%; overflow-y: auto;">
@@ -159,9 +167,13 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useToast } from 'primevue/usetoast'
+import EchoAnimeConsole from './components/EchoAnimeConsole.vue'
 
 const toast = useToast()
 const API_BASE = 'http://192.168.50.135:8323/api/anime'
+
+// View Mode
+const viewMode = ref('console')
 
 // State
 const projects = ref([])
@@ -174,6 +186,11 @@ const showNewSceneDialog = ref(false)
 
 const newProject = ref({ name: '', description: '' })
 const newScene = ref({ scene_number: 1, description: '', characters: '' })
+
+// View toggle
+function toggleView() {
+  viewMode.value = viewMode.value === 'console' ? 'studio' : 'console'
+}
 
 // Computed
 const filteredProjects = computed(() => {

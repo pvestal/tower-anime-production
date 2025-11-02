@@ -5,6 +5,12 @@ Port: 8328
 Generates KB-quality videos using ComfyUI with AOM3A1B.safetensors
 """
 
+from project_bible_api import (
+    ProjectBibleAPI,
+    ProjectBibleCreate,
+    ProjectBibleUpdate,
+    CharacterDefinition,
+)
 from contextlib import contextmanager
 from psycopg2.extras import RealDictCursor
 import psycopg2
@@ -842,6 +848,116 @@ async def health_check():
 
 
 # ====================================
+# ASYNC GENERATION FUNCTION
+# ====================================
+
+
+async def run_async_generation(generation_id: str, request: dict):
+    """Run video generation in background with status updates"""
+    try:
+        # Update status to running
+        status_tracker.update_generation(
+            generation_id,
+            {
+                "status": "running",
+                "progress": 10,
+                "message": "Starting video generation...",
+            },
+        )
+
+        # Broadcast status update via WebSocket
+        await websocket_manager.broadcast_generation_update(
+            generation_id,
+            {
+                "status": "running",
+                "progress": 10,
+                "message": "Starting video generation...",
+            },
+        )
+
+        # Extract parameters
+        prompt = request.get("prompt", "magical anime scene")
+        character = request.get("character", "anime character")
+        duration = request.get("duration", 5)
+        style = request.get("style", "anime")
+        quality = request.get("quality", "standard")
+        use_apple_music = request.get("use_apple_music", False)
+
+        # Import Firebase orchestrator
+        from firebase_video_orchestrator import FirebaseVideoOrchestrator
+
+        orchestrator = FirebaseVideoOrchestrator()
+
+        # Update progress
+        status_tracker.update_generation(
+            generation_id,
+            {
+                "status": "running",
+                "progress": 30,
+                "message": "Processing with ComfyUI...",
+            },
+        )
+
+        await websocket_manager.broadcast_generation_update(
+            generation_id,
+            {
+                "status": "running",
+                "progress": 30,
+                "message": "Processing with ComfyUI...",
+            },
+        )
+
+        # Generate video
+        result = await orchestrator.generate_video(
+            prompt=f"{character}: {prompt}",
+            duration_seconds=duration,
+            style=style,
+            quality=quality,
+            use_apple_music=use_apple_music,
+        )
+
+        if result.get("success"):
+            # Update to completed
+            final_status = {
+                "status": "completed",
+                "progress": 100,
+                "message": "Generation completed successfully",
+                "video_url": result.get("video_url"),
+                "compute_location": result.get("compute_location", "unknown"),
+                "processing_time_seconds": result.get("processing_time_seconds", 0),
+            }
+
+            status_tracker.update_generation(generation_id, final_status)
+            await websocket_manager.broadcast_generation_update(
+                generation_id, final_status
+            )
+
+        else:
+            # Update to failed
+            error_status = {
+                "status": "failed",
+                "progress": 0,
+                "message": f"Generation failed: {result.get('error', 'Unknown error')}",
+            }
+
+            status_tracker.update_generation(generation_id, error_status)
+            await websocket_manager.broadcast_generation_update(
+                generation_id, error_status
+            )
+
+    except Exception as e:
+        logger.error(f"Async generation failed: {e}")
+        error_status = {
+            "status": "failed",
+            "progress": 0,
+            "message": f"Generation error: {str(e)}",
+        }
+
+        status_tracker.update_generation(generation_id, error_status)
+        await websocket_manager.broadcast_generation_update(generation_id, error_status)
+
+
+# ====================================
 # CHARACTER GENERATION API ENDPOINT
 # ====================================
 
@@ -912,6 +1028,290 @@ async def generate_anime_content(
             status_code=500,
             detail=f"Generation failed: {
                 str(e)}",
+        )
+
+
+@app.post("/api/anime/generate/async")
+async def generate_anime_async(
+        request: dict, background_tasks: BackgroundTasks):
+    """Async generation endpoint that returns immediately with generation_id"""
+    try:
+        generation_id = f"async_{int(time.time())}_{uuid.uuid4().hex[:8]}"
+
+        # Initialize status
+        status_tracker.add_generation(
+            generation_id,
+            {
+                "status": "starting",
+                "progress": 0,
+                "message": "Initializing generation...",
+                "created_at": time.time(),
+                "request": request,
+            },
+        )
+
+        # Start generation in background
+        background_tasks.add_task(run_async_generation, generation_id, request)
+
+        return {
+            "generation_id": generation_id,
+            "status": "started",
+            "message": "Generation started in background",
+            "status_url": f"/api/anime/status/{generation_id}",
+            "websocket_url": f"/ws/generation/{generation_id}",
+        }
+
+    except Exception as e:
+        logger.error(f"Async generation start failed: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to start generation: {str(e)}"
+        )
+
+
+# ====================================
+# ECHO ORCHESTRATION HELPER FUNCTIONS
+# ====================================
+
+
+async def load_user_preferences(user_id: str = "patrick"):
+    """Load user preferences from database"""
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT preference_type, preference_key, preference_value, confidence_score
+                    FROM user_creative_preferences
+                    WHERE user_id = %s
+                    ORDER BY confidence_score DESC
+                """,
+                    (user_id,),
+                )
+
+                preferences = {}
+                for row in cur.fetchall():
+                    if row["preference_type"] not in preferences:
+                        preferences[row["preference_type"]] = {}
+                    preferences[row["preference_type"]][row["preference_key"]] = {
+                        "value": row["preference_value"],
+                        "confidence": row["confidence_score"],
+                    }
+
+                return preferences
+    except Exception as e:
+        logger.error(f"Failed to load user preferences: {e}")
+        return {}
+
+
+async def save_user_preference(
+    preference_type: str,
+    preference_key: str,
+    preference_value: any,
+    confidence: float = 0.5,
+    user_id: str = "patrick",
+):
+    """Save or update user preference"""
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO user_creative_preferences (user_id, preference_type, preference_key, preference_value, confidence_score)
+                    VALUES (%s, %s, %s, %s, %s)
+                    ON CONFLICT (user_id, preference_type, preference_key)
+                    DO UPDATE SET
+                        preference_value = EXCLUDED.preference_value,
+                        confidence_score = EXCLUDED.confidence_score,
+                        last_updated = CURRENT_TIMESTAMP
+                """,
+                    (
+                        user_id,
+                        preference_type,
+                        preference_key,
+                        json.dumps(preference_value),
+                        confidence,
+                    ),
+                )
+                conn.commit()
+    except Exception as e:
+        logger.error(f"Failed to save user preference: {e}")
+        raise
+
+
+async def apply_user_preferences(request: dict, preferences: dict):
+    """Apply user preferences to generation request"""
+    enhanced_request = request.copy()
+
+    # Apply style preferences
+    if "style" in preferences:
+        for key, pref in preferences["style"].items():
+            if key not in enhanced_request and pref["confidence"] > 0.6:
+                enhanced_request[key] = pref["value"]
+
+    # Apply character preferences
+    if "character" in preferences and "preferred_character" in preferences["character"]:
+        if "character" not in enhanced_request:
+            pref = preferences["character"]["preferred_character"]
+            if pref["confidence"] > 0.7:
+                enhanced_request["character"] = pref["value"]
+
+    # Apply technical preferences
+    if "technical" in preferences:
+        for key, pref in preferences["technical"].items():
+            if key not in enhanced_request and pref["confidence"] > 0.5:
+                enhanced_request[key] = pref["value"]
+
+    return enhanced_request
+
+
+async def log_echo_orchestration(
+    orchestration_id: str, orchestration_type: str, input_data: dict
+):
+    """Log Echo orchestration activity"""
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO echo_orchestration_logs (session_id, orchestration_type, input_data, created_at)
+                    VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
+                """,
+                    (orchestration_id, orchestration_type, json.dumps(input_data)),
+                )
+                conn.commit()
+    except Exception as e:
+        logger.error(f"Failed to log Echo orchestration: {e}")
+
+
+async def call_echo_for_generation(request: dict):
+    """Call Echo Brain for intelligent generation coordination"""
+    try:
+        # Call Echo Brain API on port 8309
+        async with aiohttp.ClientSession() as session:
+            echo_url = "http://localhost:8309/api/echo/query"
+            echo_payload = {
+                "query": f"Orchestrate anime generation with these parameters: {json.dumps(request)}",
+                "conversation_id": f"anime_orchestration_{int(time.time())}",
+            }
+
+            async with session.post(echo_url, json=echo_payload) as response:
+                if response.status == 200:
+                    echo_data = await response.json()
+                    return {
+                        "success": True,
+                        "generation_id": f"echo_{int(time.time())}",
+                        "enhancements": ["style_optimization", "character_consistency"],
+                        "echo_response": echo_data.get("response", ""),
+                    }
+                else:
+                    return {"success": False,
+                            "error": "Echo Brain unavailable"}
+
+    except Exception as e:
+        logger.error(f"Echo Brain call failed: {e}")
+        return {"success": False, "error": str(e)}
+
+
+async def update_user_preferences_from_generation(
+        request: dict, echo_response: dict):
+    """Learn and update user preferences based on successful generation"""
+    try:
+        # Extract style preferences from successful request
+        if "style" in request:
+            await save_user_preference(
+                "style", "preferred_style", request["style"], 0.8
+            )
+
+        if "character" in request:
+            await save_user_preference(
+                "character", "preferred_character", request["character"], 0.9
+            )
+
+        if "duration" in request:
+            await save_user_preference(
+                "technical", "preferred_duration", request["duration"], 0.7
+            )
+
+        logger.info("Updated user preferences from successful generation")
+
+    except Exception as e:
+        logger.error(f"Failed to update user preferences: {e}")
+
+
+# ====================================
+# ECHO ORCHESTRATION ENDPOINTS
+# ====================================
+
+
+@app.post("/api/anime/echo/generate")
+async def echo_orchestrated_generation(request: dict):
+    """Echo-orchestrated generation with user preference integration"""
+    try:
+        # Load user preferences from database
+        preferences = await load_user_preferences()
+
+        # Enhance request with user preferences
+        enhanced_request = await apply_user_preferences(request, preferences)
+
+        # Log orchestration
+        orchestration_id = f"echo_orch_{int(time.time())}"
+        await log_echo_orchestration(orchestration_id, "generation", enhanced_request)
+
+        # Call Echo for intelligent coordination
+        echo_response = await call_echo_for_generation(enhanced_request)
+
+        if echo_response.get("success"):
+            # Learn from successful generation
+            await update_user_preferences_from_generation(request, echo_response)
+
+            return {
+                "success": True,
+                "generation_id": echo_response.get("generation_id"),
+                "orchestration_id": orchestration_id,
+                "preferences_applied": len(preferences),
+                "echo_enhancements": echo_response.get("enhancements", []),
+            }
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail=echo_response.get("error"))
+
+    except Exception as e:
+        logger.error(f"Echo orchestration failed: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Echo orchestration failed: {str(e)}"
+        )
+
+
+@app.get("/api/anime/echo/preferences")
+async def get_user_preferences():
+    """Get current user creative preferences"""
+    try:
+        preferences = await load_user_preferences()
+        return {"preferences": preferences, "count": len(preferences)}
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to load preferences: {str(e)}"
+        )
+
+
+@app.post("/api/anime/echo/preferences")
+async def update_user_preference(request: dict):
+    """Update or create user preference"""
+    try:
+        preference_type = request.get("type")
+        preference_key = request.get("key")
+        preference_value = request.get("value")
+        confidence = request.get("confidence", 0.5)
+
+        await save_user_preference(
+            preference_type, preference_key, preference_value, confidence
+        )
+
+        return {"success": True, "message": "Preference updated successfully"}
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to update preference: {str(e)}"
         )
 
 
@@ -1536,6 +1936,14 @@ async def list_projects(status: Optional[str] = None, limit: int = 100):
 async def create_project(project: ProjectCreate):
     """Create a new anime project"""
     try:
+        # Sanitize input to prevent XSS
+        from markupsafe import escape
+
+        sanitized_name = escape(project.name) if project.name else ""
+        sanitized_description = (
+            escape(project.description) if project.description else ""
+        )
+
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
 
@@ -1545,7 +1953,7 @@ async def create_project(project: ProjectCreate):
                 VALUES (%s, %s, %s)
                 RETURNING id, name, description, status, created_at, updated_at
             """,
-                (project.name, project.description, project.status),
+                (str(sanitized_name), str(sanitized_description), project.status),
             )
 
             row = cursor.fetchone()
@@ -1642,12 +2050,16 @@ async def update_project(project_id: int, project_update: ProjectUpdate):
             update_values = []
 
             if project_update.name is not None:
+                from markupsafe import escape
+
                 update_fields.append("name = %s")
-                update_values.append(project_update.name)
+                update_values.append(str(escape(project_update.name)))
 
             if project_update.description is not None:
+                from markupsafe import escape
+
                 update_fields.append("description = %s")
-                update_values.append(project_update.description)
+                update_values.append(str(escape(project_update.description)))
 
             if project_update.status is not None:
                 update_fields.append("status = %s")
@@ -4148,6 +4560,62 @@ async def calculate_generation_cost(request_data: dict):
 # END VIDEO TIMELINE INTERFACE ENDPOINTS
 # ============================================================================
 
+# ============================================================================
+# PROJECT BIBLE API ENDPOINTS
+# ============================================================================
+
+
+# Initialize project bible API with database connection function
+class DatabaseWrapper:
+    def get_connection(self):
+        return get_db_connection()
+
+
+bible_api = ProjectBibleAPI(DatabaseWrapper())
+
+
+@app.post("/api/anime/projects/{project_id}/bible")
+async def create_project_bible(
+        project_id: int, bible_data: ProjectBibleCreate):
+    """Create a new project bible for the specified project"""
+    return await bible_api.create_project_bible(project_id, bible_data)
+
+
+@app.get("/api/anime/projects/{project_id}/bible")
+async def get_project_bible(project_id: int):
+    """Get the project bible for the specified project"""
+    return await bible_api.get_project_bible(project_id)
+
+
+@app.put("/api/anime/projects/{project_id}/bible")
+async def update_project_bible(
+        project_id: int, bible_update: ProjectBibleUpdate):
+    """Update the project bible for the specified project"""
+    return await bible_api.update_project_bible(project_id, bible_update)
+
+
+@app.post("/api/anime/projects/{project_id}/bible/characters")
+async def add_character_to_bible(
+        project_id: int, character: CharacterDefinition):
+    """Add a character definition to the project bible"""
+    return await bible_api.add_character_to_bible(project_id, character)
+
+
+@app.get("/api/anime/projects/{project_id}/bible/characters")
+async def get_bible_characters(project_id: int):
+    """Get all characters from the project bible"""
+    return await bible_api.get_bible_characters(project_id)
+
+
+@app.get("/api/anime/projects/{project_id}/bible/history")
+async def get_bible_history(project_id: int):
+    """Get revision history for the project bible"""
+    return await bible_api.get_bible_history(project_id)
+
+
+# ============================================================================
+# END PROJECT BIBLE API ENDPOINTS
+# ============================================================================
 
 if __name__ == "__main__":
     print("Starting Tower Anime Video Service on port 8328...")
