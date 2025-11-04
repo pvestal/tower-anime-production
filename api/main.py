@@ -228,7 +228,7 @@ async def submit_comfyui_workflow(workflow_data: dict):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"ComfyUI connection failed: {str(e)}")
 
-async def generate_with_fixed_workflow(prompt: str, character: str = None, style: str = "anime"):
+async def generate_with_fixed_workflow(prompt: str, character: str = None, style: str = "anime", duration: int = 5):
     """Generate anime using FIXED ComfyUI workflow with working parameters"""
     try:
         # Enhanced character-specific prompt
@@ -240,6 +240,11 @@ async def generate_with_fixed_workflow(prompt: str, character: str = None, style
         # Fixed workflow using working parameters from test
         import time
         timestamp = int(time.time())
+
+        # Calculate frames based on duration
+        frames = min(120, duration * 24)
+        print(f"DEBUG: Generating {duration}s video with {frames} frames")
+        logger.info(f"Generating {duration}s video with {frames} frames (batch_size)")
 
         workflow = {
             "1": {
@@ -256,7 +261,7 @@ async def generate_with_fixed_workflow(prompt: str, character: str = None, style
             },
             "4": {
                 "class_type": "EmptyLatentImage",
-                "inputs": {"width": 512, "height": 512, "batch_size": 120}
+                "inputs": {"width": 512, "height": 512, "batch_size": frames}
             },
             "5": {
                 "class_type": "ADE_AnimateDiffLoaderGen1",
@@ -289,7 +294,7 @@ async def generate_with_fixed_workflow(prompt: str, character: str = None, style
                 "class_type": "VHS_VideoCombine",
                 "inputs": {
                     "images": ["7", 0],
-                    "frame_rate": 8.0,
+                    "frame_rate": 24.0,
                     "loop_count": 0,
                     "filename_prefix": f"fixed_anime_{timestamp}",
                     "format": "video/h264-mp4",
@@ -363,7 +368,8 @@ async def generate_anime_video(request: AnimeGenerationRequest, db: Session = De
         result = await generate_with_fixed_workflow(
             prompt=request.prompt,
             character=request.character,
-            style=request.style
+            style=request.style,
+            duration=request.duration
         )
 
         job = ProductionJob(
