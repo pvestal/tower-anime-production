@@ -27,7 +27,7 @@
     "style_tags": ["photorealistic anime", "hyperrealistic anime", "cyberpunk creature design", "bio-mechanical horror", "orange neon bio-luminescence", "monster design", "high detail", "photorealistic rendering", "dramatic lighting", "AOM3A1B model", "cyberpunk villain"],
     "negative_prompts": ["human", "clean", "beautiful", "heroic", "cartoon", "chibi", "simple anime", "flat colors", "2D anime style", "manga style", "cute", "friendly", "small"],
     "comfyui_workflow": "photorealistic_anime_character_v2",
-    "model": "AOM3A1B",
+    "model": "juggernautXL",
     "reference_image": "/opt/tower-anime-production/frames/goblin_slayer_cyberpunk/xyrax_canonical_reference.png"
   },
   "project_context": {
