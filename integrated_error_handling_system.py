@@ -6,40 +6,39 @@ for comprehensive anime production pipeline with resilient error recovery.
 """
 
 import asyncio
-import logging
 import json
+import logging
 import time
-from typing import Dict, Any, Optional, List
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
+from enhanced_api_handler import (APIConfig, EnhancedAPIHandler,
+                                  create_api_handler)
+from enhanced_character_system import (CharacterConfig,
+                                       EnhancedCharacterSystem,
+                                       create_character_system)
 # Import all enhanced components
-from enhanced_comfyui_integration import (
-    EnhancedComfyUIIntegration, ComfyUIConfig, create_comfyui_integration
-)
-from enhanced_database_manager import (
-    EnhancedDatabaseManager, DatabaseConfig, create_database_manager
-)
-from enhanced_character_system import (
-    EnhancedCharacterSystem, CharacterConfig, create_character_system
-)
-from enhanced_echo_integration import (
-    EnhancedEchoIntegration, EchoConfig, create_echo_integration
-)
-from enhanced_filesystem_manager import (
-    EnhancedFileSystemManager, FileSystemConfig, create_filesystem_manager
-)
-from enhanced_api_handler import (
-    EnhancedAPIHandler, APIConfig, create_api_handler
-)
+from enhanced_comfyui_integration import (ComfyUIConfig,
+                                          EnhancedComfyUIIntegration,
+                                          create_comfyui_integration)
+from enhanced_database_manager import (DatabaseConfig, EnhancedDatabaseManager,
+                                       create_database_manager)
+from enhanced_echo_integration import (EchoConfig, EnhancedEchoIntegration,
+                                       create_echo_integration)
+from enhanced_filesystem_manager import (EnhancedFileSystemManager,
+                                         FileSystemConfig,
+                                         create_filesystem_manager)
 from shared.error_handling import MetricsCollector
 
 logger = logging.getLogger(__name__)
 
+
 @dataclass
 class SystemConfig:
     """Unified system configuration"""
+
     # Environment settings
     environment: str = "production"  # production, development, testing
     debug_mode: bool = False
@@ -79,6 +78,7 @@ class SystemConfig:
     enable_health_monitoring: bool = True
     health_check_interval: int = 300  # 5 minutes
 
+
 class IntegratedErrorHandlingSystem:
     """Unified error handling system integrating all components"""
 
@@ -102,12 +102,13 @@ class IntegratedErrorHandlingSystem:
             "initialized": False,
             "healthy": False,
             "last_health_check": None,
-            "component_status": {}
+            "component_status": {},
         }
 
     def setup_logging(self):
         """Setup comprehensive logging"""
-        log_level = getattr(logging, self.config.log_level.upper(), logging.INFO)
+        log_level = getattr(
+            logging, self.config.log_level.upper(), logging.INFO)
 
         # Create logs directory
         log_dir = Path("/opt/tower-anime-production/logs")
@@ -116,11 +117,11 @@ class IntegratedErrorHandlingSystem:
         # Configure logging
         logging.basicConfig(
             level=log_level,
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
             handlers=[
                 logging.FileHandler(log_dir / "integrated_system.log"),
-                logging.StreamHandler()
-            ]
+                logging.StreamHandler(),
+            ],
         )
 
         logger.info(f"🚀 Initializing Integrated Error Handling System")
@@ -137,7 +138,7 @@ class IntegratedErrorHandlingSystem:
                 "host": self.config.database_host,
                 "database": self.config.database_name,
                 "user": self.config.database_user,
-                "password": self.config.database_password
+                "password": self.config.database_password,
             }
             return MetricsCollector(db_config)
         except Exception as e:
@@ -158,64 +159,88 @@ class IntegratedErrorHandlingSystem:
                 primary_user=self.config.database_user,
                 primary_password=self.config.database_password,
                 fallback_enabled=self.config.enable_fallbacks,
-                max_retries=self.config.max_retry_attempts
+                max_retries=self.config.max_retry_attempts,
             )
 
-            self.database_manager = create_database_manager(db_config, self.metrics_collector)
-            initialization_results["database"] = {"status": "success", "component": "database_manager"}
+            self.database_manager = create_database_manager(
+                db_config, self.metrics_collector
+            )
+            initialization_results["database"] = {
+                "status": "success",
+                "component": "database_manager",
+            }
             logger.info("✅ Database Manager initialized")
 
         except Exception as e:
             logger.error(f"❌ Database Manager initialization failed: {e}")
-            initialization_results["database"] = {"status": "failed", "error": str(e)}
+            initialization_results["database"] = {
+                "status": "failed", "error": str(e)}
 
         # Initialize ComfyUI Integration
         try:
             comfyui_config = ComfyUIConfig(
                 base_url=self.config.comfyui_url,
                 output_dir=self.config.output_directory,
-                max_retries=self.config.max_retry_attempts
+                max_retries=self.config.max_retry_attempts,
             )
 
             self.comfyui_integration = create_comfyui_integration()
-            initialization_results["comfyui"] = {"status": "success", "component": "comfyui_integration"}
+            initialization_results["comfyui"] = {
+                "status": "success",
+                "component": "comfyui_integration",
+            }
             logger.info("✅ ComfyUI Integration initialized")
 
         except Exception as e:
             logger.error(f"❌ ComfyUI Integration initialization failed: {e}")
-            initialization_results["comfyui"] = {"status": "failed", "error": str(e)}
+            initialization_results["comfyui"] = {
+                "status": "failed", "error": str(e)}
 
         # Initialize Character System
         try:
             char_config = CharacterConfig(
                 characters_dir=self.config.characters_directory,
                 cache_dir=f"{self.config.cache_directory}/characters",
-                enable_auto_generation=self.config.enable_fallbacks
+                enable_auto_generation=self.config.enable_fallbacks,
             )
 
-            self.character_system = create_character_system(char_config, self.metrics_collector)
-            initialization_results["character"] = {"status": "success", "component": "character_system"}
+            self.character_system = create_character_system(
+                char_config, self.metrics_collector
+            )
+            initialization_results["character"] = {
+                "status": "success",
+                "component": "character_system",
+            }
             logger.info("✅ Character System initialized")
 
         except Exception as e:
             logger.error(f"❌ Character System initialization failed: {e}")
-            initialization_results["character"] = {"status": "failed", "error": str(e)}
+            initialization_results["character"] = {
+                "status": "failed", "error": str(e)}
 
         # Initialize Echo Integration
         try:
             echo_config = EchoConfig(
                 base_url=self.config.echo_brain_url,
                 enable_local_fallback=self.config.enable_fallbacks,
-                circuit_breaker_threshold=5 if self.config.enable_circuit_breakers else 999
+                circuit_breaker_threshold=(
+                    5 if self.config.enable_circuit_breakers else 999
+                ),
             )
 
-            self.echo_integration = create_echo_integration(echo_config, self.metrics_collector)
-            initialization_results["echo"] = {"status": "success", "component": "echo_integration"}
+            self.echo_integration = create_echo_integration(
+                echo_config, self.metrics_collector
+            )
+            initialization_results["echo"] = {
+                "status": "success",
+                "component": "echo_integration",
+            }
             logger.info("✅ Echo Integration initialized")
 
         except Exception as e:
             logger.error(f"❌ Echo Integration initialization failed: {e}")
-            initialization_results["echo"] = {"status": "failed", "error": str(e)}
+            initialization_results["echo"] = {
+                "status": "failed", "error": str(e)}
 
         # Initialize File System Manager
         try:
@@ -223,16 +248,22 @@ class IntegratedErrorHandlingSystem:
                 output_dir=self.config.output_directory,
                 cache_dir=self.config.cache_directory,
                 temp_dir=self.config.temp_directory,
-                auto_cleanup_enabled=True
+                auto_cleanup_enabled=True,
             )
 
-            self.filesystem_manager = create_filesystem_manager(fs_config, self.metrics_collector)
-            initialization_results["filesystem"] = {"status": "success", "component": "filesystem_manager"}
+            self.filesystem_manager = create_filesystem_manager(
+                fs_config, self.metrics_collector
+            )
+            initialization_results["filesystem"] = {
+                "status": "success",
+                "component": "filesystem_manager",
+            }
             logger.info("✅ File System Manager initialized")
 
         except Exception as e:
             logger.error(f"❌ File System Manager initialization failed: {e}")
-            initialization_results["filesystem"] = {"status": "failed", "error": str(e)}
+            initialization_results["filesystem"] = {
+                "status": "failed", "error": str(e)}
 
         # Initialize API Handler
         try:
@@ -242,29 +273,42 @@ class IntegratedErrorHandlingSystem:
                 rate_limit_enabled=self.config.enable_rate_limiting,
                 require_auth=self.config.enable_authentication,
                 circuit_breaker_enabled=self.config.enable_circuit_breakers,
-                debug=self.config.debug_mode
+                debug=self.config.debug_mode,
             )
 
-            self.api_handler = create_api_handler(api_config, self.metrics_collector)
-            initialization_results["api"] = {"status": "success", "component": "api_handler"}
+            self.api_handler = create_api_handler(
+                api_config, self.metrics_collector)
+            initialization_results["api"] = {
+                "status": "success",
+                "component": "api_handler",
+            }
             logger.info("✅ API Handler initialized")
 
         except Exception as e:
             logger.error(f"❌ API Handler initialization failed: {e}")
-            initialization_results["api"] = {"status": "failed", "error": str(e)}
+            initialization_results["api"] = {
+                "status": "failed", "error": str(e)}
 
         # Update system status
-        successful_components = len([r for r in initialization_results.values() if r["status"] == "success"])
+        successful_components = len(
+            [r for r in initialization_results.values() if r["status"]
+             == "success"]
+        )
         total_components = len(initialization_results)
 
-        self.system_status.update({
-            "initialized": True,
-            "healthy": successful_components >= (total_components * 0.7),  # 70% threshold
-            "component_status": initialization_results,
-            "initialization_time": datetime.utcnow().isoformat()
-        })
+        self.system_status.update(
+            {
+                "initialized": True,
+                "healthy": successful_components
+                >= (total_components * 0.7),  # 70% threshold
+                "component_status": initialization_results,
+                "initialization_time": datetime.utcnow().isoformat(),
+            }
+        )
 
-        logger.info(f"🎯 System initialization complete: {successful_components}/{total_components} components successful")
+        logger.info(
+            f"🎯 System initialization complete: {successful_components}/{total_components} components successful"
+        )
 
         return initialization_results
 
@@ -278,7 +322,7 @@ class IntegratedErrorHandlingSystem:
             "components": {},
             "error_rates": {},
             "performance_metrics": {},
-            "recommendations": []
+            "recommendations": [],
         }
 
         # Check Database Manager
@@ -286,13 +330,17 @@ class IntegratedErrorHandlingSystem:
             try:
                 db_health = await self.database_manager.get_system_health()
                 health_results["components"]["database"] = {
-                    "status": "healthy" if db_health.get("database_status") == "healthy" else "degraded",
-                    "details": db_health
+                    "status": (
+                        "healthy"
+                        if db_health.get("database_status") == "healthy"
+                        else "degraded"
+                    ),
+                    "details": db_health,
                 }
             except Exception as e:
                 health_results["components"]["database"] = {
                     "status": "unhealthy",
-                    "error": str(e)
+                    "error": str(e),
                 }
 
         # Check ComfyUI Integration
@@ -301,27 +349,31 @@ class IntegratedErrorHandlingSystem:
                 comfyui_status = await self.comfyui_integration.get_service_status()
                 health_results["components"]["comfyui"] = {
                     "status": comfyui_status.get("health_status", "unknown"),
-                    "details": comfyui_status
+                    "details": comfyui_status,
                 }
             except Exception as e:
                 health_results["components"]["comfyui"] = {
                     "status": "unhealthy",
-                    "error": str(e)
+                    "error": str(e),
                 }
 
         # Check Character System
         if self.character_system:
             try:
                 char_health = await self.character_system.get_system_health()
-                char_status = "healthy" if char_health.get("total_characters", 0) > 0 else "degraded"
+                char_status = (
+                    "healthy"
+                    if char_health.get("total_characters", 0) > 0
+                    else "degraded"
+                )
                 health_results["components"]["character"] = {
                     "status": char_status,
-                    "details": char_health
+                    "details": char_health,
                 }
             except Exception as e:
                 health_results["components"]["character"] = {
                     "status": "unhealthy",
-                    "error": str(e)
+                    "error": str(e),
                 }
 
         # Check Echo Integration
@@ -330,12 +382,12 @@ class IntegratedErrorHandlingSystem:
                 echo_status = await self.echo_integration.get_service_status()
                 health_results["components"]["echo"] = {
                     "status": echo_status.get("service_status", "unknown"),
-                    "details": echo_status
+                    "details": echo_status,
                 }
             except Exception as e:
                 health_results["components"]["echo"] = {
                     "status": "unhealthy",
-                    "error": str(e)
+                    "error": str(e),
                 }
 
         # Check File System Manager
@@ -344,12 +396,12 @@ class IntegratedErrorHandlingSystem:
                 fs_health = await self.filesystem_manager.get_system_health()
                 health_results["components"]["filesystem"] = {
                     "status": fs_health.get("overall_status", "unknown"),
-                    "details": fs_health
+                    "details": fs_health,
                 }
             except Exception as e:
                 health_results["components"]["filesystem"] = {
                     "status": "unhealthy",
-                    "error": str(e)
+                    "error": str(e),
                 }
 
         # Check API Handler
@@ -358,16 +410,19 @@ class IntegratedErrorHandlingSystem:
                 api_health = await self.api_handler.get_api_health()
                 health_results["components"]["api"] = {
                     "status": api_health.get("api_status", "unknown"),
-                    "details": api_health
+                    "details": api_health,
                 }
             except Exception as e:
                 health_results["components"]["api"] = {
                     "status": "unhealthy",
-                    "error": str(e)
+                    "error": str(e),
                 }
 
         # Determine overall status
-        component_statuses = [comp.get("status", "unknown") for comp in health_results["components"].values()]
+        component_statuses = [
+            comp.get("status", "unknown")
+            for comp in health_results["components"].values()
+        ]
         healthy_count = len([s for s in component_statuses if s == "healthy"])
         total_count = len(component_statuses)
 
@@ -379,20 +434,28 @@ class IntegratedErrorHandlingSystem:
             health_results["overall_status"] = "unhealthy"
 
         # Generate recommendations
-        health_results["recommendations"] = self._generate_health_recommendations(health_results)
+        health_results["recommendations"] = self._generate_health_recommendations(
+            health_results
+        )
 
         # Update system status
-        self.system_status.update({
-            "healthy": health_results["overall_status"] == "healthy",
-            "last_health_check": datetime.utcnow().isoformat(),
-            "component_status": health_results["components"]
-        })
+        self.system_status.update(
+            {
+                "healthy": health_results["overall_status"] == "healthy",
+                "last_health_check": datetime.utcnow().isoformat(),
+                "component_status": health_results["components"],
+            }
+        )
 
-        logger.info(f"🎯 Health check complete: {health_results['overall_status']} ({healthy_count}/{total_count} components healthy)")
+        logger.info(
+            f"🎯 Health check complete: {health_results['overall_status']} ({healthy_count}/{total_count} components healthy)"
+        )
 
         return health_results
 
-    def _generate_health_recommendations(self, health_results: Dict[str, Any]) -> List[str]:
+    def _generate_health_recommendations(
+        self, health_results: Dict[str, Any]
+    ) -> List[str]:
         """Generate health recommendations based on status"""
         recommendations = []
 
@@ -400,28 +463,41 @@ class IntegratedErrorHandlingSystem:
             status = status_info.get("status", "unknown")
 
             if status == "unhealthy":
-                recommendations.append(f"URGENT: {component} component is unhealthy - requires immediate attention")
+                recommendations.append(
+                    f"URGENT: {component} component is unhealthy - requires immediate attention"
+                )
             elif status == "degraded":
-                recommendations.append(f"WARNING: {component} component is degraded - monitor closely")
+                recommendations.append(
+                    f"WARNING: {component} component is degraded - monitor closely"
+                )
 
         if health_results["overall_status"] == "unhealthy":
-            recommendations.append("CRITICAL: System overall health is poor - consider maintenance mode")
+            recommendations.append(
+                "CRITICAL: System overall health is poor - consider maintenance mode"
+            )
         elif health_results["overall_status"] == "degraded":
-            recommendations.append("CAUTION: System performance may be impacted - schedule maintenance")
+            recommendations.append(
+                "CAUTION: System performance may be impacted - schedule maintenance"
+            )
 
         if not recommendations:
-            recommendations.append("System is healthy - continue normal operations")
+            recommendations.append(
+                "System is healthy - continue normal operations")
 
         return recommendations
 
-    async def generate_video_with_full_error_handling(self,
-                                                    prompt: str,
-                                                    character_name: str = None,
-                                                    duration: int = 5,
-                                                    style: str = "anime") -> Dict[str, Any]:
+    async def generate_video_with_full_error_handling(
+        self,
+        prompt: str,
+        character_name: str = None,
+        duration: int = 5,
+        style: str = "anime",
+    ) -> Dict[str, Any]:
         """Generate video using the full error handling pipeline"""
         operation_id = f"video_gen_{int(time.time())}"
-        logger.info(f"🎬 Starting video generation with full error handling: {operation_id}")
+        logger.info(
+            f"🎬 Starting video generation with full error handling: {operation_id}"
+        )
 
         result = {
             "operation_id": operation_id,
@@ -431,7 +507,7 @@ class IntegratedErrorHandlingSystem:
             "fallbacks_used": [],
             "final_output": None,
             "processing_time_seconds": 0,
-            "recovery_actions": []
+            "recovery_actions": [],
         }
 
         start_time = time.time()
@@ -441,17 +517,22 @@ class IntegratedErrorHandlingSystem:
             logger.info("  📝 Stage 1: Processing character information")
             try:
                 if character_name:
-                    character_prompt = await self.character_system.build_generation_prompt_robust(
-                        character_name, f"{prompt}, {style}"
+                    character_prompt = (
+                        await self.character_system.build_generation_prompt_robust(
+                            character_name, f"{prompt}, {style}"
+                        )
                     )
                     if character_prompt.get("character_found"):
                         final_prompt = character_prompt["prompt"]
-                        result["stages_completed"].append("character_processing")
+                        result["stages_completed"].append(
+                            "character_processing")
                         if character_prompt.get("source") != "file":
-                            result["fallbacks_used"].append("character_generation")
+                            result["fallbacks_used"].append(
+                                "character_generation")
                     else:
                         final_prompt = f"{prompt}, {style}"
-                        result["errors_encountered"].append("character_not_found")
+                        result["errors_encountered"].append(
+                            "character_not_found")
                         result["fallbacks_used"].append("basic_prompt")
                 else:
                     final_prompt = f"{prompt}, {style}"
@@ -460,7 +541,8 @@ class IntegratedErrorHandlingSystem:
             except Exception as e:
                 logger.warning(f"    ⚠️ Character processing failed: {e}")
                 final_prompt = f"{prompt}, {style}"
-                result["errors_encountered"].append(f"character_error: {str(e)}")
+                result["errors_encountered"].append(
+                    f"character_error: {str(e)}")
                 result["fallbacks_used"].append("basic_prompt")
                 result["recovery_actions"].append("Used basic prompt fallback")
 
@@ -468,16 +550,20 @@ class IntegratedErrorHandlingSystem:
             logger.info("  🧠 Stage 2: Echo Brain prompt enhancement")
             try:
                 if self.echo_integration:
-                    enhanced_response = await self.echo_integration.optimize_generation_prompt(
-                        final_prompt, style
+                    enhanced_response = (
+                        await self.echo_integration.optimize_generation_prompt(
+                            final_prompt, style
+                        )
                     )
                     if enhanced_response.success:
                         final_prompt = enhanced_response.response
                         result["stages_completed"].append("echo_enhancement")
                         if enhanced_response.fallback_used:
-                            result["fallbacks_used"].append("echo_local_fallback")
+                            result["fallbacks_used"].append(
+                                "echo_local_fallback")
                     else:
-                        result["errors_encountered"].append("echo_enhancement_failed")
+                        result["errors_encountered"].append(
+                            "echo_enhancement_failed")
             except Exception as e:
                 logger.warning(f"    ⚠️ Echo enhancement failed: {e}")
                 result["errors_encountered"].append(f"echo_error: {str(e)}")
@@ -491,8 +577,10 @@ class IntegratedErrorHandlingSystem:
                     self.config.output_directory, 5.0  # 5GB requirement
                 )
                 if not space_available:
-                    result["errors_encountered"].append("insufficient_disk_space")
-                    result["recovery_actions"].append("Triggered emergency cleanup")
+                    result["errors_encountered"].append(
+                        "insufficient_disk_space")
+                    result["recovery_actions"].append(
+                        "Triggered emergency cleanup")
                 else:
                     result["stages_completed"].append("space_check")
 
@@ -505,7 +593,8 @@ class IntegratedErrorHandlingSystem:
 
             except Exception as e:
                 logger.warning(f"    ⚠️ Pre-generation checks failed: {e}")
-                result["errors_encountered"].append(f"precheck_error: {str(e)}")
+                result["errors_encountered"].append(
+                    f"precheck_error: {str(e)}")
 
             # Stage 4: Video Generation
             logger.info("  🎨 Stage 4: Video generation")
@@ -516,23 +605,31 @@ class IntegratedErrorHandlingSystem:
                     request_id=operation_id,
                     prompt=final_prompt,
                     duration=duration,
-                    style=style
+                    style=style,
                 )
 
-                generation_result = await self.comfyui_integration.generate_video_robust(generation_request)
+                generation_result = (
+                    await self.comfyui_integration.generate_video_robust(
+                        generation_request
+                    )
+                )
 
                 if generation_result.get("success"):
                     result["stages_completed"].append("video_generation")
-                    result["final_output"] = generation_result.get("output_path")
+                    result["final_output"] = generation_result.get(
+                        "output_path")
 
                     if generation_result.get("is_fallback"):
-                        result["fallbacks_used"].append("comfyui_fallback_generation")
+                        result["fallbacks_used"].append(
+                            "comfyui_fallback_generation")
                 else:
-                    result["errors_encountered"].append("video_generation_failed")
+                    result["errors_encountered"].append(
+                        "video_generation_failed")
 
             except Exception as e:
                 logger.error(f"    ❌ Video generation failed: {e}")
-                result["errors_encountered"].append(f"generation_error: {str(e)}")
+                result["errors_encountered"].append(
+                    f"generation_error: {str(e)}")
 
             # Stage 5: Post-processing and Validation
             if result["final_output"]:
@@ -540,27 +637,35 @@ class IntegratedErrorHandlingSystem:
                 try:
                     # Validate output file
                     output_path = Path(result["final_output"])
-                    if output_path.exists() and output_path.stat().st_size > 1000:  # > 1KB
+                    if (
+                        output_path.exists() and output_path.stat().st_size > 1000
+                    ):  # > 1KB
                         result["stages_completed"].append("output_validation")
                         result["success"] = True
 
                         # Store generation record
                         if self.database_manager:
-                            await self.database_manager.save_generation_request({
-                                "id": operation_id,
-                                "prompt": final_prompt,
-                                "character_name": character_name,
-                                "duration": duration,
-                                "style": style,
-                                "status": "completed"
-                            })
-                            result["stages_completed"].append("database_logging")
+                            await self.database_manager.save_generation_request(
+                                {
+                                    "id": operation_id,
+                                    "prompt": final_prompt,
+                                    "character_name": character_name,
+                                    "duration": duration,
+                                    "style": style,
+                                    "status": "completed",
+                                }
+                            )
+                            result["stages_completed"].append(
+                                "database_logging")
                     else:
-                        result["errors_encountered"].append("output_validation_failed")
+                        result["errors_encountered"].append(
+                            "output_validation_failed")
 
                 except Exception as e:
                     logger.warning(f"    ⚠️ Post-processing failed: {e}")
-                    result["errors_encountered"].append(f"postprocessing_error: {str(e)}")
+                    result["errors_encountered"].append(
+                        f"postprocessing_error: {str(e)}"
+                    )
 
         except Exception as e:
             logger.error(f"❌ Critical error in video generation pipeline: {e}")
@@ -575,7 +680,9 @@ class IntegratedErrorHandlingSystem:
 
         logger.info(f"🎯 Generation complete: {operation_id}")
         logger.info(f"  Success: {result['success']}")
-        logger.info(f"  Stages: {stages_count}, Errors: {errors_count}, Fallbacks: {fallbacks_count}")
+        logger.info(
+            f"  Stages: {stages_count}, Errors: {errors_count}, Fallbacks: {fallbacks_count}"
+        )
         logger.info(f"  Time: {result['processing_time_seconds']:.2f}s")
 
         return result
@@ -586,7 +693,9 @@ class IntegratedErrorHandlingSystem:
             logger.info("Health monitoring disabled")
             return
 
-        logger.info(f"🔄 Starting health monitoring loop (interval: {self.config.health_check_interval}s)")
+        logger.info(
+            f"🔄 Starting health monitoring loop (interval: {self.config.health_check_interval}s)"
+        )
 
         while True:
             try:
@@ -596,7 +705,8 @@ class IntegratedErrorHandlingSystem:
 
                 # Log critical issues
                 if health_results["overall_status"] == "unhealthy":
-                    logger.error("🚨 SYSTEM UNHEALTHY - Immediate attention required")
+                    logger.error(
+                        "🚨 SYSTEM UNHEALTHY - Immediate attention required")
                     for rec in health_results["recommendations"]:
                         if "URGENT" in rec or "CRITICAL" in rec:
                             logger.error(f"  {rec}")
@@ -615,8 +725,8 @@ class IntegratedErrorHandlingSystem:
                 "error_handling_enabled": {
                     "circuit_breakers": self.config.enable_circuit_breakers,
                     "fallbacks": self.config.enable_fallbacks,
-                    "auto_recovery": self.config.enable_auto_recovery
-                }
+                    "auto_recovery": self.config.enable_auto_recovery,
+                },
             },
             "components": {
                 "database_manager": self.database_manager is not None,
@@ -624,15 +734,19 @@ class IntegratedErrorHandlingSystem:
                 "character_system": self.character_system is not None,
                 "echo_integration": self.echo_integration is not None,
                 "filesystem_manager": self.filesystem_manager is not None,
-                "api_handler": self.api_handler is not None
+                "api_handler": self.api_handler is not None,
             },
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.utcnow().isoformat(),
         }
 
+
 # Factory function
-def create_integrated_system(config: SystemConfig = None) -> IntegratedErrorHandlingSystem:
+def create_integrated_system(
+    config: SystemConfig = None,
+) -> IntegratedErrorHandlingSystem:
     """Create integrated error handling system"""
     return IntegratedErrorHandlingSystem(config)
+
 
 # Example usage and testing
 async def main():
@@ -645,7 +759,7 @@ async def main():
         debug_mode=True,
         enable_fallbacks=True,
         enable_circuit_breakers=True,
-        enable_auto_recovery=True
+        enable_auto_recovery=True,
     )
 
     # Create and initialize system
@@ -661,44 +775,49 @@ async def main():
         # Get system status
         status = system.get_system_status()
 
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("INTEGRATED ERROR HANDLING SYSTEM STATUS")
-        print("="*60)
+        print("=" * 60)
         print(json.dumps(status, indent=2, default=str))
 
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("SYSTEM HEALTH REPORT")
-        print("="*60)
+        print("=" * 60)
         print(f"Overall Status: {health_results['overall_status']}")
         print(f"Components: {len(health_results['components'])} checked")
 
-        for component, health in health_results['components'].items():
-            status_emoji = {"healthy": "✅", "degraded": "⚠️", "unhealthy": "❌"}.get(health['status'], "❓")
+        for component, health in health_results["components"].items():
+            status_emoji = {"healthy": "✅", "degraded": "⚠️", "unhealthy": "❌"}.get(
+                health["status"], "❓"
+            )
             print(f"  {status_emoji} {component}: {health['status']}")
 
         print("\nRecommendations:")
-        for rec in health_results['recommendations']:
+        for rec in health_results["recommendations"]:
             print(f"  • {rec}")
 
         # Test video generation with full error handling
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("TESTING VIDEO GENERATION WITH ERROR HANDLING")
-        print("="*60)
+        print("=" * 60)
 
         generation_result = await system.generate_video_with_full_error_handling(
             prompt="magical girl transformation scene",
             character_name="TestCharacter",
             duration=5,
-            style="anime"
+            style="anime",
         )
 
         print(f"Generation Success: {generation_result['success']}")
-        print(f"Stages Completed: {len(generation_result['stages_completed'])}")
-        print(f"Errors Encountered: {len(generation_result['errors_encountered'])}")
+        print(
+            f"Stages Completed: {len(generation_result['stages_completed'])}")
+        print(
+            f"Errors Encountered: {len(generation_result['errors_encountered'])}")
         print(f"Fallbacks Used: {len(generation_result['fallbacks_used'])}")
-        print(f"Processing Time: {generation_result['processing_time_seconds']:.2f}s")
+        print(
+            f"Processing Time: {generation_result['processing_time_seconds']:.2f}s")
 
-        if generation_result['final_output']:
+        if generation_result["final_output"]:
             print(f"Output File: {generation_result['final_output']}")
 
         # Start monitoring (would run indefinitely in production)
@@ -709,6 +828,7 @@ async def main():
 
     finally:
         logger.info("🏁 Integrated Error Handling System Demo Complete")
+
 
 if __name__ == "__main__":
     asyncio.run(main())

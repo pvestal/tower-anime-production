@@ -6,36 +6,39 @@ and comprehensive error handling for the anime production system.
 """
 
 import asyncio
-import aiohttp
+import hashlib
 import json
 import logging
 import time
-import hashlib
-from typing import Dict, Optional, Any, List, Union, Callable
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
-import requests
+from typing import Any, Callable, Dict, List, Optional, Union
 
+import aiohttp
+import requests
 # Import our error handling framework
-from shared.error_handling import (
-    AnimeGenerationError, EchoBrainError, ErrorSeverity, ErrorCategory,
-    CircuitBreaker, RetryManager, MetricsCollector, OperationMetrics
-)
+from shared.error_handling import (AnimeGenerationError, CircuitBreaker,
+                                   EchoBrainError, ErrorCategory,
+                                   ErrorSeverity, MetricsCollector,
+                                   OperationMetrics, RetryManager)
 
 logger = logging.getLogger(__name__)
 
+
 class EchoModelTier(Enum):
-    FAST = "fast"           # Small models for quick responses (1B-7B)
-    STANDARD = "standard"   # Medium models for balanced performance (8B-32B)
-    ADVANCED = "advanced"   # Large models for complex tasks (70B+)
+    FAST = "fast"  # Small models for quick responses (1B-7B)
+    STANDARD = "standard"  # Medium models for balanced performance (8B-32B)
+    ADVANCED = "advanced"  # Large models for complex tasks (70B+)
+
 
 class EchoIntelligenceLevel(Enum):
-    BASIC = "basic"         # Simple queries, fast response
-    MODERATE = "moderate"   # Standard analysis
-    ADVANCED = "advanced"   # Complex reasoning
-    EXPERT = "expert"       # Deep analysis, creative tasks
+    BASIC = "basic"  # Simple queries, fast response
+    MODERATE = "moderate"  # Standard analysis
+    ADVANCED = "advanced"  # Complex reasoning
+    EXPERT = "expert"  # Deep analysis, creative tasks
+
 
 class EchoServiceStatus(Enum):
     HEALTHY = "healthy"
@@ -43,9 +46,11 @@ class EchoServiceStatus(Enum):
     OVERLOADED = "overloaded"
     UNAVAILABLE = "unavailable"
 
+
 @dataclass
 class EchoConfig:
     """Configuration for Echo Brain integration"""
+
     base_url: str = "http://***REMOVED***:8309"
     timeout_seconds: int = 300  # 5 minutes default
     max_retries: int = 3
@@ -71,7 +76,7 @@ class EchoConfig:
             self.preferred_models = {
                 "fast": ["llama3.2:latest", "tinyllama:latest"],
                 "standard": ["llama3.1:8b", "qwen2.5:7b", "mistral:7b"],
-                "advanced": ["qwen2.5-coder:32b", "mixtral:8x7b", "llama3.1:70b"]
+                "advanced": ["qwen2.5-coder:32b", "mixtral:8x7b", "llama3.1:70b"],
             }
 
         if self.fallback_models is None:
@@ -79,14 +84,16 @@ class EchoConfig:
 
         if self.model_timeout_override is None:
             self.model_timeout_override = {
-                "llama3.1:70b": 600,    # 10 minutes for 70B model
+                "llama3.1:70b": 600,  # 10 minutes for 70B model
                 "qwen2.5-coder:32b": 300,  # 5 minutes for 32B model
-                "mixtral:8x7b": 180     # 3 minutes for 8x7B model
+                "mixtral:8x7b": 180,  # 3 minutes for 8x7B model
             }
+
 
 @dataclass
 class EchoRequest:
     """Structure for Echo Brain requests"""
+
     request_id: str
     query: str
     context: str
@@ -105,9 +112,11 @@ class EchoRequest:
         if self.metadata is None:
             self.metadata = {}
 
+
 @dataclass
 class EchoResponse:
     """Structure for Echo Brain responses"""
+
     request_id: str
     response: str
     model_used: str
@@ -125,6 +134,7 @@ class EchoResponse:
             self.timestamp = datetime.utcnow()
         if self.metadata is None:
             self.metadata = {}
+
 
 class EchoHealthMonitor:
     """Monitors Echo Brain service health and performance"""
@@ -145,15 +155,16 @@ class EchoHealthMonitor:
                 # Check basic connectivity
                 async with session.get(
                     f"{self.config.base_url}/api/echo/health",
-                    timeout=aiohttp.ClientTimeout(total=10)
+                    timeout=aiohttp.ClientTimeout(total=10),
                 ) as response:
                     if response.status == 200:
                         health_data = await response.json()
 
                         # Check system metrics
-                        system_metrics = health_data.get('system_metrics', {})
-                        cpu_percent = system_metrics.get('cpu_percent', 0)
-                        memory_percent = system_metrics.get('memory_percent', 0)
+                        system_metrics = health_data.get("system_metrics", {})
+                        cpu_percent = system_metrics.get("cpu_percent", 0)
+                        memory_percent = system_metrics.get(
+                            "memory_percent", 0)
 
                         # Determine status based on metrics
                         if cpu_percent > 90 or memory_percent > 90:
@@ -177,7 +188,9 @@ class EchoHealthMonitor:
         self.last_health_check = datetime.utcnow()
         return self.current_status
 
-    def record_response(self, response_time: float, success: bool, model_used: str = None):
+    def record_response(
+        self, response_time: float, success: bool, model_used: str = None
+    ):
         """Record response metrics"""
         self.response_times.append(response_time)
         if len(self.response_times) > 100:  # Keep last 100 responses
@@ -190,7 +203,11 @@ class EchoHealthMonitor:
 
         if model_used:
             if model_used not in self.model_performance:
-                self.model_performance[model_used] = {"total_requests": 0, "success_count": 0, "avg_response_time": 0}
+                self.model_performance[model_used] = {
+                    "total_requests": 0,
+                    "success_count": 0,
+                    "avg_response_time": 0,
+                }
 
             perf = self.model_performance[model_used]
             perf["total_requests"] += 1
@@ -200,14 +217,22 @@ class EchoHealthMonitor:
             # Update average response time
             current_avg = perf["avg_response_time"]
             total_requests = perf["total_requests"]
-            perf["avg_response_time"] = ((current_avg * (total_requests - 1)) + response_time) / total_requests
+            perf["avg_response_time"] = (
+                (current_avg * (total_requests - 1)) + response_time
+            ) / total_requests
 
     def get_performance_metrics(self) -> Dict[str, Any]:
         """Get comprehensive performance metrics"""
         total_requests = self.success_count + self.error_count
-        success_rate = (self.success_count / total_requests * 100) if total_requests > 0 else 0
+        success_rate = (
+            (self.success_count / total_requests * 100) if total_requests > 0 else 0
+        )
 
-        avg_response_time = sum(self.response_times) / len(self.response_times) if self.response_times else 0
+        avg_response_time = (
+            sum(self.response_times) / len(self.response_times)
+            if self.response_times
+            else 0
+        )
 
         return {
             "current_status": self.current_status.value,
@@ -215,8 +240,11 @@ class EchoHealthMonitor:
             "success_rate_percent": round(success_rate, 2),
             "average_response_time_seconds": round(avg_response_time, 2),
             "model_performance": self.model_performance,
-            "last_health_check": self.last_health_check.isoformat() if self.last_health_check else None
+            "last_health_check": (
+                self.last_health_check.isoformat() if self.last_health_check else None
+            ),
         }
+
 
 class ModelSelector:
     """Selects optimal models based on request requirements and performance"""
@@ -232,14 +260,17 @@ class ModelSelector:
             return request.specific_model
 
         # Get preferred models for tier
-        tier_models = self.config.preferred_models.get(request.model_tier.value, [])
+        tier_models = self.config.preferred_models.get(
+            request.model_tier.value, [])
 
         # Filter based on performance data
         available_models = self._filter_available_models(tier_models)
 
         if not available_models:
             # Fall back to any available model
-            available_models = self._filter_available_models(self.config.fallback_models)
+            available_models = self._filter_available_models(
+                self.config.fallback_models
+            )
 
         if not available_models:
             # Last resort: use first preferred model
@@ -257,7 +288,8 @@ class ModelSelector:
             success_rate = 0
 
             if perf.get("total_requests", 0) > 0:
-                success_rate = (perf["success_count"] / perf["total_requests"]) * 100
+                success_rate = (perf["success_count"] /
+                                perf["total_requests"]) * 100
 
             # Only include models with >70% success rate or no data yet
             if perf.get("total_requests", 0) == 0 or success_rate > 70:
@@ -293,6 +325,7 @@ class ModelSelector:
 
         return best_model
 
+
 class ResponseCache:
     """Caches Echo responses to reduce load and improve performance"""
 
@@ -304,7 +337,9 @@ class ResponseCache:
 
     def _get_cache_key(self, request: EchoRequest) -> str:
         """Generate cache key for request"""
-        cache_content = f"{request.query}|{request.context}|{request.intelligence_level.value}"
+        cache_content = (
+            f"{request.query}|{request.context}|{request.intelligence_level.value}"
+        )
         return hashlib.md5(cache_content.encode()).hexdigest()
 
     def _get_cache_path(self, cache_key: str) -> Path:
@@ -318,7 +353,9 @@ class ResponseCache:
         # Check memory cache first
         if cache_key in self.memory_cache:
             cached_entry = self.memory_cache[cache_key]
-            if datetime.utcnow() - cached_entry["cached_at"] < timedelta(seconds=self.ttl_seconds):
+            if datetime.utcnow() - cached_entry["cached_at"] < timedelta(
+                seconds=self.ttl_seconds
+            ):
                 response = cached_entry["response"]
                 response.cached_response = True
                 return response
@@ -328,10 +365,12 @@ class ResponseCache:
         if cache_file.exists():
             try:
                 file_stat = cache_file.stat()
-                cache_age = datetime.utcnow() - datetime.fromtimestamp(file_stat.st_mtime)
+                cache_age = datetime.utcnow() - datetime.fromtimestamp(
+                    file_stat.st_mtime
+                )
 
                 if cache_age < timedelta(seconds=self.ttl_seconds):
-                    with open(cache_file, 'r') as f:
+                    with open(cache_file, "r") as f:
                         cache_data = json.load(f)
 
                     response = EchoResponse(**cache_data)
@@ -340,7 +379,7 @@ class ResponseCache:
                     # Store in memory cache
                     self.memory_cache[cache_key] = {
                         "response": response,
-                        "cached_at": datetime.utcnow()
+                        "cached_at": datetime.utcnow(),
                     }
 
                     return response
@@ -357,33 +396,35 @@ class ResponseCache:
         # Store in memory cache
         self.memory_cache[cache_key] = {
             "response": response,
-            "cached_at": datetime.utcnow()
+            "cached_at": datetime.utcnow(),
         }
 
         # Store in file cache
         cache_file = self._get_cache_path(cache_key)
         try:
-            with open(cache_file, 'w') as f:
+            with open(cache_file, "w") as f:
                 json.dump(asdict(response), f, default=str, indent=2)
         except Exception as e:
             logger.error(f"Failed to write cache file {cache_file}: {e}")
 
+
 class EnhancedEchoIntegration:
     """Enhanced Echo Brain integration with comprehensive error handling"""
 
-    def __init__(self, config: EchoConfig = None, metrics_collector: MetricsCollector = None):
+    def __init__(
+        self, config: EchoConfig = None, metrics_collector: MetricsCollector = None
+    ):
         self.config = config or EchoConfig()
         self.metrics_collector = metrics_collector
         self.health_monitor = EchoHealthMonitor(self.config)
         self.model_selector = ModelSelector(self.config, self.health_monitor)
         self.circuit_breaker = CircuitBreaker(
             failure_threshold=self.config.circuit_breaker_threshold,
-            recovery_timeout=self.config.circuit_breaker_recovery_time
+            recovery_timeout=self.config.circuit_breaker_recovery_time,
         )
         self.retry_manager = RetryManager()
         self.response_cache = ResponseCache(
-            "/opt/tower-anime-production/cache/echo",
-            self.config.fallback_cache_ttl
+            "/opt/tower-anime-production/cache/echo", self.config.fallback_cache_ttl
         )
 
     async def query_echo_robust(self, request: EchoRequest) -> EchoResponse:
@@ -397,15 +438,16 @@ class EnhancedEchoIntegration:
                 "request_id": request.request_id,
                 "intelligence_level": request.intelligence_level.value,
                 "model_tier": request.model_tier.value,
-                "query_length": len(request.query)
-            }
+                "query_length": len(request.query),
+            },
         )
 
         try:
             # Check cache first
             cached_response = await self.response_cache.get(request)
             if cached_response:
-                logger.debug(f"Echo query {request.request_id} served from cache")
+                logger.debug(
+                    f"Echo query {request.request_id} served from cache")
                 metrics.complete(True, {"source": "cache"})
                 if self.metrics_collector:
                     await self.metrics_collector.log_operation(metrics)
@@ -431,11 +473,14 @@ class EnhancedEchoIntegration:
             # Cache successful response
             await self.response_cache.set(request, response)
 
-            metrics.complete(True, {
-                "model_used": response.model_used,
-                "processing_time": processing_time,
-                "fallback_used": response.fallback_used
-            })
+            metrics.complete(
+                True,
+                {
+                    "model_used": response.model_used,
+                    "processing_time": processing_time,
+                    "fallback_used": response.fallback_used,
+                },
+            )
             if self.metrics_collector:
                 await self.metrics_collector.log_operation(metrics)
 
@@ -443,27 +488,34 @@ class EnhancedEchoIntegration:
 
         except Exception as e:
             # Record failure
-            processing_time = (datetime.utcnow() - metrics.start_time).total_seconds()
+            processing_time = (datetime.utcnow() -
+                               metrics.start_time).total_seconds()
             self.health_monitor.record_response(processing_time, False)
 
             # Determine if retry is appropriate
             should_retry = (
-                request.retry_count < self.config.max_retries and
-                self._is_retryable_error(e)
+                request.retry_count < self.config.max_retries
+                and self._is_retryable_error(e)
             )
 
             if should_retry:
-                logger.warning(f"Retrying Echo query {request.request_id} (attempt {request.retry_count + 1})")
+                logger.warning(
+                    f"Retrying Echo query {request.request_id} (attempt {request.retry_count + 1})"
+                )
                 request.retry_count += 1
-                await asyncio.sleep(self.config.retry_delay * (2 ** request.retry_count))
+                await asyncio.sleep(self.config.retry_delay * (2**request.retry_count))
                 return await self.query_echo_robust(request)
 
             # Try fallback if available
             if self.config.enable_local_fallback:
-                logger.warning(f"Echo query failed, attempting local fallback: {e}")
+                logger.warning(
+                    f"Echo query failed, attempting local fallback: {e}")
                 fallback_response = await self._attempt_local_fallback(request)
                 if fallback_response:
-                    metrics.complete(True, {"source": "local_fallback", "original_error": str(e)})
+                    metrics.complete(
+                        True, {"source": "local_fallback",
+                               "original_error": str(e)}
+                    )
                     if self.metrics_collector:
                         await self.metrics_collector.log_operation(metrics)
                     return fallback_response
@@ -492,81 +544,88 @@ class EnhancedEchoIntegration:
                     "context": request.context,
                     "model": selected_model,
                     "intelligence_level": request.intelligence_level.value,
-                    "metadata": request.metadata
+                    "metadata": request.metadata,
                 }
 
                 async with session.post(
                     f"{self.config.base_url}/api/echo/query",
                     json=payload,
-                    timeout=aiohttp.ClientTimeout(total=timeout)
+                    timeout=aiohttp.ClientTimeout(total=timeout),
                 ) as response:
                     if response.status == 200:
                         data = await response.json()
 
                         return EchoResponse(
                             request_id=request.request_id,
-                            response=data.get('response', ''),
-                            model_used=data.get('model_used', selected_model),
-                            intelligence_level=data.get('intelligence_level', request.intelligence_level.value),
-                            processing_time_seconds=data.get('processing_time_seconds', 0),
+                            response=data.get("response", ""),
+                            model_used=data.get("model_used", selected_model),
+                            intelligence_level=data.get(
+                                "intelligence_level", request.intelligence_level.value
+                            ),
+                            processing_time_seconds=data.get(
+                                "processing_time_seconds", 0
+                            ),
                             success=True,
-                            confidence_score=data.get('confidence_score'),
-                            metadata=data.get('metadata', {})
+                            confidence_score=data.get("confidence_score"),
+                            metadata=data.get("metadata", {}),
                         )
                     else:
                         response_text = await response.text()
                         raise EchoBrainError(
                             f"Echo query failed: {response.status} - {response_text}",
                             model_used=selected_model,
-                            intelligence_level=request.intelligence_level.value
+                            intelligence_level=request.intelligence_level.value,
                         )
 
         except asyncio.TimeoutError:
             raise EchoBrainError(
                 f"Echo query timeout after {timeout} seconds",
                 model_used=selected_model,
-                intelligence_level=request.intelligence_level.value
+                intelligence_level=request.intelligence_level.value,
             )
         except aiohttp.ClientError as e:
             raise EchoBrainError(
                 f"Network error communicating with Echo: {str(e)}",
                 model_used=selected_model,
-                intelligence_level=request.intelligence_level.value
+                intelligence_level=request.intelligence_level.value,
             )
 
-    async def _attempt_local_fallback(self, request: EchoRequest) -> Optional[EchoResponse]:
+    async def _attempt_local_fallback(
+        self, request: EchoRequest
+    ) -> Optional[EchoResponse]:
         """Attempt local model fallback when Echo is unavailable"""
         if not self.config.enable_local_fallback:
             return None
 
         try:
-            logger.info(f"Attempting local fallback for request {request.request_id}")
+            logger.info(
+                f"Attempting local fallback for request {request.request_id}")
 
             # Try local Ollama instance
             local_payload = {
                 "model": self.config.local_fallback_model,
                 "prompt": f"Context: {request.context}\n\nQuery: {request.query}",
-                "stream": False
+                "stream": False,
             }
 
             async with aiohttp.ClientSession() as session:
                 async with session.post(
                     "http://localhost:11434/api/generate",
                     json=local_payload,
-                    timeout=aiohttp.ClientTimeout(total=120)
+                    timeout=aiohttp.ClientTimeout(total=120),
                 ) as response:
                     if response.status == 200:
                         data = await response.json()
 
                         return EchoResponse(
                             request_id=request.request_id,
-                            response=data.get('response', ''),
+                            response=data.get("response", ""),
                             model_used=self.config.local_fallback_model,
                             intelligence_level="fallback",
                             processing_time_seconds=0,
                             success=True,
                             fallback_used=True,
-                            metadata={"fallback_reason": "echo_unavailable"}
+                            metadata={"fallback_reason": "echo_unavailable"},
                         )
 
         except Exception as e:
@@ -583,7 +642,9 @@ class EnhancedEchoIntegration:
         else:
             return False
 
-    def _create_echo_error(self, original_error: Exception, request: EchoRequest) -> EchoBrainError:
+    def _create_echo_error(
+        self, original_error: Exception, request: EchoRequest
+    ) -> EchoBrainError:
         """Create appropriate Echo error from original error"""
         if isinstance(original_error, EchoBrainError):
             return original_error
@@ -592,13 +653,14 @@ class EnhancedEchoIntegration:
                 f"Echo Brain query failed: {str(original_error)}",
                 model_used=request.specific_model,
                 intelligence_level=request.intelligence_level.value,
-                correlation_id=request.request_id
+                correlation_id=request.request_id,
             )
 
     # High-level convenience methods for anime production
 
-    async def generate_story_scene(self, character_name: str, scene_description: str,
-                                 style_context: str = "") -> EchoResponse:
+    async def generate_story_scene(
+        self, character_name: str, scene_description: str, style_context: str = ""
+    ) -> EchoResponse:
         """Generate story scene using Echo Brain"""
         request = EchoRequest(
             request_id=f"story_{int(time.time())}",
@@ -606,13 +668,14 @@ class EnhancedEchoIntegration:
             context=f"anime_story_generation|style:{style_context}",
             intelligence_level=EchoIntelligenceLevel.ADVANCED,
             model_tier=EchoModelTier.ADVANCED,
-            metadata={"character_name": character_name, "scene_type": "story"}
+            metadata={"character_name": character_name, "scene_type": "story"},
         )
 
         return await self.query_echo_robust(request)
 
-    async def analyze_character_consistency(self, character_name: str,
-                                          generated_content: str) -> EchoResponse:
+    async def analyze_character_consistency(
+        self, character_name: str, generated_content: str
+    ) -> EchoResponse:
         """Analyze character consistency in generated content"""
         request = EchoRequest(
             request_id=f"consistency_{int(time.time())}",
@@ -620,13 +683,15 @@ class EnhancedEchoIntegration:
             context="character_consistency_analysis",
             intelligence_level=EchoIntelligenceLevel.EXPERT,
             model_tier=EchoModelTier.ADVANCED,
-            metadata={"character_name": character_name, "analysis_type": "consistency"}
+            metadata={"character_name": character_name,
+                      "analysis_type": "consistency"},
         )
 
         return await self.query_echo_robust(request)
 
-    async def optimize_generation_prompt(self, base_prompt: str,
-                                       target_style: str = "anime") -> EchoResponse:
+    async def optimize_generation_prompt(
+        self, base_prompt: str, target_style: str = "anime"
+    ) -> EchoResponse:
         """Optimize generation prompt using Echo Brain"""
         request = EchoRequest(
             request_id=f"optimize_{int(time.time())}",
@@ -634,7 +699,8 @@ class EnhancedEchoIntegration:
             context="prompt_optimization",
             intelligence_level=EchoIntelligenceLevel.MODERATE,
             model_tier=EchoModelTier.STANDARD,
-            metadata={"target_style": target_style, "optimization_type": "prompt"}
+            metadata={"target_style": target_style,
+                      "optimization_type": "prompt"},
         )
 
         return await self.query_echo_robust(request)
@@ -653,19 +719,23 @@ class EnhancedEchoIntegration:
                 "timeout_seconds": self.config.timeout_seconds,
                 "max_retries": self.config.max_retries,
                 "local_fallback_enabled": self.config.enable_local_fallback,
-                "preferred_models": self.config.preferred_models
+                "preferred_models": self.config.preferred_models,
             },
             "cache_stats": {
                 "memory_cache_size": len(self.response_cache.memory_cache),
-                "cache_dir": str(self.response_cache.cache_dir)
+                "cache_dir": str(self.response_cache.cache_dir),
             },
-            "last_check": datetime.utcnow().isoformat()
+            "last_check": datetime.utcnow().isoformat(),
         }
 
+
 # Factory function
-def create_echo_integration(config: EchoConfig = None, metrics_collector: MetricsCollector = None) -> EnhancedEchoIntegration:
+def create_echo_integration(
+    config: EchoConfig = None, metrics_collector: MetricsCollector = None
+) -> EnhancedEchoIntegration:
     """Create configured Echo integration instance"""
     return EnhancedEchoIntegration(config, metrics_collector)
+
 
 # Example usage and testing
 async def test_echo_integration():
@@ -683,7 +753,7 @@ async def test_echo_integration():
         story_response = await echo_integration.generate_story_scene(
             "Kai Nakamura",
             "standing confidently in a neon-lit cyberpunk alley",
-            "cyberpunk anime"
+            "cyberpunk anime",
         )
         print(f"Story generated: {story_response.success}")
         print(f"Model used: {story_response.model_used}")
@@ -692,14 +762,14 @@ async def test_echo_integration():
         # Test prompt optimization
         print("\nTesting prompt optimization...")
         optimize_response = await echo_integration.optimize_generation_prompt(
-            "anime girl with blue hair",
-            "high quality anime"
+            "anime girl with blue hair", "high quality anime"
         )
         print(f"Prompt optimized: {optimize_response.success}")
         print(f"Fallback used: {optimize_response.fallback_used}")
 
     except Exception as e:
         print(f"❌ Test failed: {e}")
+
 
 if __name__ == "__main__":
     asyncio.run(test_echo_integration())

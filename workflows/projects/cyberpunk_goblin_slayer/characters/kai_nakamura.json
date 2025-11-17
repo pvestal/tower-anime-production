@@ -27,6 +27,7 @@
     "style_tags": ["photorealistic anime", "hyperrealistic anime", "cyberpunk aesthetic", "futuristic neon lighting", "high detail", "photorealistic rendering", "professional lighting"],
     "negative_prompts": ["female", "feminine features", "cartoon", "chibi", "simple anime", "flat colors", "2D anime style", "manga style", "teenage", "child"],
     "comfyui_workflow": "photorealistic_anime_character_v2",
+    "model": "AOM3A1B",
     "reference_image": "/opt/tower-anime-production/frames/goblin_slayer_cyberpunk/kai_nakamura_canonical_reference.png"
   },
   "project_context": {

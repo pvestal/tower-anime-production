@@ -5,28 +5,28 @@ Provides robust error recovery, retry logic, circuit breakers, and graceful degr
 """
 
 import asyncio
-import aiohttp
+import hashlib
 import json
 import logging
-import time
-import hashlib
 import shutil
-from typing import Dict, Optional, Any, List, Callable
-from datetime import datetime, timedelta
-from pathlib import Path
-from dataclasses import dataclass
-from enum import Enum
 import subprocess
-import psutil
+import time
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from enum import Enum
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional
 
+import aiohttp
+import psutil
 # Import our error handling framework
-from shared.error_handling import (
-    AnimeGenerationError, ComfyUIError, ResourceExhaustionError,
-    CircuitBreaker, RetryManager, MetricsCollector, OperationMetrics,
-    ErrorSeverity, ErrorCategory
-)
+from shared.error_handling import (AnimeGenerationError, CircuitBreaker,
+                                   ComfyUIError, ErrorCategory, ErrorSeverity,
+                                   MetricsCollector, OperationMetrics,
+                                   ResourceExhaustionError, RetryManager)
 
 logger = logging.getLogger(__name__)
+
 
 class ComfyUIHealthStatus(Enum):
     HEALTHY = "healthy"
@@ -34,9 +34,11 @@ class ComfyUIHealthStatus(Enum):
     UNAVAILABLE = "unavailable"
     OVERLOADED = "overloaded"
 
+
 @dataclass
 class ComfyUIConfig:
     """Configuration for ComfyUI integration"""
+
     base_url: str = "http://***REMOVED***:8188"
     timeout_seconds: int = 7200  # 2 hours
     max_retries: int = 3
@@ -48,9 +50,11 @@ class ComfyUIConfig:
     output_dir: str = "/mnt/1TB-storage/ComfyUI/output"
     fallback_output_dir: str = "/opt/tower-anime-production/output/fallback"
 
+
 @dataclass
 class GenerationRequest:
     """Structure for generation requests"""
+
     request_id: str
     prompt: str
     duration: int
@@ -65,6 +69,7 @@ class GenerationRequest:
         if self.created_at is None:
             self.created_at = datetime.utcnow()
 
+
 class ResourceMonitor:
     """Monitors system resources for ComfyUI operations"""
 
@@ -75,6 +80,7 @@ class ResourceMonitor:
         """Check if GPU monitoring is available"""
         try:
             import pynvml
+
             pynvml.nvmlInit()
             return True
         except Exception:
@@ -87,6 +93,7 @@ class ResourceMonitor:
                 return {"total_gb": 0.0, "used_gb": 0.0, "free_gb": 0.0}
 
             import pynvml
+
             handle = pynvml.nvmlDeviceGetHandleByIndex(0)
             info = pynvml.nvmlDeviceGetMemoryInfo(handle)
 
@@ -98,11 +105,15 @@ class ResourceMonitor:
                 "total_gb": total_gb,
                 "used_gb": used_gb,
                 "free_gb": free_gb,
-                "utilization_percent": (used_gb / total_gb) * 100
+                "utilization_percent": (used_gb / total_gb) * 100,
             }
         except Exception as e:
             logger.warning(f"Failed to get VRAM usage: {e}")
-            return {"total_gb": 12.0, "used_gb": 8.0, "free_gb": 4.0}  # Fallback estimates
+            return {
+                "total_gb": 12.0,
+                "used_gb": 8.0,
+                "free_gb": 4.0,
+            }  # Fallback estimates
 
     async def get_disk_usage(self, path: str) -> Dict[str, float]:
         """Get disk usage for output directory"""
@@ -116,7 +127,7 @@ class ResourceMonitor:
                 "total_gb": total_gb,
                 "used_gb": used_gb,
                 "free_gb": free_gb,
-                "utilization_percent": (used_gb / total_gb) * 100
+                "utilization_percent": (used_gb / total_gb) * 100,
             }
         except Exception as e:
             logger.error(f"Failed to get disk usage for {path}: {e}")
@@ -131,11 +142,16 @@ class ResourceMonitor:
             return {
                 "cpu_percent": cpu_percent,
                 "memory_percent": memory.percent,
-                "memory_available_gb": memory.available / (1024**3)
+                "memory_available_gb": memory.available / (1024**3),
             }
         except Exception as e:
             logger.error(f"Failed to get system load: {e}")
-            return {"cpu_percent": 50.0, "memory_percent": 50.0, "memory_available_gb": 8.0}
+            return {
+                "cpu_percent": 50.0,
+                "memory_percent": 50.0,
+                "memory_available_gb": 8.0,
+            }
+
 
 class WorkflowManager:
     """Manages ComfyUI workflow templates with error handling"""
@@ -144,34 +160,40 @@ class WorkflowManager:
         self.config = config
         self.workflow_cache = {}
 
-    async def load_workflow_template(self, duration: int, quality_preset: str = "standard") -> Dict:
+    async def load_workflow_template(
+        self, duration: int, quality_preset: str = "standard"
+    ) -> Dict:
         """Load and validate workflow template"""
         cache_key = f"{duration}s_{quality_preset}"
 
         if cache_key in self.workflow_cache:
             return self.workflow_cache[cache_key].copy()
 
-        workflow_file = Path(self.config.workflow_dir) / "anime_30sec_standard.json"
+        workflow_file = Path(self.config.workflow_dir) / \
+            "anime_30sec_standard.json"
 
         try:
             if not workflow_file.exists():
                 raise ComfyUIError(
                     f"Workflow template not found: {workflow_file}",
-                    context={"workflow_file": str(workflow_file), "duration": duration}
+                    context={"workflow_file": str(
+                        workflow_file), "duration": duration},
                 )
 
-            with open(workflow_file, 'r') as f:
+            with open(workflow_file, "r") as f:
                 workflow = json.load(f)
 
             # Validate workflow structure
             if not self._validate_workflow(workflow):
                 raise ComfyUIError(
                     "Invalid workflow template structure",
-                    context={"workflow_file": str(workflow_file)}
+                    context={"workflow_file": str(workflow_file)},
                 )
 
             # Optimize workflow for duration and quality
-            optimized_workflow = await self._optimize_workflow(workflow, duration, quality_preset)
+            optimized_workflow = await self._optimize_workflow(
+                workflow, duration, quality_preset
+            )
 
             # Cache the optimized workflow
             self.workflow_cache[cache_key] = optimized_workflow.copy()
@@ -183,12 +205,16 @@ class WorkflowManager:
                 raise
             raise ComfyUIError(
                 f"Failed to load workflow template: {str(e)}",
-                context={"workflow_file": str(workflow_file), "error_type": type(e).__name__}
+                context={
+                    "workflow_file": str(workflow_file),
+                    "error_type": type(e).__name__,
+                },
             )
 
     def _validate_workflow(self, workflow: Dict) -> bool:
         """Validate workflow has required nodes"""
-        required_node_types = ["EmptyLatentImage", "CLIPTextEncode", "KSampler"]
+        required_node_types = ["EmptyLatentImage",
+                               "CLIPTextEncode", "KSampler"]
 
         found_types = set()
         for node_id, node in workflow.items():
@@ -197,17 +223,21 @@ class WorkflowManager:
 
         missing_types = set(required_node_types) - found_types
         if missing_types:
-            logger.error(f"Workflow missing required node types: {missing_types}")
+            logger.error(
+                f"Workflow missing required node types: {missing_types}")
             return False
 
         return True
 
-    async def _optimize_workflow(self, workflow: Dict, duration: int, quality_preset: str) -> Dict:
+    async def _optimize_workflow(
+        self, workflow: Dict, duration: int, quality_preset: str
+    ) -> Dict:
         """Optimize workflow for given parameters"""
         optimized = workflow.copy()
 
         # Calculate frame counts based on duration - Fixed for longer videos
-        base_frames = min(120, duration * 24)  # 24fps base, max 120 frames per segment
+        # 24fps base, max 120 frames per segment
+        base_frames = min(120, duration * 24)
         target_frames = duration * 24  # Final target: 24fps
 
         # Quality presets
@@ -215,10 +245,11 @@ class WorkflowManager:
             "fast": {"steps": 15, "cfg": 7.0, "resolution_factor": 0.8},
             "standard": {"steps": 20, "cfg": 7.5, "resolution_factor": 1.0},
             "high": {"steps": 30, "cfg": 8.0, "resolution_factor": 1.0},
-            "ultra": {"steps": 40, "cfg": 8.5, "resolution_factor": 1.2}
+            "ultra": {"steps": 40, "cfg": 8.5, "resolution_factor": 1.2},
         }
 
-        settings = quality_settings.get(quality_preset, quality_settings["standard"])
+        settings = quality_settings.get(
+            quality_preset, quality_settings["standard"])
 
         # Update workflow nodes
         for node_id, node in optimized.items():
@@ -228,9 +259,14 @@ class WorkflowManager:
                 node["inputs"]["batch_size"] = base_frames
                 # Adjust resolution based on quality preset
                 if "width" in node["inputs"]:
-                    node["inputs"]["width"] = int(node["inputs"]["width"] * settings["resolution_factor"])
+                    node["inputs"]["width"] = int(
+                        node["inputs"]["width"] * settings["resolution_factor"]
+                    )
                 if "height" in node["inputs"]:
-                    node["inputs"]["height"] = int(node["inputs"]["height"] * settings["resolution_factor"])
+                    node["inputs"]["height"] = int(
+                        node["inputs"]["height"] *
+                        settings["resolution_factor"]
+                    )
 
             elif class_type == "KSampler":
                 node["inputs"]["steps"] = settings["steps"]
@@ -239,20 +275,27 @@ class WorkflowManager:
             elif class_type == "RIFE VFI":
                 rife_multiplier = min(4, max(2, target_frames // base_frames))
                 node["inputs"]["multiplier"] = rife_multiplier
-                node["inputs"]["fast_mode"] = quality_preset in ["fast", "standard"]
+                node["inputs"]["fast_mode"] = quality_preset in [
+                    "fast", "standard"]
 
-        logger.info(f"Optimized workflow: {base_frames} base frames, {quality_preset} quality")
+        logger.info(
+            f"Optimized workflow: {base_frames} base frames, {quality_preset} quality"
+        )
         return optimized
+
 
 class EnhancedComfyUIIntegration:
     """Enhanced ComfyUI integration with comprehensive error handling"""
 
-    def __init__(self, config: ComfyUIConfig = None, metrics_collector: MetricsCollector = None):
+    def __init__(
+        self, config: ComfyUIConfig = None, metrics_collector: MetricsCollector = None
+    ):
         self.config = config or ComfyUIConfig()
         self.metrics_collector = metrics_collector
         self.resource_monitor = ResourceMonitor()
         self.workflow_manager = WorkflowManager(self.config)
-        self.circuit_breaker = CircuitBreaker(failure_threshold=3, recovery_timeout=60)
+        self.circuit_breaker = CircuitBreaker(
+            failure_threshold=3, recovery_timeout=60)
         self.active_jobs = {}
         self.job_queue = []
         self.health_status = ComfyUIHealthStatus.HEALTHY
@@ -260,7 +303,8 @@ class EnhancedComfyUIIntegration:
 
         # Ensure output directories exist
         Path(self.config.output_dir).mkdir(parents=True, exist_ok=True)
-        Path(self.config.fallback_output_dir).mkdir(parents=True, exist_ok=True)
+        Path(self.config.fallback_output_dir).mkdir(
+            parents=True, exist_ok=True)
 
     async def check_health(self) -> ComfyUIHealthStatus:
         """Check ComfyUI service health"""
@@ -268,7 +312,7 @@ class EnhancedComfyUIIntegration:
             async with aiohttp.ClientSession() as session:
                 async with session.get(
                     f"{self.config.base_url}/system_stats",
-                    timeout=aiohttp.ClientTimeout(total=10)
+                    timeout=aiohttp.ClientTimeout(total=10),
                 ) as response:
                     if response.status == 200:
                         # Check system resources
@@ -278,7 +322,10 @@ class EnhancedComfyUIIntegration:
                         # Determine health based on resources
                         if vram_info["free_gb"] < self.config.vram_threshold_gb:
                             self.health_status = ComfyUIHealthStatus.OVERLOADED
-                        elif system_load["cpu_percent"] > 90 or system_load["memory_percent"] > 90:
+                        elif (
+                            system_load["cpu_percent"] > 90
+                            or system_load["memory_percent"] > 90
+                        ):
                             self.health_status = ComfyUIHealthStatus.DEGRADED
                         else:
                             self.health_status = ComfyUIHealthStatus.HEALTHY
@@ -298,11 +345,17 @@ class EnhancedComfyUIIntegration:
             return False
 
         # Check health if stale
-        if (not self.last_health_check or
-            (datetime.utcnow() - self.last_health_check).seconds > self.config.health_check_interval):
+        if (
+            not self.last_health_check
+            or (datetime.utcnow() - self.last_health_check).seconds
+            > self.config.health_check_interval
+        ):
             await self.check_health()
 
-        return self.health_status in [ComfyUIHealthStatus.HEALTHY, ComfyUIHealthStatus.DEGRADED]
+        return self.health_status in [
+            ComfyUIHealthStatus.HEALTHY,
+            ComfyUIHealthStatus.DEGRADED,
+        ]
 
     async def generate_video_robust(self, request: GenerationRequest) -> Dict[str, Any]:
         """Generate video with comprehensive error handling and recovery"""
@@ -315,8 +368,8 @@ class EnhancedComfyUIIntegration:
                 "request_id": request.request_id,
                 "duration": request.duration,
                 "style": request.style,
-                "retry_count": request.retry_count
-            }
+                "retry_count": request.retry_count,
+            },
         )
 
         try:
@@ -345,20 +398,22 @@ class EnhancedComfyUIIntegration:
             error_context = {
                 "request_id": request.request_id,
                 "retry_count": request.retry_count,
-                "health_status": self.health_status.value
+                "health_status": self.health_status.value,
             }
 
             # Determine if retry is appropriate
             should_retry = (
-                request.retry_count < request.max_retries and
-                self._is_retryable_error(e) and
-                await self.can_accept_job()
+                request.retry_count < request.max_retries
+                and self._is_retryable_error(e)
+                and await self.can_accept_job()
             )
 
             if should_retry:
-                logger.warning(f"Retrying generation for {request.request_id} (attempt {request.retry_count + 1})")
+                logger.warning(
+                    f"Retrying generation for {request.request_id} (attempt {request.retry_count + 1})"
+                )
                 request.retry_count += 1
-                await asyncio.sleep(self.config.retry_delay * (2 ** request.retry_count))
+                await asyncio.sleep(self.config.retry_delay * (2**request.retry_count))
                 return await self.generate_video_robust(request)
 
             # Handle non-retryable or max retries exceeded
@@ -383,7 +438,10 @@ class EnhancedComfyUIIntegration:
         if not await self.can_accept_job():
             raise ComfyUIError(
                 f"Service overloaded: {len(self.active_jobs)} active jobs, health: {self.health_status.value}",
-                context={"active_jobs": len(self.active_jobs), "health_status": self.health_status.value}
+                context={
+                    "active_jobs": len(self.active_jobs),
+                    "health_status": self.health_status.value,
+                },
             )
 
         # Check VRAM availability
@@ -392,7 +450,7 @@ class EnhancedComfyUIIntegration:
             raise ResourceExhaustionError(
                 f"Insufficient VRAM: {vram_info['free_gb']:.2f}GB available, {self.config.vram_threshold_gb}GB required",
                 resource_type="vram",
-                current_usage=vram_info["used_gb"]
+                current_usage=vram_info["used_gb"],
             )
 
         # Check disk space
@@ -401,20 +459,19 @@ class EnhancedComfyUIIntegration:
             raise ResourceExhaustionError(
                 f"Insufficient disk space: {disk_info['free_gb']:.2f}GB available",
                 resource_type="disk",
-                current_usage=disk_info["used_gb"]
+                current_usage=disk_info["used_gb"],
             )
 
         # Validate request parameters
         if request.duration <= 0 or request.duration > 120:
             raise ComfyUIError(
                 f"Invalid duration: {request.duration}s (must be 1-120)",
-                context={"duration": request.duration}
+                context={"duration": request.duration},
             )
 
         if not request.prompt or len(request.prompt.strip()) == 0:
             raise ComfyUIError(
-                "Empty prompt provided",
-                context={"prompt": request.prompt}
+                "Empty prompt provided", context={"prompt": request.prompt}
             )
 
     async def _capture_resource_snapshot(self) -> Dict[str, Any]:
@@ -423,23 +480,25 @@ class EnhancedComfyUIIntegration:
             "vram": await self.resource_monitor.get_vram_usage(),
             "disk": await self.resource_monitor.get_disk_usage(self.config.output_dir),
             "system": await self.resource_monitor.get_system_load(),
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.utcnow().isoformat(),
         }
 
-    async def _generate_video_internal(self, request: GenerationRequest, metrics: OperationMetrics) -> Dict[str, Any]:
+    async def _generate_video_internal(
+        self, request: GenerationRequest, metrics: OperationMetrics
+    ) -> Dict[str, Any]:
         """Internal video generation with timeout and monitoring"""
         self.active_jobs[request.request_id] = {
             "started_at": datetime.utcnow(),
             "request": request,
-            "status": "preparing"
+            "status": "preparing",
         }
 
         try:
             # Load and prepare workflow
             self.active_jobs[request.request_id]["status"] = "loading_workflow"
             workflow = await self.workflow_manager.load_workflow_template(
-                request.duration,
-                getattr(request, 'quality_preset', 'standard')
+                request.duration, getattr(
+                    request, "quality_preset", "standard")
             )
 
             # Update workflow with prompt
@@ -455,7 +514,8 @@ class EnhancedComfyUIIntegration:
 
             result_path = await self._monitor_generation(prompt_id, request)
 
-            processing_time = (datetime.utcnow() - request.created_at).total_seconds()
+            processing_time = (datetime.utcnow() -
+                               request.created_at).total_seconds()
 
             return {
                 "success": True,
@@ -467,8 +527,8 @@ class EnhancedComfyUIIntegration:
                 "video_specs": {
                     "duration_seconds": request.duration,
                     "style": request.style,
-                    "frames": request.duration * 24
-                }
+                    "frames": request.duration * 24,
+                },
             }
 
         finally:
@@ -493,40 +553,43 @@ class EnhancedComfyUIIntegration:
             async with aiohttp.ClientSession() as session:
                 payload = {
                     "prompt": workflow,
-                    "client_id": f"enhanced_integration_{request.request_id}"
+                    "client_id": f"enhanced_integration_{request.request_id}",
                 }
 
                 async with session.post(
                     f"{self.config.base_url}/prompt",
                     json=payload,
-                    timeout=aiohttp.ClientTimeout(total=30)
+                    timeout=aiohttp.ClientTimeout(total=30),
                 ) as response:
                     if response.status == 200:
                         data = await response.json()
                         prompt_id = data.get("prompt_id")
                         if not prompt_id:
-                            raise ComfyUIError("No prompt_id returned from ComfyUI")
+                            raise ComfyUIError(
+                                "No prompt_id returned from ComfyUI")
                         return prompt_id
                     else:
                         response_text = await response.text()
                         raise ComfyUIError(
                             f"ComfyUI submission failed: {response.status}",
                             status_code=response.status,
-                            response_data={"text": response_text}
+                            response_data={"text": response_text},
                         )
 
         except asyncio.TimeoutError:
             raise ComfyUIError(
                 "Timeout submitting workflow to ComfyUI",
-                context={"timeout_seconds": 30}
+                context={"timeout_seconds": 30},
             )
         except aiohttp.ClientError as e:
             raise ComfyUIError(
                 f"Network error communicating with ComfyUI: {str(e)}",
-                context={"error_type": type(e).__name__}
+                context={"error_type": type(e).__name__},
             )
 
-    async def _monitor_generation(self, prompt_id: str, request: GenerationRequest) -> str:
+    async def _monitor_generation(
+        self, prompt_id: str, request: GenerationRequest
+    ) -> str:
         """Monitor generation progress with timeout and error handling"""
         timeout = request.timeout_override or self.config.timeout_seconds
         check_interval = 5
@@ -539,29 +602,35 @@ class EnhancedComfyUIIntegration:
                     # Check if generation is complete
                     async with session.get(
                         f"{self.config.base_url}/history/{prompt_id}",
-                        timeout=aiohttp.ClientTimeout(total=10)
+                        timeout=aiohttp.ClientTimeout(total=10),
                     ) as response:
                         if response.status == 200:
                             data = await response.json()
                             if prompt_id in data:
-                                result_path = self._extract_result_path(data[prompt_id])
+                                result_path = self._extract_result_path(
+                                    data[prompt_id])
                                 if result_path:
                                     return result_path
 
                     # Check queue status for progress updates
                     async with session.get(
                         f"{self.config.base_url}/queue",
-                        timeout=aiohttp.ClientTimeout(total=10)
+                        timeout=aiohttp.ClientTimeout(total=10),
                     ) as response:
                         if response.status == 200:
                             queue_data = await response.json()
                             if self._is_job_in_queue(prompt_id, queue_data):
                                 last_progress_update = datetime.utcnow()
-                            elif (datetime.utcnow() - last_progress_update).seconds > 300:
+                            elif (
+                                datetime.utcnow() - last_progress_update
+                            ).seconds > 300:
                                 # No progress for 5 minutes, likely stuck
                                 raise ComfyUIError(
                                     f"Generation appears stuck: no progress for 5 minutes",
-                                    context={"prompt_id": prompt_id, "waited_seconds": total_waited}
+                                    context={
+                                        "prompt_id": prompt_id,
+                                        "waited_seconds": total_waited,
+                                    },
                                 )
 
                 await asyncio.sleep(check_interval)
@@ -569,7 +638,9 @@ class EnhancedComfyUIIntegration:
 
                 # Update job status
                 if request.request_id in self.active_jobs:
-                    self.active_jobs[request.request_id]["waited_seconds"] = total_waited
+                    self.active_jobs[request.request_id][
+                        "waited_seconds"
+                    ] = total_waited
 
             except ComfyUIError:
                 raise  # Re-raise ComfyUI specific errors
@@ -580,31 +651,33 @@ class EnhancedComfyUIIntegration:
 
         raise ComfyUIError(
             f"Generation timeout after {timeout} seconds",
-            context={"prompt_id": prompt_id, "timeout_seconds": timeout}
+            context={"prompt_id": prompt_id, "timeout_seconds": timeout},
         )
 
     def _extract_result_path(self, history_data: Dict) -> Optional[str]:
         """Extract result file path from ComfyUI history data"""
-        outputs = history_data.get('outputs', {})
+        outputs = history_data.get("outputs", {})
         for node_id, output in outputs.items():
-            if 'videos' in output and output['videos']:
-                filename = output['videos'][0]['filename']
+            if "videos" in output and output["videos"]:
+                filename = output["videos"][0]["filename"]
                 return f"{self.config.output_dir}/{filename}"
-            elif 'images' in output and output['images']:
-                filename = output['images'][0]['filename']
+            elif "images" in output and output["images"]:
+                filename = output["images"][0]["filename"]
                 return f"{self.config.output_dir}/{filename}"
         return None
 
     def _is_job_in_queue(self, prompt_id: str, queue_data: Dict) -> bool:
         """Check if job is still in ComfyUI queue"""
-        for queue_type in ['queue_running', 'queue_pending']:
+        for queue_type in ["queue_running", "queue_pending"]:
             if queue_type in queue_data:
                 for item in queue_data[queue_type]:
                     if len(item) > 1 and item[1] == prompt_id:
                         return True
         return False
 
-    async def _validate_generation_result(self, result: Dict[str, Any], request: GenerationRequest) -> Dict[str, Any]:
+    async def _validate_generation_result(
+        self, result: Dict[str, Any], request: GenerationRequest
+    ) -> Dict[str, Any]:
         """Validate generation result and file integrity"""
         if not result.get("success"):
             return result
@@ -613,7 +686,8 @@ class EnhancedComfyUIIntegration:
         if not output_path or not Path(output_path).exists():
             raise ComfyUIError(
                 f"Generated file not found: {output_path}",
-                context={"output_path": output_path, "request_id": request.request_id}
+                context={"output_path": output_path,
+                         "request_id": request.request_id},
             )
 
         # Check file size
@@ -621,7 +695,7 @@ class EnhancedComfyUIIntegration:
         if file_size < 1000:  # Less than 1KB likely indicates failure
             raise ComfyUIError(
                 f"Generated file too small: {file_size} bytes",
-                context={"output_path": output_path, "file_size": file_size}
+                context={"output_path": output_path, "file_size": file_size},
             )
 
         # Add file validation info to result
@@ -629,7 +703,7 @@ class EnhancedComfyUIIntegration:
             "size_bytes": file_size,
             "size_mb": round(file_size / (1024 * 1024), 2),
             "exists": True,
-            "validated_at": datetime.utcnow().isoformat()
+            "validated_at": datetime.utcnow().isoformat(),
         }
 
         return result
@@ -649,30 +723,34 @@ class EnhancedComfyUIIntegration:
             # Don't retry unknown errors
             return False
 
-    def _create_appropriate_error(self, original_error: Exception, context: Dict[str, Any]) -> AnimeGenerationError:
+    def _create_appropriate_error(
+        self, original_error: Exception, context: Dict[str, Any]
+    ) -> AnimeGenerationError:
         """Create appropriate error type based on original error"""
         if isinstance(original_error, AnimeGenerationError):
             return original_error
         elif isinstance(original_error, asyncio.TimeoutError):
             return ComfyUIError(
-                f"Generation timeout: {str(original_error)}",
-                context=context
+                f"Generation timeout: {str(original_error)}", context=context
             )
         elif isinstance(original_error, aiohttp.ClientError):
             return ComfyUIError(
-                f"Network error: {str(original_error)}",
-                context=context
+                f"Network error: {str(original_error)}", context=context
             )
         else:
             return ComfyUIError(
                 f"Unexpected generation error: {str(original_error)}",
-                context={**context, "error_type": type(original_error).__name__}
+                context={**context,
+                         "error_type": type(original_error).__name__},
             )
 
-    async def _attempt_fallback_generation(self, request: GenerationRequest) -> Optional[Dict[str, Any]]:
+    async def _attempt_fallback_generation(
+        self, request: GenerationRequest
+    ) -> Optional[Dict[str, Any]]:
         """Attempt fallback generation with simpler parameters"""
         try:
-            logger.info(f"Attempting fallback generation for {request.request_id}")
+            logger.info(
+                f"Attempting fallback generation for {request.request_id}")
 
             # Create simplified request
             fallback_request = GenerationRequest(
@@ -681,7 +759,7 @@ class EnhancedComfyUIIntegration:
                 duration=min(request.duration, 10),  # Shorter duration
                 style="simple anime",  # Simpler style
                 priority=1,  # High priority
-                max_retries=1  # Single retry only
+                max_retries=1,  # Single retry only
             )
 
             # Try with fast quality preset
@@ -717,23 +795,28 @@ class EnhancedComfyUIIntegration:
                     "started_at": job_info["started_at"].isoformat(),
                     "status": job_info["status"],
                     "duration": job_info["request"].duration,
-                    "waited_seconds": job_info.get("waited_seconds", 0)
+                    "waited_seconds": job_info.get("waited_seconds", 0),
                 }
                 for job_id, job_info in self.active_jobs.items()
-            }
+            },
         }
 
+
 # Factory function for creating configured instances
-def create_comfyui_integration(db_config: Dict[str, str] = None) -> EnhancedComfyUIIntegration:
+def create_comfyui_integration(
+    db_config: Dict[str, str] = None,
+) -> EnhancedComfyUIIntegration:
     """Create configured ComfyUI integration instance"""
     config = ComfyUIConfig()
 
     metrics_collector = None
     if db_config:
         from shared.error_handling import MetricsCollector
+
         metrics_collector = MetricsCollector(db_config)
 
     return EnhancedComfyUIIntegration(config, metrics_collector)
+
 
 # Example usage
 async def test_enhanced_integration():
@@ -749,14 +832,16 @@ async def test_enhanced_integration():
         request_id="test_001",
         prompt="1girl, anime style, magical transformation, sparkles",
         duration=5,
-        style="anime"
+        style="anime",
     )
 
     try:
         result = await integration.generate_video_robust(request)
-        print("Generation successful:", json.dumps(result, indent=2, default=str))
+        print("Generation successful:", json.dumps(
+            result, indent=2, default=str))
     except Exception as e:
         print("Generation failed:", str(e))
+
 
 if __name__ == "__main__":
     asyncio.run(test_enhanced_integration())
