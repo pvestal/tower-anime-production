@@ -40,8 +40,8 @@ class ComfyUIConfig:
     """Configuration for ComfyUI integration"""
 
     base_url: str = "http://***REMOVED***:8188"
-    timeout_seconds: int = 7200  # 2 hours
-    max_retries: int = 3
+    timeout_seconds: int = 600  # 10 minutes - reasonable for anime generation
+    max_retries: int = 1  # Reduce retries to stop job spiral
     retry_delay: float = 5.0
     max_concurrent_jobs: int = 2
     health_check_interval: int = 30
