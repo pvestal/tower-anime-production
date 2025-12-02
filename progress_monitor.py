@@ -21,10 +21,12 @@ class ComfyUIProgressMonitor:
     def __init__(self):
         self.comfyui_url = "http://localhost:8188"
         self.db_config = {
-            "host": "***REMOVED***",
+            "host": "localhost",
             "database": "anime_production",
             "user": "patrick",
-            "password": "***REMOVED***"
+            "password": "***REMOVED***",
+            "port": 5432,
+            "options": "-c search_path=anime_api,public"
         }
         self.active_jobs: Dict[str, dict] = {}
 

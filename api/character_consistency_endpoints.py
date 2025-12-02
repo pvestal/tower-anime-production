@@ -42,7 +42,7 @@ except ImportError:
     def get_db():
         from sqlalchemy import create_engine
         from sqlalchemy.orm import sessionmaker
-        DATABASE_URL = "postgresql://patrick:***REMOVED***@***REMOVED***/anime_production"
+        DATABASE_URL = "postgresql://patrick:***REMOVED***@localhost/anime_production"
         engine = create_engine(DATABASE_URL)
         SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
         db = SessionLocal()
