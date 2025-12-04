@@ -1,99 +1,107 @@
+#!/usr/bin/env python3
 """
-Phase 1: Character Consistency API
-Implements character management with face embeddings and IPAdapter integration
+Character Consistency API Endpoints for Phase 1
+RESTful API for character management, consistency validation, and generation requests.
+Implements IPAdapter Plus and InstantID integration with target metrics.
 """
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile, File
-from pydantic import BaseModel
-from typing import Optional, List, Dict
-import uuid
 import asyncio
-import asyncpg
-import numpy as np
-from datetime import datetime
 import json
-import aiohttp
+import logging
+from datetime import datetime
 from pathlib import Path
-import insightface
-from insightface.app import FaceAnalysis
-import cv2
-import base64
+from typing import Any, Dict, List, Optional
 
-app = FastAPI(title="Character Consistency API", version="1.0.0")
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, BackgroundTasks
+from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+import uvicorn
 
-# Initialize InsightFace
-# Using CPU due to CUDA library issues
-face_app = FaceAnalysis(providers=['CPUExecutionProvider'])
-face_app.prepare(ctx_id=-1, det_size=(640, 640))
+# Import our Phase 1 modules
+from phase1_character_consistency import Phase1CharacterConsistency
+from character_bible_db import CharacterBibleDB
+from quality_gates import QualityGateEngine
 
-# Database configuration
-DB_CONFIG = {
-    'host': 'localhost',
-    'database': 'anime_production',
-    'user': 'patrick',
-    'password': 'tower_echo_brain_secret_key_2025'
-}
+logger = logging.getLogger(__name__)
 
-# ComfyUI configuration
-COMFYUI_URL = "http://localhost:8188"
-CHARACTER_STORAGE = Path("/mnt/1TB-storage/anime-projects/characters")
-CHARACTER_STORAGE.mkdir(parents=True, exist_ok=True)
+app = FastAPI(
+    title="Character Consistency API - Phase 1",
+    description="API for character consistency and generation management",
+    version="1.0.0"
+)
 
-class CharacterCreate(BaseModel):
-    name: str
-    role: Optional[str] = "supporting"
-    physical_description: Dict
-    color_palette: Dict
-    base_prompt: str
-    negative_tokens: Optional[List[str]] = []
-    ipadapter_weight: float = 0.8
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-class CharacterGeneration(BaseModel):
-    character_id: str
-    prompt_modifier: Optional[str] = ""
-    seed: Optional[int] = None
-    steps: int = 30
-    cfg_scale: float = 7.0
-    width: int = 512
-    height: int = 768
+# Initialize Phase 1 components
+consistency_engine = Phase1CharacterConsistency()
+db = CharacterBibleDB()
+quality_engine = QualityGateEngine(db)
 
-async def get_db():
-    return await asyncpg.connect(**DB_CONFIG)
+# Pydantic models for Phase 1 API
+class CharacterCreateRequest(BaseModel):
+    name: str = Field(..., description="Character name")
+    project_id: Optional[int] = Field(None, description="Project ID")
+    description: str = Field(..., description="Character description")
+    visual_traits: Dict[str, Any] = Field(default_factory=dict, description="Visual characteristics")
+    status: Optional[str] = Field("draft", description="Character status")
+
+class GenerationRequest(BaseModel):
+    character_id: int = Field(..., description="Character ID")
+    prompt: str = Field(..., description="Generation prompt")
+    parameters: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Generation parameters")
+    style_prompt: Optional[str] = Field(None, description="Style description for consistency")
+
+class QualityAssessmentRequest(BaseModel):
+    image_path: str = Field(..., description="Path to image for assessment")
+    character_id: int = Field(..., description="Character ID for consistency check")
+    style_prompt: Optional[str] = Field(None, description="Style prompt for CLIP similarity")
+
+class IPAdapterConfigRequest(BaseModel):
+    character_id: int = Field(..., description="Character ID")
+    config_name: str = Field(..., description="Configuration name")
+    model_path: str = Field(..., description="IPAdapter model file path")
+    weight: Optional[float] = Field(0.8, description="IPAdapter weight")
+    weight_v2: Optional[float] = Field(1.2, description="FaceID v2 weight")
+    combine_embeds: Optional[str] = Field("concat", description="Embedding combination method")
+    embeds_scaling: Optional[str] = Field("V only", description="Embedding scaling method")
+
+# Character Management Endpoints
 
 @app.post("/api/characters/create")
-async def create_character(character: CharacterCreate, background_tasks: BackgroundTasks):
-    """Create new character with consistency anchors"""
-    conn = await get_db()
+async def create_character(request: CharacterCreateRequest):
+    """Create a new character with consistency profile"""
     try:
-        character_id = uuid.uuid4()
+        logger.info(f"📝 Creating character: {request.name}")
 
-        # Store character in database
-        await conn.execute("""
-            INSERT INTO anime_api.characters
-            (id, name, role, physical_description, color_palette, base_prompt, negative_tokens, ipadapter_weight)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        """,
-            character_id, character.name, character.role,
-            json.dumps(character.physical_description),
-            json.dumps(character.color_palette),
-            character.base_prompt,
-            character.negative_tokens,
-            character.ipadapter_weight
-        )
+        character_data = request.dict()
+        result = await consistency_engine.create_character_profile(character_data)
 
-        # Create character directory
-        char_dir = CHARACTER_STORAGE / str(character_id)
-        char_dir.mkdir(exist_ok=True)
+        if result['status'] == 'completed':
+            return JSONResponse({
+                "success": True,
+                "character_id": result['character_id'],
+                "character_name": result['character_name'],
+                "reference_generation": result['reference_generation'],
+                "quality_validation": result['quality_validation'],
+                "status": result['status']
+            })
+        else:
+            return JSONResponse({
+                "success": False,
+                "error": result.get('error', 'Character creation failed'),
+                "status": result['status']
+            }, status_code=400)
 
-        return {
-            "character_id": str(character_id),
-            "name": character.name,
-            "status": "created",
-            "storage_path": str(char_dir)
-        }
-
-    finally:
-        await conn.close()
+    except Exception as e:
+        logger.error(f"❌ Character creation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/characters/{character_id}/generate")
 async def generate_character_image(character_id: str, params: CharacterGeneration, background_tasks: BackgroundTasks):
@@ -383,6 +391,73 @@ async def poll_comfyui_completion(prompt_id: str, job_id: uuid.UUID) -> str:
         return str(output_files[0])
 
     return f"/mnt/1TB-storage/ComfyUI/output/character_{job_id}_00001_.png"
+
+@app.get("/api/health")
+async def health_check():
+    """Health check endpoint"""
+    try:
+        # Test database connection
+        conn = await asyncpg.connect(**DB_CONFIG)
+        await conn.execute("SELECT 1")
+        await conn.close()
+
+        # Test ComfyUI connection
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"{COMFYUI_URL}/system_stats", timeout=5) as response:
+                comfyui_status = response.status == 200
+
+        return {
+            "status": "healthy",
+            "timestamp": datetime.now().isoformat(),
+            "database": "connected",
+            "comfyui": "connected" if comfyui_status else "disconnected",
+            "insightface": "loaded"
+        }
+    except Exception as e:
+        return {
+            "status": "unhealthy",
+            "timestamp": datetime.now().isoformat(),
+            "error": str(e)
+        }
+
+@app.get("/api/characters")
+async def list_characters(limit: int = 10, offset: int = 0):
+    """List all characters with pagination"""
+    try:
+        conn = await asyncpg.connect(**DB_CONFIG)
+
+        # Get characters with job counts
+        rows = await conn.fetch("""
+            SELECT c.*, COUNT(r.id) as job_count,
+                   MAX(r.created_at) as last_generation
+            FROM anime_api.characters c
+            LEFT JOIN anime_api.render_jobs r ON c.id = r.character_id
+            GROUP BY c.id
+            ORDER BY c.created_at DESC
+            LIMIT $1 OFFSET $2
+        """, limit, offset)
+
+        # Get total count
+        total = await conn.fetchval("SELECT COUNT(*) FROM anime_api.characters")
+
+        characters = []
+        for row in rows:
+            char = dict(row)
+            # Convert bytea to None for JSON serialization
+            if char.get('reference_embedding'):
+                char['reference_embedding'] = f"<{len(char['reference_embedding'])} bytes>"
+            characters.append(char)
+
+        await conn.close()
+
+        return {
+            "characters": characters,
+            "total": total,
+            "limit": limit,
+            "offset": offset
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch characters: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

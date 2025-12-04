@@ -1,0 +1,31 @@
+{
+  "ipadapter": {
+    "weight": 0.92,
+    "weight_type": "standard",
+    "start_at": 0.0,
+    "end_at": 0.85,
+    "noise": 0.0
+  },
+  "sampler": {
+    "steps": 30,
+    "cfg": 8.0,
+    "sampler_name": "dpmpp_2m_sde",
+    "scheduler": "karras"
+  },
+  "prompt_template": {
+    "structure": "{character_name}, {core_features}, {pose}, {expression}, {outfit}, masterpiece, best quality",
+    "negative": "low quality, blurry, deformed, inconsistent features, different character, off-model"
+  },
+  "multi_reference": {
+    "angles": [
+      "front",
+      "side",
+      "three-quarter"
+    ],
+    "expressions": [
+      "neutral",
+      "smiling"
+    ],
+    "min_references": 3
+  }
+}

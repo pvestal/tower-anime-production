@@ -32,16 +32,6 @@ from shared.error_handling import (
 
 logger = logging.getLogger(__name__)
 
-@dataclass
-class DatabaseConfig:
-    """Database configuration with fallback options"""
-    # Primary database (PostgreSQL)
-    primary_host: str = "192.168.50.135"
-    primary_port: int = 5432
-    primary_database: str = "anime_production"
-    primary_user: str = "patrick"
-    primary_password: str = field(default_factory=lambda: get_vault_secret())
-
 def get_vault_secret() -> str:
     """Get database password from HashiCorp Vault"""
     try:
@@ -66,6 +56,16 @@ def get_vault_secret() -> str:
 
     # Fallback to environment variable
     return os.environ.get('ANIME_DB_PASSWORD', 'tower_echo_brain_secret_key_2025')
+
+@dataclass
+class DatabaseConfig:
+    """Database configuration with fallback options"""
+    # Primary database (PostgreSQL)
+    primary_host: str = "localhost"
+    primary_port: int = 5433
+    primary_database: str = "anime_production"
+    primary_user: str = "patrick"
+    primary_password: str = field(default_factory=lambda: get_vault_secret())
 
     # Connection pool settings
     min_connections: int = 2
