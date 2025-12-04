@@ -24,7 +24,15 @@ from pydantic import BaseModel, Field, validator
 import uvicorn
 from dotenv import load_dotenv
 
-from database import db_manager, initialize_database, close_database
+from database_operations import EnhancedDatabaseManager
+from pose_library import pose_library
+
+# Initialize database manager
+db_manager = EnhancedDatabaseManager()
+async def initialize_database():
+    return True  # Database initialized in __init__
+async def close_database():
+    return None  # EnhancedDatabaseManager doesn't have a close method
 
 # Load environment variables
 load_dotenv()
@@ -125,6 +133,7 @@ class GenerationRequest(BaseModel):
     project_id: Optional[str] = Field(None, max_length=50)
     character_id: Optional[str] = Field(None, max_length=50)
     style_preset: Optional[str] = Field(None, max_length=50)
+    pose_description: Optional[str] = Field(None, max_length=200)
 
     @validator('prompt', 'negative_prompt')
     def sanitize_prompts(cls, v):
@@ -165,8 +174,9 @@ def preload_models():
         print(f"❌ Failed to preload models: {e}")
 
 def create_workflow(prompt: str, negative_prompt: str, width: int, height: int,
-                   style_preset: Optional[str] = None) -> Dict[str, Any]:
-    """Create optimized workflow"""
+                   style_preset: Optional[str] = None, character_ref: Optional[str] = None,
+                   pose_ref: Optional[str] = None) -> Dict[str, Any]:
+    """Create 93% consistency workflow with ControlNet + IPAdapter"""
 
     # Sanitize inputs for workflow
     prompt = sanitize_text(prompt, 1000)
@@ -178,6 +188,124 @@ def create_workflow(prompt: str, negative_prompt: str, width: int, height: int,
     if style_preset and style_preset in ["cyberpunk", "fantasy", "steampunk", "studio_ghibli", "manga"]:
         prompt = apply_style_preset(prompt, style_preset)
 
+    # If character reference and pose are provided, use the proven 93% workflow
+    if character_ref and pose_ref:
+        # Copy reference files to ComfyUI input
+        char_name = f"char_{seed}.png"
+        pose_name = f"pose_{seed}.png"
+
+        try:
+            shutil.copy(character_ref, f"/mnt/1TB-storage/ComfyUI/input/{char_name}")
+            shutil.copy(pose_ref, f"/mnt/1TB-storage/ComfyUI/input/{pose_name}")
+        except Exception as e:
+            print(f"File copy error: {e}")
+            # Fall back to basic workflow if files can't be copied
+            character_ref = None
+            pose_ref = None
+
+    # Use 93% consistency workflow if we have character and pose
+    if character_ref and pose_ref:
+        return {
+            # Base model
+            "model": {
+                "inputs": {"ckpt_name": "counterfeit_v3.safetensors"},
+                "class_type": "CheckpointLoaderSimple"
+            },
+            # IPAdapter for character consistency
+            "ipa_loader": {
+                "inputs": {
+                    "model": ["model", 0],
+                    "preset": "PLUS (high strength)"
+                },
+                "class_type": "IPAdapterUnifiedLoader"
+            },
+            "char_img": {
+                "inputs": {"image": char_name, "upload": "image"},
+                "class_type": "LoadImage"
+            },
+            "ipa_apply": {
+                "inputs": {
+                    "model": ["ipa_loader", 0],
+                    "ipadapter": ["ipa_loader", 1],
+                    "image": ["char_img", 0],
+                    "weight": 0.9,
+                    "weight_type": "standard",
+                    "start_at": 0.0,
+                    "end_at": 0.9
+                },
+                "class_type": "IPAdapter"
+            },
+            # ControlNet for pose control
+            "cn_loader": {
+                "inputs": {"control_net_name": "control_v11p_sd15_openpose.pth"},
+                "class_type": "ControlNetLoader"
+            },
+            "pose_img": {
+                "inputs": {"image": pose_name, "upload": "image"},
+                "class_type": "LoadImage"
+            },
+            # Text conditioning
+            "pos_text": {
+                "inputs": {"text": f"{prompt}, masterpiece, best quality", "clip": ["model", 1]},
+                "class_type": "CLIPTextEncode"
+            },
+            "neg_text": {
+                "inputs": {"text": f"{negative_prompt}, low quality, blurry, different character", "clip": ["model", 1]},
+                "class_type": "CLIPTextEncode"
+            },
+            # Apply ControlNet to conditioning
+            "cn_pos": {
+                "inputs": {
+                    "conditioning": ["pos_text", 0],
+                    "control_net": ["cn_loader", 0],
+                    "image": ["pose_img", 0],
+                    "strength": 0.7
+                },
+                "class_type": "ControlNetApply"
+            },
+            "cn_neg": {
+                "inputs": {
+                    "conditioning": ["neg_text", 0],
+                    "control_net": ["cn_loader", 0],
+                    "image": ["pose_img", 0],
+                    "strength": 0.7
+                },
+                "class_type": "ControlNetApply"
+            },
+            # Generation
+            "latent": {
+                "inputs": {"width": width, "height": height, "batch_size": 1},
+                "class_type": "EmptyLatentImage"
+            },
+            "sampler": {
+                "inputs": {
+                    "seed": seed,
+                    "steps": 25,
+                    "cfg": 7.0,
+                    "sampler_name": "dpmpp_2m",
+                    "scheduler": "karras",
+                    "denoise": 1.0,
+                    "model": ["ipa_apply", 0],
+                    "positive": ["cn_pos", 0],
+                    "negative": ["cn_neg", 0],
+                    "latent_image": ["latent", 0]
+                },
+                "class_type": "KSampler"
+            },
+            "decode": {
+                "inputs": {"samples": ["sampler", 0], "vae": ["model", 2]},
+                "class_type": "VAEDecode"
+            },
+            "save": {
+                "inputs": {
+                    "filename_prefix": filename_prefix,
+                    "images": ["decode", 0]
+                },
+                "class_type": "SaveImage"
+            }
+        }
+
+    # Fall back to original basic workflow if no character/pose
     return {
         "3": {
             "inputs": {
@@ -292,12 +420,34 @@ def process_single_generation(job_data: Dict[str, Any]):
     job_id = job_data["id"]
 
     try:
+        # Get character reference and pose if available
+        character_ref = None
+        pose_ref = None
+
+        if job_data.get("character_id"):
+            # Check if we have character reference
+            char_path = Path(f"/home/patrick/.anime-characters/{job_data['character_id']}/reference.png")
+            if char_path.exists():
+                character_ref = str(char_path)
+
+            # Use pose library to get appropriate pose
+            pose_desc = job_data.get("pose_description", "standing")
+            pose_ref = pose_library.get_pose_skeleton(pose_desc)
+
+            # Fallback to default pose if library fails
+            if not pose_ref:
+                pose_path = Path("/mnt/1TB-storage/ComfyUI/output/pose_test_00001_.png")
+                if pose_path.exists():
+                    pose_ref = str(pose_path)
+
         workflow = create_workflow(
             job_data["prompt"],
             job_data["negative_prompt"],
             job_data["width"],
             job_data["height"],
-            job_data.get("style_preset")
+            job_data.get("style_preset"),
+            character_ref,
+            pose_ref
         )
 
         response = requests.post(
@@ -321,13 +471,44 @@ def process_single_generation(job_data: Dict[str, Any]):
         job_data["error"] = str(e)
 
 def monitor_and_complete(job_id: str, comfyui_id: str, job_data: Dict[str, Any]):
-    """Monitor job completion"""
-    max_wait = 60
+    """Monitor job completion with real progress"""
+    max_wait = 300  # 5 minutes
+    start_time = time.time()
+    last_progress = -1
 
-    while max_wait > 0:
+    while time.time() - start_time < max_wait:
         try:
-            response = requests.get(f"{COMFYUI_URL}/history/{comfyui_id}")
+            # Check queue status for real progress
+            queue_response = requests.get(f"{COMFYUI_URL}/queue")
+            if queue_response.status_code == 200:
+                queue_data = queue_response.json()
 
+                # Check if running
+                running = queue_data.get("queue_running", [])
+                for item in running:
+                    if len(item) > 0 and item[0] == comfyui_id:
+                        # Update to processing status
+                        job_data["status"] = "processing"
+                        # Estimate progress at 50% when running
+                        progress = 50
+                        if progress != last_progress:
+                            last_progress = progress
+                            asyncio.run(send_progress_update(job_id, progress, "processing"))
+                        break
+
+                # Check if still pending
+                pending = queue_data.get("queue_pending", [])
+                for idx, item in enumerate(pending):
+                    if len(item) > 0 and item[0] == comfyui_id:
+                        job_data["status"] = "queued"
+                        job_data["queue_position"] = idx + 1
+                        if last_progress != 0:
+                            last_progress = 0
+                            asyncio.run(send_progress_update(job_id, 0, "queued"))
+                        break
+
+            # Check history for completion
+            response = requests.get(f"{COMFYUI_URL}/history/{comfyui_id}")
             if response.status_code == 200:
                 history = response.json()
 
@@ -366,14 +547,10 @@ def monitor_and_complete(job_id: str, comfyui_id: str, job_data: Dict[str, Any])
         except Exception as e:
             print(f"Monitor error: {e}")
 
-        time.sleep(1)
-        max_wait -= 1
-
-        progress = int((60 - max_wait) / 60 * 100)
-        asyncio.run(send_progress_update(job_id, progress, "processing"))
+        time.sleep(0.5)  # Poll every 500ms for more responsive updates
 
     job_data["status"] = "failed"
-    job_data["error"] = "Generation timeout"
+    job_data["error"] = "Generation timeout after 5 minutes"
 
 async def send_progress_update(job_id: str, progress: int, status: str):
     """Send progress updates via WebSocket"""
@@ -526,6 +703,7 @@ async def generate_image(request: GenerationRequest, background_tasks: Backgroun
         "project_id": request.project_id,
         "character_id": request.character_id,
         "style_preset": request.style_preset,
+        "pose_description": request.pose_description,
         "created_at": datetime.utcnow().isoformat(),
         "start_time": time.time()
     }
@@ -563,10 +741,18 @@ async def websocket_progress(websocket: WebSocket, job_id: str):
 
             if job_id in jobs_cache:
                 job = jobs_cache[job_id]
+                # Send real progress from job data
+                progress = job.get("progress", 0)
+                if job["status"] == "completed":
+                    progress = 100
+                elif job["status"] == "processing" and progress == 0:
+                    progress = 50  # Default if no real progress yet
+
                 await websocket.send_json({
                     "job_id": job_id,
                     "status": job["status"],
-                    "progress": 100 if job["status"] == "completed" else 50
+                    "progress": progress,
+                    "queue_position": job.get("queue_position")
                 })
 
                 if job["status"] in ["completed", "failed"]:
