@@ -4,9 +4,10 @@ Basic integration tests for Tower Anime Production API
 Tests that can run in CI/CD without full service dependencies
 """
 
-import pytest
-import sys
 import os
+import sys
+
+import pytest
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -113,7 +114,7 @@ class TestBasicFunctionality:
     def test_models_structure(self):
         """Test database models have expected structure"""
         try:
-            from api.models import Project, Character, ProductionJob
+            from api.models import Character, ProductionJob, Project
 
             # Test Project model
             assert hasattr(Project, 'id')

@@ -3,14 +3,13 @@ SQLAlchemy database configuration for anime production system.
 Provides session management and FastAPI dependency injection.
 """
 
-import os
 import logging
+import os
 from typing import Generator
-from sqlalchemy import create_engine, MetaData
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
+
+from sqlalchemy import create_engine
 from sqlalchemy.engine.events import event
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.orm import Session, sessionmaker
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -18,10 +17,12 @@ logger = logging.getLogger(__name__)
 
 # Database configuration from environment variables (matching secured_api.py)
 DB_CONFIG = {
-    'host': os.getenv('DB_HOST', 'localhost'),
-    'database': os.getenv('DB_NAME', 'anime_production'),
-    'user': os.getenv('DB_USER', 'patrick'),
-    'password': os.getenv('DB_PASSWORD', '***REMOVED***')  # Fallback from secured_api.py
+    "host": os.getenv("DB_HOST", "localhost"),
+    "database": os.getenv("DB_NAME", "anime_production"),
+    "user": os.getenv("DB_USER", "patrick"),
+    "password": os.getenv(
+        "DB_PASSWORD", "***REMOVED***"
+    ),  # Fallback from secured_api.py
 }
 
 # Construct PostgreSQL connection URL
@@ -37,15 +38,11 @@ engine = create_engine(
     pool_size=10,
     max_overflow=20,
     pool_pre_ping=True,  # Verify connections before use
-    pool_recycle=300,    # Recycle connections every 5 minutes
+    pool_recycle=300,  # Recycle connections every 5 minutes
 )
 
 # Create session factory
-SessionLocal = sessionmaker(
-    autocommit=False,
-    autoflush=False,
-    bind=engine
-)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Base class for models (imported from models.py)
 from models import Base
@@ -79,6 +76,7 @@ def init_database():
     try:
         # Test database connection
         from sqlalchemy import text
+
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
         logger.info("Database connection successful")
@@ -108,7 +106,6 @@ def close_database():
 @event.listens_for(engine, "connect")
 def set_sqlite_pragma(dbapi_connection, connection_record):
     """Set connection parameters if needed"""
-    pass
 
 
 @event.listens_for(engine, "checkout")
@@ -132,6 +129,7 @@ class DatabaseHealth:
         """Check if database is accessible"""
         try:
             from sqlalchemy import text
+
             with engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
             return True
@@ -146,20 +144,17 @@ class DatabaseHealth:
             pool = engine.pool
             return {
                 "status": "healthy" if DatabaseHealth.check_connection() else "unhealthy",
-                "database": DB_CONFIG['database'],
-                "host": DB_CONFIG['host'],
+                "database": DB_CONFIG["database"],
+                "host": DB_CONFIG["host"],
                 "pool_size": pool.size(),
                 "checked_in": pool.checkedin(),
                 "checked_out": pool.checkedout(),
                 "overflow": pool.overflow(),
-                "invalid": pool.invalid()
+                "invalid": pool.invalid(),
             }
         except Exception as e:
             logger.error(f"Error getting connection info: {e}")
-            return {
-                "status": "error",
-                "error": str(e)
-            }
+            return {"status": "error", "error": str(e)}
 
 
 # Async database utilities (for future async support)

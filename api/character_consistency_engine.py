@@ -5,17 +5,14 @@ Provides advanced character validation, style consistency, and Echo-powered
 quality assessment for anime production workflows.
 """
 
-import asyncio
 import hashlib
 import json
 import logging
 from datetime import datetime
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import requests
-from PIL import Image
 
 logger = logging.getLogger(__name__)
 
@@ -37,13 +34,9 @@ class CharacterConsistencyEngine:
             logger.info(f"Generating character sheet for {character_name}")
 
             # Load character definition from project bible
-            character_def = await self._load_character_definition(
-                character_name, project_id
-            )
+            character_def = await self._load_character_definition(character_name, project_id)
             if not character_def:
-                raise ValueError(
-                    f"Character {character_name} not found in project bible"
-                )
+                raise ValueError(f"Character {character_name} not found in project bible")
 
             # Generate reference poses using ComfyUI
             reference_poses = await self._generate_reference_poses(character_def)
@@ -88,8 +81,7 @@ class CharacterConsistencyEngine:
             return character_sheet
 
         except Exception as e:
-            logger.error(
-                f"Error generating character sheet for {character_name}: {e}")
+            logger.error(f"Error generating character sheet for {character_name}: {e}")
             raise
 
     async def validate_character_consistency(
@@ -140,9 +132,7 @@ class CharacterConsistencyEngine:
                 "validated_at": datetime.now().isoformat(),
             }
 
-            logger.info(
-                f"Character validation for {character_name}: {consistency_score:.3f}"
-            )
+            logger.info(f"Character validation for {character_name}: {consistency_score:.3f}")
             return validation_result
 
         except Exception as e:
@@ -197,9 +187,7 @@ class CharacterConsistencyEngine:
                 }
 
                 # Call ComfyUI generation (this would integrate with existing ComfyUI connector)
-                image_path = await self._generate_via_comfyui(
-                    generation_params, f"pose_{i+1}"
-                )
+                image_path = await self._generate_via_comfyui(generation_params, f"pose_{i+1}")
 
                 reference_poses.append(
                     {
@@ -259,9 +247,7 @@ class CharacterConsistencyEngine:
 
         return expression_bank
 
-    async def _generate_via_comfyui(
-        self, params: Dict[str, Any], filename_prefix: str
-    ) -> str:
+    async def _generate_via_comfyui(self, params: Dict[str, Any], filename_prefix: str) -> str:
         """Generate image via ComfyUI integration"""
         # This would integrate with the existing ComfyUI connector
         # For now, return a placeholder path
@@ -285,15 +271,12 @@ class CharacterConsistencyEngine:
 
             if scores:
                 consistency_scores[
-                    img1.get("pose_name", img1.get(
-                        "expression_name", f"image_{i}"))
+                    img1.get("pose_name", img1.get("expression_name", f"image_{i}"))
                 ] = np.mean(scores)
 
         return consistency_scores
 
-    async def _calculate_image_similarity(
-        self, image1_path: str, image2_path: str
-    ) -> float:
+    async def _calculate_image_similarity(self, image1_path: str, image2_path: str) -> float:
         """Calculate visual similarity between two images"""
         try:
             # For now, return a mock similarity score
@@ -310,9 +293,7 @@ class CharacterConsistencyEngine:
         similarity_scores = {}
 
         for pose in reference_poses:
-            score = await self._calculate_image_similarity(
-                new_image, pose["image_path"]
-            )
+            score = await self._calculate_image_similarity(new_image, pose["image_path"])
             similarity_scores[pose["pose_name"]] = score
 
         return similarity_scores
@@ -348,9 +329,7 @@ class CharacterConsistencyEngine:
             logger.error(f"Error storing canonical reference: {e}")
             return ""
 
-    async def _load_canonical_reference(
-        self, character_name: str
-    ) -> Optional[Dict[str, Any]]:
+    async def _load_canonical_reference(self, character_name: str) -> Optional[Dict[str, Any]]:
         """Load canonical reference for character"""
         return self.reference_library.get(character_name, {}).get("data")
 
@@ -388,8 +367,7 @@ class CharacterConsistencyEngine:
             if response.status_code == 200:
                 return response.json()
             else:
-                logger.warning(
-                    f"Echo Brain assessment failed: {response.status_code}")
+                logger.warning(f"Echo Brain assessment failed: {response.status_code}")
                 return {"status": "error", "message": "Echo assessment unavailable"}
 
         except Exception as e:
@@ -440,9 +418,7 @@ class CharacterConsistencyEngine:
         suggestions = []
 
         # Analyze which aspects need improvement
-        low_scores = {
-            k: v for k, v in similarity_scores.items() if v < self.consistency_threshold
-        }
+        low_scores = {k: v for k, v in similarity_scores.items() if v < self.consistency_threshold}
 
         if "pose_1" in low_scores:  # Front view issues
             suggestions.append(
@@ -505,8 +481,7 @@ class CharacterConsistencyEngine:
                     suggestions = [
                         s.strip()
                         for s in suggestions
-                        if s.strip()
-                        and ("suggest" in s.lower() or "improve" in s.lower())
+                        if s.strip() and ("suggest" in s.lower() or "improve" in s.lower())
                     ]
                     return {"suggestions": suggestions}
 
@@ -535,14 +510,10 @@ class EchoCharacterOrchestrator:
             )
 
             # 1. Parse requirements using Echo NLP capabilities
-            parsed_requirements = await self._parse_character_requirements(
-                character_request
-            )
+            parsed_requirements = await self._parse_character_requirements(character_request)
 
             # 2. Generate initial character with ComfyUI integration
-            initial_generation = await self._orchestrate_initial_generation(
-                parsed_requirements
-            )
+            initial_generation = await self._orchestrate_initial_generation(parsed_requirements)
 
             # 3. Quality assessment loop with iterative improvements
             quality_result = await self._quality_assessment_loop(initial_generation)
@@ -577,9 +548,7 @@ class EchoCharacterOrchestrator:
                 "orchestrated_at": datetime.now().isoformat(),
             }
 
-    async def _parse_character_requirements(
-        self, request: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    async def _parse_character_requirements(self, request: Dict[str, Any]) -> Dict[str, Any]:
         """Use Echo Brain to parse and enhance character requirements"""
         try:
             parsing_prompt = f"""
@@ -615,16 +584,12 @@ class EchoCharacterOrchestrator:
             logger.error(f"Error parsing character requirements: {e}")
             return {"status": "error", "message": str(e)}
 
-    async def _orchestrate_initial_generation(
-        self, requirements: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    async def _orchestrate_initial_generation(self, requirements: Dict[str, Any]) -> Dict[str, Any]:
         """Orchestrate initial character generation"""
         # This would integrate with ComfyUI generation
         return {"status": "generated", "image_path": "/path/to/generated/character.png"}
 
-    async def _quality_assessment_loop(
-        self, generation: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    async def _quality_assessment_loop(self, generation: Dict[str, Any]) -> Dict[str, Any]:
         """Quality assessment with Echo Brain feedback"""
         # Implement iterative quality improvement
         return {"status": "quality_approved", "score": 0.92}

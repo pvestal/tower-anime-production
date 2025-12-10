@@ -4,24 +4,23 @@ Modular anime production API.
 Replaces the 4286-line main.py with clean, organized code.
 """
 
+import json
 import logging
 import time
-import uuid
-import json
-from typing import List, Optional
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
-from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks
-from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
-from pydantic import BaseModel
 import redis
 import requests
-
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 # Import modular components
-from models import Base, AnimeProject, ProductionJob, ProjectBible, BibleCharacter
+from models import AnimeProject, Base, ProductionJob
+from pydantic import BaseModel
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session, sessionmaker
+
 from workflows import get_simple_image_workflow, get_video_workflow
 
 # Configuration
@@ -92,7 +91,7 @@ async def list_projects(db: Session = Depends(get_db)):
             "id": p.id,
             "name": p.name,
             "description": p.description,
-            "created_at": p.created_at.isoformat()
+            "created_at": p.created_at.isoformat(),
         }
         for p in projects
     ]
@@ -108,26 +107,17 @@ async def create_project(project: ProjectCreate, db: Session = Depends(get_db)):
         raise HTTPException(400, f"Project '{project.name}' already exists")
 
     # Create project
-    db_project = AnimeProject(
-        name=project.name,
-        description=project.description
-    )
+    db_project = AnimeProject(name=project.name, description=project.description)
     db.add(db_project)
     db.commit()
     db.refresh(db_project)
 
-    return {
-        "id": db_project.id,
-        "name": db_project.name,
-        "message": "Project created successfully"
-    }
+    return {"id": db_project.id, "name": db_project.name, "message": "Project created successfully"}
 
 
 @app.post("/api/anime/generate")
 async def generate_anime(
-    request: GenerationRequest,
-    background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db)
+    request: GenerationRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)
 ):
     """Generate anime image or video."""
 
@@ -145,7 +135,7 @@ async def generate_anime(
         job_type=request.type,
         status="pending",
         prompt=request.prompt,
-        metadata_={"negative_prompt": request.negative_prompt}
+        metadata_={"negative_prompt": request.negative_prompt},
     )
     db.add(job)
     db.commit()
@@ -156,7 +146,7 @@ async def generate_anime(
         "job_id": job.id,
         "type": request.type,
         "prompt": request.prompt,
-        "negative_prompt": request.negative_prompt
+        "negative_prompt": request.negative_prompt,
     }
 
     redis_client.rpush("anime_job_queue", json.dumps(job_data))
@@ -165,11 +155,7 @@ async def generate_anime(
     # Start processing in background
     background_tasks.add_task(process_job, job.id)
 
-    return {
-        "job_id": job.id,
-        "status": "queued",
-        "message": "Generation job queued"
-    }
+    return {"job_id": job.id, "status": "queued", "message": "Generation job queued"}
 
 
 async def process_job(job_id: int):
@@ -189,18 +175,12 @@ async def process_job(job_id: int):
 
         # Generate based on type
         if job.job_type == "image":
-            workflow = get_simple_image_workflow(
-                job.prompt,
-                job.metadata_.get("negative_prompt")
-            )
+            workflow = get_simple_image_workflow(job.prompt, job.metadata_.get("negative_prompt"))
         else:
             workflow = get_video_workflow(job.prompt)
 
         # Submit to ComfyUI
-        response = requests.post(
-            f"{COMFYUI_URL}/prompt",
-            json={"prompt": workflow}
-        )
+        response = requests.post(f"{COMFYUI_URL}/prompt", json={"prompt": workflow})
 
         if response.status_code != 200:
             raise Exception(f"ComfyUI error: {response.status_code}")
@@ -265,7 +245,7 @@ async def get_job_status(job_id: int, db: Session = Depends(get_db)):
         "output_path": job.output_path,
         "error": job.error,
         "created_at": job.created_at.isoformat(),
-        "completed_at": job.completed_at.isoformat() if job.completed_at else None
+        "completed_at": job.completed_at.isoformat() if job.completed_at else None,
     }
 
 
@@ -286,7 +266,7 @@ async def get_job_output(job_id: int, db: Session = Depends(get_db)):
     return {
         "job_id": job_id,
         "output_path": job.output_path,
-        "filename": Path(job.output_path).name
+        "filename": Path(job.output_path).name,
     }
 
 

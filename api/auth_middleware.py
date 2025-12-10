@@ -2,38 +2,41 @@
 
 import os
 import time
-import jwt
-import httpx
-from typing import Optional
-from fastapi import HTTPException, Header, Depends
 from functools import lru_cache
+from typing import Optional
+
+import httpx
+import jwt
+from fastapi import HTTPException, Header
 
 # Configuration
 AUTH_SERVICE_URL = "http://localhost:8088"
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "tower_jwt_secret_2025")  # Should match auth service
+
 
 @lru_cache()
 def get_jwt_secret():
     """Get JWT secret, preferably from Vault"""
     try:
         import hvac
+
         vault = hvac.Client(url="http://127.0.0.1:8200")
         vault.token = os.getenv("VAULT_ROOT_TOKEN")
 
         # Try to read JWT secret from Vault
         secret = vault.secrets.kv.v2.read_secret_version(path="auth/jwt")
         return secret["data"]["data"]["secret_key"]
-    except:
+    except Exception:
         # Fallback to environment variable or default
         return JWT_SECRET_KEY
+
 
 async def verify_token_with_auth_service(token: str) -> dict:
     """Verify token with the Tower auth service"""
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                f"{AUTH_SERVICE_URL}/api/auth/verify",
-                headers={"Authorization": f"Bearer {token}"}
+                f"{AUTH_SERVICE_URL}/api/auth/verify", headers={"Authorization": f"Bearer {token}"}
             )
             if response.status_code == 200:
                 return response.json()
@@ -42,14 +45,11 @@ async def verify_token_with_auth_service(token: str) -> dict:
         print(f"Auth service verification failed: {e}")
         return None
 
+
 def verify_jwt_locally(token: str) -> dict:
     """Verify JWT token locally as fallback"""
     try:
-        payload = jwt.decode(
-            token,
-            get_jwt_secret(),
-            algorithms=["HS256"]
-        )
+        payload = jwt.decode(token, get_jwt_secret(), algorithms=["HS256"])
 
         # Check expiration
         if payload.get("exp", 0) < time.time():
@@ -59,24 +59,21 @@ def verify_jwt_locally(token: str) -> dict:
             "valid": True,
             "user": payload.get("user", "anonymous"),
             "email": payload.get("email"),
-            "expires": payload.get("exp")
+            "expires": payload.get("exp"),
         }
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
+
 
 async def require_auth(authorization: Optional[str] = Header(None)) -> dict:
     """Require valid authentication for protected endpoints"""
 
     if not authorization:
-        raise HTTPException(
-            status_code=401,
-            detail="Authorization header required"
-        )
+        raise HTTPException(status_code=401, detail="Authorization header required")
 
     if not authorization.startswith("Bearer "):
         raise HTTPException(
-            status_code=401,
-            detail="Invalid authorization format. Use: Bearer <token>"
+            status_code=401, detail="Invalid authorization format. Use: Bearer <token>"
         )
 
     token = authorization.replace("Bearer ", "")
@@ -93,6 +90,7 @@ async def require_auth(authorization: Optional[str] = Header(None)) -> dict:
 
     return user_data
 
+
 async def optional_auth(authorization: Optional[str] = Header(None)) -> Optional[dict]:
     """Optional authentication - returns None if no token provided"""
     if not authorization:
@@ -103,10 +101,12 @@ async def optional_auth(authorization: Optional[str] = Header(None)) -> Optional
     except HTTPException:
         return None
 
-# Rate limiting decorator
-from functools import wraps
+
 from collections import defaultdict
 from datetime import datetime, timedelta
+# Rate limiting decorator
+from functools import wraps
+
 
 class RateLimiter:
     def __init__(self):
@@ -118,10 +118,7 @@ class RateLimiter:
         cutoff = now - timedelta(seconds=window_seconds)
 
         # Clean old requests
-        self.requests[key] = [
-            req_time for req_time in self.requests[key]
-            if req_time > cutoff
-        ]
+        self.requests[key] = [req_time for req_time in self.requests[key] if req_time > cutoff]
 
         # Check limit
         if len(self.requests[key]) >= max_requests:
@@ -131,10 +128,13 @@ class RateLimiter:
         self.requests[key].append(now)
         return True
 
+
 rate_limiter = RateLimiter()
+
 
 def rate_limit(max_requests: int = 10, window_seconds: int = 60):
     """Rate limiting decorator"""
+
     def decorator(func):
         @wraps(func)
         async def wrapper(*args, **kwargs):
@@ -146,12 +146,15 @@ def rate_limit(max_requests: int = 10, window_seconds: int = 60):
             if not rate_limiter.is_allowed(user_key, max_requests, window_seconds):
                 raise HTTPException(
                     status_code=429,
-                    detail=f"Rate limit exceeded. Max {max_requests} requests per {window_seconds} seconds"
+                    detail=f"Rate limit exceeded. Max {max_requests} requests per {window_seconds} seconds",
                 )
 
             return await func(*args, **kwargs)
+
         return wrapper
+
     return decorator
+
 
 # Example usage in FastAPI:
 """

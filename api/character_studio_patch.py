@@ -4,24 +4,26 @@ Character Studio Integration Patch for Tower Anime Production
 Adds character management endpoints with Echo Brain integration
 """
 
-from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, Numeric
+from datetime import datetime
+from typing import List, Optional
+
+from pydantic import BaseModel
+from sqlalchemy import Boolean, Column, DateTime, Integer, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.declarative import declarative_base
-from pydantic import BaseModel
-from typing import List, Optional
-from datetime import datetime
 
 # Character model for Echo Brain database (existing table)
 EchoBrainBase = declarative_base()
+
 
 class CharacterProfile(EchoBrainBase):
     __tablename__ = "character_profiles"
 
     id = Column(Integer, primary_key=True, index=True)
     character_name = Column(String(100), nullable=False, unique=True)
-    creator = Column(String(100), nullable=False, default='Patrick Vestal')
+    creator = Column(String(100), nullable=False, default="Patrick Vestal")
     source_franchise = Column(String(200), nullable=False)
-    character_type = Column(String(50), nullable=False, default='original')
+    character_type = Column(String(50), nullable=False, default="original")
     age = Column(Integer)
     gender = Column(String(20))
     physical_description = Column(Text)
@@ -42,13 +44,14 @@ class CharacterProfile(EchoBrainBase):
     style_elements = Column(JSONB, default=[])
     generation_prompts = Column(Text)
     generation_count = Column(Integer, default=0)
-    consistency_score = Column(Numeric(3,2), default=0.0)
+    consistency_score = Column(Numeric(3, 2), default=0.0)
     last_generated = Column(DateTime)
     conversation_mentions = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow)
     notes = Column(Text)
     is_active = Column(Boolean, default=True)
+
 
 # Pydantic models for API
 class CharacterProfileCreate(BaseModel):
@@ -76,6 +79,7 @@ class CharacterProfileCreate(BaseModel):
     generation_prompts: Optional[str] = None
     notes: Optional[str] = None
 
+
 class CharacterProfileUpdate(BaseModel):
     character_name: Optional[str] = None
     source_franchise: Optional[str] = None
@@ -99,6 +103,7 @@ class CharacterProfileUpdate(BaseModel):
     style_elements: Optional[List[dict]] = None
     generation_prompts: Optional[str] = None
     notes: Optional[str] = None
+
 
 class CharacterProfileResponse(BaseModel):
     id: int
@@ -137,12 +142,14 @@ class CharacterProfileResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
 class CharacterGenerationRequest(BaseModel):
     prompt: Optional[str] = ""
     scene_type: str = "portrait"
     duration: int = 3
     style: str = "anime"
     quality: str = "high"
+
 
 def build_character_prompt(character: CharacterProfile, additional_prompt: str = "") -> str:
     """Build comprehensive prompt from character data"""

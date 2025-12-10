@@ -4,36 +4,27 @@ Secured Anime Production API with SQLAlchemy Database Integration
 Refactored to use proper database models instead of in-memory storage.
 """
 
+import logging
 import os
 import sys
-import uuid
-import time
-import json
-import subprocess
-import psutil
-import logging
-import httpx
-import asyncio
-from pathlib import Path
-from typing import Dict, Optional, List
-from datetime import datetime, timedelta
+from datetime import datetime
+from typing import Dict, Optional
 
-from v2_integration import v2_integration, create_tracked_job, complete_job_with_quality, reproduce_job
-from fastapi import FastAPI, HTTPException, Depends, Header, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse, FileResponse
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field, validator
-from sqlalchemy.orm import Session
-from sqlalchemy import desc
+import httpx
 import uvicorn
+from fastapi import Depends, FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from models import Character, ProductionJob, Project
+from pydantic import BaseModel, Field, validator
+from sqlalchemy import desc
+from sqlalchemy.orm import Session
 
 # Database imports
-from database import get_db, init_database, close_database, DatabaseHealth
-from models import Project, Character, ProductionJob, GeneratedAsset, GenerationParam, QualityScore
+from database import DatabaseHealth, close_database, get_db, init_database
 
 # Add parent directory to path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from auth_middleware import require_auth, optional_auth, rate_limit
+from auth_middleware import optional_auth, require_auth
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -45,7 +36,7 @@ app = FastAPI(
     description="Production-ready anime generation API with SQLAlchemy database integration",
     version="3.0.0",
     docs_url="/api/anime/docs",
-    redoc_url="/api/anime/redoc"
+    redoc_url="/api/anime/redoc",
 )
 
 # Configure CORS properly (not wide open)
@@ -53,7 +44,7 @@ ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://localhost:5173",
     "https://***REMOVED***",
-    "https://tower.local"
+    "https://tower.local",
 ]
 
 app.add_middleware(
@@ -68,6 +59,7 @@ app.add_middleware(
 gpu_queue = []
 active_generation = None
 
+
 # Pydantic models for API requests
 class ProjectCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
@@ -75,11 +67,13 @@ class ProjectCreateRequest(BaseModel):
     type: str = Field(default="anime")
     metadata: Optional[dict] = Field(default_factory=dict)
 
+
 class ProjectUpdateRequest(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     description: Optional[str] = None
     status: Optional[str] = None
     metadata: Optional[dict] = None
+
 
 class CharacterCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
@@ -88,21 +82,23 @@ class CharacterCreateRequest(BaseModel):
     visual_traits: Optional[dict] = Field(default_factory=dict)
     base_prompt: Optional[str] = None
 
+
 class GenerateRequest(BaseModel):
     prompt: str = Field(..., min_length=1, max_length=500)
     type: str = Field(default="image", pattern="^(image|video)$")
     project_id: Optional[int] = None
     character_id: Optional[int] = None
 
-    @validator('prompt')
+    @validator("prompt")
     def validate_prompt(cls, v):
         """Sanitize and validate prompt"""
         # Remove any SQL-like patterns
-        dangerous_patterns = ['DROP', 'DELETE', 'INSERT', 'UPDATE', '--', ';']
+        dangerous_patterns = ["DROP", "DELETE", "INSERT", "UPDATE", "--", ";"]
         for pattern in dangerous_patterns:
             if pattern in v.upper():
                 raise ValueError(f"Invalid characters in prompt")
         return v.strip()
+
 
 # Application startup and shutdown
 @app.on_event("startup")
@@ -115,6 +111,7 @@ async def startup_event():
         logger.error(f"Failed to initialize database: {e}")
         raise
 
+
 @app.on_event("shutdown")
 async def shutdown_event():
     """Close database connections on shutdown"""
@@ -123,6 +120,7 @@ async def shutdown_event():
         logger.info("Database connections closed")
     except Exception as e:
         logger.error(f"Error during shutdown: {e}")
+
 
 # Existing GPU and ComfyUI functions (unchanged)
 async def check_gpu_availability() -> bool:
@@ -149,6 +147,7 @@ async def check_gpu_availability() -> bool:
         active_generation = None
         return True
 
+
 async def get_comfyui_job_status(prompt_id: str) -> Dict:
     """Get real-time job status from ComfyUI"""
     try:
@@ -160,20 +159,12 @@ async def get_comfyui_job_status(prompt_id: str) -> Dict:
             # Check running queue
             for item in queue_data.get("queue_running", []):
                 if len(item) > 1 and item[1] == prompt_id:
-                    return {
-                        "status": "processing",
-                        "progress": 50,
-                        "estimated_remaining": 30
-                    }
+                    return {"status": "processing", "progress": 50, "estimated_remaining": 30}
 
             # Check pending queue
             for item in queue_data.get("queue_pending", []):
                 if len(item) > 1 and item[1] == prompt_id:
-                    return {
-                        "status": "queued",
-                        "progress": 0,
-                        "estimated_remaining": 60
-                    }
+                    return {"status": "queued", "progress": 0, "estimated_remaining": 60}
 
             # Check history for completion
             history_response = await client.get(f"http://localhost:8188/history/{prompt_id}")
@@ -195,7 +186,7 @@ async def get_comfyui_job_status(prompt_id: str) -> Dict:
                                     "status": "completed",
                                     "progress": 100,
                                     "output_path": output_path,
-                                    "estimated_remaining": 0
+                                    "estimated_remaining": 0,
                                 }
                             elif "videos" in output:
                                 filename = output["videos"][0]["filename"]
@@ -205,7 +196,7 @@ async def get_comfyui_job_status(prompt_id: str) -> Dict:
                                     "status": "completed",
                                     "progress": 100,
                                     "output_path": output_path,
-                                    "estimated_remaining": 0
+                                    "estimated_remaining": 0,
                                 }
 
             # If not found anywhere, assume failed after timeout
@@ -213,12 +204,13 @@ async def get_comfyui_job_status(prompt_id: str) -> Dict:
                 "status": "failed",
                 "progress": 0,
                 "error": "Job not found in ComfyUI queue or history",
-                "estimated_remaining": 0
+                "estimated_remaining": 0,
             }
 
     except Exception as e:
         logger.error(f"Failed to get ComfyUI status for {prompt_id}: {e}")
         return None
+
 
 # Database-driven API endpoints
 @app.get("/api/anime/health")
@@ -256,22 +248,17 @@ async def health(db: Session = Depends(get_db)):
             "comfyui": {
                 "status": comfyui_status,
                 "queue_running": len(queue_data.get("queue_running", [])),
-                "queue_pending": len(queue_data.get("queue_pending", []))
+                "queue_pending": len(queue_data.get("queue_pending", [])),
             },
-            "gpu": {
-                "available": gpu_available,
-                "active_generation": active_generation is not None
-            },
+            "gpu": {"available": gpu_available, "active_generation": active_generation is not None},
             "stats": {
                 "projects": total_projects_count,
                 "characters": total_characters_count,
-                "jobs": {
-                    "total": total_jobs_count,
-                    "active": active_jobs_count
-                }
-            }
-        }
+                "jobs": {"total": total_jobs_count, "active": active_jobs_count},
+            },
+        },
     }
+
 
 # Project CRUD endpoints
 @app.get("/api/anime/projects")
@@ -279,7 +266,7 @@ async def list_projects(
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db),
-    user_data: dict = Depends(optional_auth)
+    user_data: dict = Depends(optional_auth),
 ):
     """List all projects with pagination"""
     projects = db.query(Project).order_by(desc(Project.created_at)).offset(skip).limit(limit).all()
@@ -295,20 +282,21 @@ async def list_projects(
                 "status": p.status,
                 "metadata": p.metadata_,
                 "created_at": p.created_at.isoformat() if p.created_at else None,
-                "updated_at": p.updated_at.isoformat() if p.updated_at else None
+                "updated_at": p.updated_at.isoformat() if p.updated_at else None,
             }
             for p in projects
         ],
         "total": total,
         "skip": skip,
-        "limit": limit
+        "limit": limit,
     }
+
 
 @app.post("/api/anime/projects")
 async def create_project(
     request: ProjectCreateRequest,
     db: Session = Depends(get_db),
-    user_data: dict = Depends(require_auth)
+    user_data: dict = Depends(require_auth),
 ):
     """Create a new project"""
 
@@ -322,7 +310,7 @@ async def create_project(
         description=request.description,
         type=request.type,
         metadata_=request.metadata,
-        status="active"
+        status="active",
     )
 
     db.add(project)
@@ -339,14 +327,13 @@ async def create_project(
         "status": project.status,
         "metadata": project.metadata_,
         "created_at": project.created_at.isoformat() if project.created_at else None,
-        "message": "Project created successfully"
+        "message": "Project created successfully",
     }
+
 
 @app.get("/api/anime/projects/{project_id}")
 async def get_project(
-    project_id: int,
-    db: Session = Depends(get_db),
-    user_data: dict = Depends(optional_auth)
+    project_id: int, db: Session = Depends(get_db), user_data: dict = Depends(optional_auth)
 ):
     """Get project details with related characters and jobs"""
     project = db.query(Project).filter(Project.id == project_id).first()
@@ -355,7 +342,13 @@ async def get_project(
 
     # Get related data
     characters = db.query(Character).filter(Character.project_id == project_id).all()
-    jobs = db.query(ProductionJob).filter(ProductionJob.project_id == project_id).order_by(desc(ProductionJob.created_at)).limit(10).all()
+    jobs = (
+        db.query(ProductionJob)
+        .filter(ProductionJob.project_id == project_id)
+        .order_by(desc(ProductionJob.created_at))
+        .limit(10)
+        .all()
+    )
 
     return {
         "id": project.id,
@@ -367,12 +360,7 @@ async def get_project(
         "created_at": project.created_at.isoformat() if project.created_at else None,
         "updated_at": project.updated_at.isoformat() if project.updated_at else None,
         "characters": [
-            {
-                "id": c.id,
-                "name": c.name,
-                "description": c.description,
-                "status": c.status
-            }
+            {"id": c.id, "name": c.name, "description": c.description, "status": c.status}
             for c in characters
         ],
         "recent_jobs": [
@@ -380,11 +368,12 @@ async def get_project(
                 "id": j.id,
                 "job_type": j.job_type,
                 "status": j.status,
-                "created_at": j.created_at.isoformat() if j.created_at else None
+                "created_at": j.created_at.isoformat() if j.created_at else None,
             }
             for j in jobs
-        ]
+        ],
     }
+
 
 # Character CRUD endpoints
 @app.get("/api/anime/characters")
@@ -393,7 +382,7 @@ async def list_characters(
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db),
-    user_data: dict = Depends(optional_auth)
+    user_data: dict = Depends(optional_auth),
 ):
     """List characters, optionally filtered by project"""
     query = db.query(Character)
@@ -413,20 +402,21 @@ async def list_characters(
                 "description": c.description,
                 "visual_traits": c.visual_traits,
                 "status": c.status,
-                "created_at": c.created_at.isoformat() if c.created_at else None
+                "created_at": c.created_at.isoformat() if c.created_at else None,
             }
             for c in characters
         ],
         "total": total,
         "skip": skip,
-        "limit": limit
+        "limit": limit,
     }
+
 
 @app.post("/api/anime/characters")
 async def create_character(
     request: CharacterCreateRequest,
     db: Session = Depends(get_db),
-    user_data: dict = Depends(require_auth)
+    user_data: dict = Depends(require_auth),
 ):
     """Create a new character"""
 
@@ -446,7 +436,7 @@ async def create_character(
         description=request.description,
         visual_traits=request.visual_traits,
         base_prompt=request.base_prompt,
-        status="draft"
+        status="draft",
     )
 
     db.add(character)
@@ -463,15 +453,14 @@ async def create_character(
         "visual_traits": character.visual_traits,
         "status": character.status,
         "created_at": character.created_at.isoformat() if character.created_at else None,
-        "message": "Character created successfully"
+        "message": "Character created successfully",
     }
+
 
 # Job status and progress endpoints
 @app.get("/api/anime/jobs/{job_id}/progress")
 async def get_job_progress(
-    job_id: int,
-    db: Session = Depends(get_db),
-    user_data: dict = Depends(optional_auth)
+    job_id: int, db: Session = Depends(get_db), user_data: dict = Depends(optional_auth)
 ):
     """Get real-time job progress from database and ComfyUI"""
 
@@ -504,9 +493,12 @@ async def get_job_progress(
         "error_message": job.error_message,
         "created_at": job.created_at.isoformat() if job.created_at else None,
         "completed_at": job.completed_at.isoformat() if job.completed_at else None,
-        "estimated_remaining": comfyui_status.get("estimated_remaining", 0) if comfyui_status else 0,
-        "metadata": job.metadata_
+        "estimated_remaining": (
+            comfyui_status.get("estimated_remaining", 0) if comfyui_status else 0
+        ),
+        "metadata": job.metadata_,
     }
+
 
 if __name__ == "__main__":
     logger.info("Starting Secured Anime Production API with Database Integration")
@@ -515,5 +507,5 @@ if __name__ == "__main__":
         app,
         host="0.0.0.0",
         port=8331,  # Using different port to not conflict with existing API
-        log_level="info"
+        log_level="info",
     )

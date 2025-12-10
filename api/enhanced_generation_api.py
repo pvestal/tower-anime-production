@@ -4,27 +4,27 @@ Enhanced Generation API with UX improvements
 Integrates real-time preview, contextual progress, and smart error recovery
 """
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, BackgroundTasks
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
-from typing import Dict, Optional, List, Any
 import asyncio
-import uuid
 import logging
 import traceback
+import uuid
 from datetime import datetime
+from typing import Any, Dict, List, Optional
 
-from ux_enhancements import (
-    UXEnhancementManager, GenerationPhase, ProgressUpdate
-)
-from optimized_workflows import OptimizedWorkflows
-from gpu_optimization import GPUOptimizer
+from fastapi import BackgroundTasks, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from pydantic import BaseModel, Field
+from ux_enhancements import GenerationPhase, UXEnhancementManager
+
 from generation_cache import GenerationCache
+from gpu_optimization import GPUOptimizer
+from optimized_workflows import OptimizedWorkflows
 
 logger = logging.getLogger(__name__)
 
+
 class EnhancedGenerationRequest(BaseModel):
     """Enhanced generation request with UX preferences"""
+
     prompt: str = Field(..., description="Generation prompt")
     negative_prompt: Optional[str] = Field(None, description="Negative prompt")
     mode: str = Field("balanced", description="Generation mode: draft, balanced, quality")
@@ -35,14 +35,18 @@ class EnhancedGenerationRequest(BaseModel):
     # UX preferences
     enable_preview: bool = Field(True, description="Enable real-time preview")
     enable_auto_recovery: bool = Field(True, description="Enable automatic error recovery")
-    progress_detail_level: str = Field("detailed", description="Progress detail: minimal, normal, detailed")
+    progress_detail_level: str = Field(
+        "detailed", description="Progress detail: minimal, normal, detailed"
+    )
 
     # Batch options
     batch_size: Optional[int] = Field(1, description="Number of variations to generate")
     variations_seed_offset: Optional[int] = Field(1, description="Seed offset for variations")
 
+
 class GenerationStatus(BaseModel):
     """Generation job status with rich information"""
+
     job_id: str
     status: str  # queued, processing, completed, failed, recovering
     phase: Optional[str] = None
@@ -55,6 +59,7 @@ class GenerationStatus(BaseModel):
     recovery_attempted: bool = False
     created_at: datetime
     updated_at: datetime
+
 
 class EnhancedGenerationAPI:
     """Enhanced API with rich UX features"""
@@ -76,8 +81,7 @@ class EnhancedGenerationAPI:
 
         @self.app.post("/api/generate/enhanced")
         async def generate_enhanced(
-            request: EnhancedGenerationRequest,
-            background_tasks: BackgroundTasks
+            request: EnhancedGenerationRequest, background_tasks: BackgroundTasks
         ):
             """Enhanced generation endpoint with UX features"""
             job_id = str(uuid.uuid4())
@@ -89,22 +93,18 @@ class EnhancedGenerationAPI:
                 phase=GenerationPhase.INITIALIZING.name,
                 message="Preparing your generation...",
                 created_at=datetime.now(),
-                updated_at=datetime.now()
+                updated_at=datetime.now(),
             )
             self.active_jobs[job_id] = status
 
             # Start background generation
-            background_tasks.add_task(
-                self._process_generation,
-                job_id,
-                request
-            )
+            background_tasks.add_task(self._process_generation, job_id, request)
 
             return {
                 "job_id": job_id,
                 "status": "queued",
                 "message": "Generation queued successfully",
-                "websocket_url": f"/ws/generate/{job_id}"
+                "websocket_url": f"/ws/generate/{job_id}",
             }
 
         @self.app.websocket("/ws/generate/{job_id}")
@@ -116,10 +116,7 @@ class EnhancedGenerationAPI:
             # Send initial status
             if job_id in self.active_jobs:
                 status = self.active_jobs[job_id]
-                await websocket.send_json({
-                    "type": "status",
-                    "data": status.model_dump()
-                })
+                await websocket.send_json({"type": "status", "data": status.model_dump()})
 
             try:
                 # Keep connection alive and handle incoming messages
@@ -142,8 +139,7 @@ class EnhancedGenerationAPI:
 
         @self.app.post("/api/generate/batch")
         async def generate_batch(
-            requests: List[EnhancedGenerationRequest],
-            background_tasks: BackgroundTasks
+            requests: List[EnhancedGenerationRequest], background_tasks: BackgroundTasks
         ):
             """Batch generation with queue management"""
             job_ids = []
@@ -156,23 +152,19 @@ class EnhancedGenerationAPI:
                     status="queued",
                     message=f"Queued (position {len(job_ids) + 1} of {len(requests)})",
                     created_at=datetime.now(),
-                    updated_at=datetime.now()
+                    updated_at=datetime.now(),
                 )
                 self.active_jobs[job_id] = status
                 job_ids.append(job_id)
 
                 # Add to background queue
-                background_tasks.add_task(
-                    self._process_generation,
-                    job_id,
-                    request
-                )
+                background_tasks.add_task(self._process_generation, job_id, request)
 
             return {
                 "batch_id": str(uuid.uuid4()),
                 "job_ids": job_ids,
                 "total_jobs": len(job_ids),
-                "message": f"Batch of {len(job_ids)} generations queued"
+                "message": f"Batch of {len(job_ids)} generations queued",
             }
 
         @self.app.get("/api/generate/queue")
@@ -198,7 +190,7 @@ class EnhancedGenerationAPI:
                 "failed_today": len(failed),
                 "average_time_seconds": avg_time,
                 "estimated_wait_time": avg_time * len(queued),
-                "gpu_status": self.gpu_optimizer.get_gpu_stats().__dict__
+                "gpu_status": self.gpu_optimizer.get_gpu_stats().__dict__,
             }
 
     async def _process_generation(self, job_id: str, request: EnhancedGenerationRequest):
@@ -215,14 +207,16 @@ class EnhancedGenerationAPI:
                 if websocket:
                     try:
                         await websocket.send_text(message)
-                    except:
+                    except Exception:
                         pass
 
             # Start UX tracking
             await self.ux_manager.track_generation(
                 job_id=job_id,
                 websocket_send=send_update if request.enable_preview else None,
-                total_steps=20 if request.mode == "balanced" else (8 if request.mode == "draft" else 30)
+                total_steps=(
+                    20 if request.mode == "balanced" else (8 if request.mode == "draft" else 30)
+                ),
             )
 
             # Check cache first
@@ -237,11 +231,13 @@ class EnhancedGenerationAPI:
                 self.active_jobs[job_id].progress = 100.0
 
                 if websocket:
-                    await websocket.send_json({
-                        "type": "complete",
-                        "cached": True,
-                        "output_path": cached_result["output_path"]
-                    })
+                    await websocket.send_json(
+                        {
+                            "type": "complete",
+                            "cached": True,
+                            "output_path": cached_result["output_path"],
+                        }
+                    )
 
                 return
 
@@ -254,7 +250,7 @@ class EnhancedGenerationAPI:
                 width=params["width"],
                 height=params["height"],
                 batch_size=params.get("batch_size", 1),
-                generation_type="image"
+                generation_type="image",
             )
 
             if not self.gpu_optimizer.check_vram_availability(required_vram):
@@ -282,19 +278,21 @@ class EnhancedGenerationAPI:
                     prompt=request.prompt,
                     params=params,
                     output_path=output_paths[0],
-                    quality_score=8.0  # Would be calculated
+                    quality_score=8.0,  # Would be calculated
                 )
 
             # Send completion via WebSocket
             if websocket:
-                await websocket.send_json({
-                    "type": "complete",
-                    "output_paths": output_paths,
-                    "generation_time": (
-                        self.active_jobs[job_id].updated_at -
-                        self.active_jobs[job_id].created_at
-                    ).total_seconds()
-                })
+                await websocket.send_json(
+                    {
+                        "type": "complete",
+                        "output_paths": output_paths,
+                        "generation_time": (
+                            self.active_jobs[job_id].updated_at
+                            - self.active_jobs[job_id].created_at
+                        ).total_seconds(),
+                    }
+                )
 
         except Exception as e:
             logger.error(f"Generation failed for {job_id}: {e}")
@@ -309,15 +307,14 @@ class EnhancedGenerationAPI:
                 self.active_jobs[job_id].error = {
                     "type": "generation_error",
                     "message": str(e),
-                    "traceback": traceback.format_exc()
+                    "traceback": traceback.format_exc(),
                 }
                 self.active_jobs[job_id].updated_at = datetime.now()
 
                 if job_id in self.websocket_connections:
-                    await self.websocket_connections[job_id].send_json({
-                        "type": "error",
-                        "error": str(e)
-                    })
+                    await self.websocket_connections[job_id].send_json(
+                        {"type": "error", "error": str(e)}
+                    )
 
         finally:
             # Cleanup
@@ -341,16 +338,13 @@ class EnhancedGenerationAPI:
             "width": request.width,
             "height": request.height,
             "seed": request.seed,
-            "batch_size": request.batch_size
+            "batch_size": request.batch_size,
         }
 
         return params
 
     async def _execute_with_progress(
-        self,
-        job_id: str,
-        params: Dict[str, Any],
-        request: EnhancedGenerationRequest
+        self, job_id: str, params: Dict[str, Any], request: EnhancedGenerationRequest
     ) -> List[str]:
         """Execute generation with progress tracking"""
         output_paths = []
@@ -364,7 +358,7 @@ class EnhancedGenerationAPI:
                 job_id=job_id,
                 current_step=step + 1,
                 preview_path=None,  # Would get from ComfyUI
-                custom_message=None
+                custom_message=None,
             )
 
             # Update job status
@@ -391,7 +385,7 @@ class EnhancedGenerationAPI:
         job_id: str,
         request: EnhancedGenerationRequest,
         error_type: str,
-        context: Dict[str, Any]
+        context: Dict[str, Any],
     ):
         """Attempt automatic recovery from errors"""
         self.active_jobs[job_id].status = "recovering"
@@ -415,8 +409,9 @@ class EnhancedGenerationAPI:
             self.active_jobs[job_id].error = {
                 "type": "recovery_failed",
                 "original_error": error_type,
-                "recovery_error": str(e)
+                "recovery_error": str(e),
             }
+
 
 # Create the enhanced API instance
 enhanced_api = EnhancedGenerationAPI()
@@ -424,4 +419,5 @@ app = enhanced_api.app
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8329)

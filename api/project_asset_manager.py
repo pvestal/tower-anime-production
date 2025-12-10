@@ -3,18 +3,18 @@ Project-Aware Asset Management System
 Handles file organization, character consistency, and project-specific integration
 """
 
-import os
-import json
-import shutil
-from pathlib import Path
-from typing import Dict, List, Optional, Tuple
-from datetime import datetime
 import hashlib
+import json
 import logging
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker
+import shutil
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Optional
+
+from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
+
 
 class ProjectAssetManager:
     """Manages asset organization and project-specific file structure"""
@@ -37,7 +37,7 @@ class ProjectAssetManager:
             "output/final",
             "output/drafts",
             "metadata",
-            "workflows"
+            "workflows",
         ]
 
         for directory in directories:
@@ -52,9 +52,9 @@ class ProjectAssetManager:
                 "characters": {},
                 "scenes": {},
                 "style_guide": {},
-                "generation_history": []
+                "generation_history": [],
             }
-            with open(metadata_file, 'w') as f:
+            with open(metadata_file, "w") as f:
                 json.dump(initial_metadata, f, indent=2)
 
     def organize_generated_file(
@@ -65,7 +65,7 @@ class ProjectAssetManager:
         job_id: int,
         character_name: Optional[str] = None,
         scene_id: Optional[int] = None,
-        generation_metadata: Optional[Dict] = None
+        generation_metadata: Optional[Dict] = None,
     ) -> str:
         """
         Move and organize generated files into proper project structure
@@ -124,11 +124,11 @@ class ProjectAssetManager:
             "generated_at": timestamp,
             "file_size": dest_path.stat().st_size,
             "file_hash": self._calculate_file_hash(dest_path),
-            "generation_metadata": generation_metadata or {}
+            "generation_metadata": generation_metadata or {},
         }
 
-        metadata_path = dest_path.with_suffix('.json')
-        with open(metadata_path, 'w') as f:
+        metadata_path = dest_path.with_suffix(".json")
+        with open(metadata_path, "w") as f:
             json.dump(metadata, f, indent=2)
 
         # Update project metadata
@@ -150,12 +150,12 @@ class ProjectAssetManager:
 
         # Get existing character assets
         if char_dir.exists():
-            for ext in ['*.png', '*.jpg', '*.jpeg']:
+            for ext in ["*.png", "*.jpg", "*.jpeg"]:
                 reference_files.extend(char_dir.glob(ext))
 
         # Get dedicated reference images
         if ref_dir.exists():
-            for ext in ['*.png', '*.jpg', '*.jpeg']:
+            for ext in ["*.png", "*.jpg", "*.jpeg"]:
                 reference_files.extend(ref_dir.glob(ext))
 
         return [str(f) for f in reference_files]
@@ -164,12 +164,14 @@ class ProjectAssetManager:
         """Get project-specific style parameters"""
         metadata_file = self.project_root / "metadata" / "project_info.json"
         if metadata_file.exists():
-            with open(metadata_file, 'r') as f:
+            with open(metadata_file, "r") as f:
                 project_data = json.load(f)
                 return project_data.get("style_guide", {})
         return {}
 
-    def save_character_reference(self, character_name: str, reference_path: str, is_primary: bool = False):
+    def save_character_reference(
+        self, character_name: str, reference_path: str, is_primary: bool = False
+    ):
         """Save character reference image for consistency"""
         ref_dir = self.project_root / "references" / "character_refs" / character_name
         ref_dir.mkdir(parents=True, exist_ok=True)
@@ -186,19 +188,17 @@ class ProjectAssetManager:
 
         # Update project metadata
         metadata_file = self.project_root / "metadata" / "project_info.json"
-        with open(metadata_file, 'r') as f:
+        with open(metadata_file, "r") as f:
             project_data = json.load(f)
 
         if character_name not in project_data["characters"]:
             project_data["characters"][character_name] = {"references": []}
 
-        project_data["characters"][character_name]["references"].append({
-            "path": str(dest_path),
-            "is_primary": is_primary,
-            "added_at": timestamp
-        })
+        project_data["characters"][character_name]["references"].append(
+            {"path": str(dest_path), "is_primary": is_primary, "added_at": timestamp}
+        )
 
-        with open(metadata_file, 'w') as f:
+        with open(metadata_file, "w") as f:
             json.dump(project_data, f, indent=2)
 
         logger.info(f"Saved character reference: {character_name} -> {dest_path}")
@@ -216,7 +216,7 @@ class ProjectAssetManager:
         """Update project metadata with new asset information"""
         metadata_file = self.project_root / "metadata" / "project_info.json"
 
-        with open(metadata_file, 'r') as f:
+        with open(metadata_file, "r") as f:
             project_data = json.load(f)
 
         project_data["generation_history"].append(asset_metadata)
@@ -234,32 +234,37 @@ class ProjectAssetManager:
                 project_data["scenes"][scene_id] = {"assets": []}
             project_data["scenes"][scene_id]["assets"].append(asset_metadata["organized_path"])
 
-        with open(metadata_file, 'w') as f:
+        with open(metadata_file, "w") as f:
             json.dump(project_data, f, indent=2)
 
     def _store_asset_in_db(self, metadata: Dict):
         """Store asset metadata in database"""
         try:
-            query = text("""
+            query = text(
+                """
                 INSERT INTO anime_api.project_assets
                 (project_id, file_path, asset_type, character_name, scene_id,
                  generation_metadata, job_id, file_hash, file_size)
                 VALUES
                 (:project_id, :file_path, :asset_type, :character_name, :scene_id,
                  :generation_metadata, :job_id, :file_hash, :file_size)
-            """)
+            """
+            )
 
-            self.db_session.execute(query, {
-                'project_id': self.project_id,
-                'file_path': metadata['organized_path'],
-                'asset_type': metadata['asset_type'],
-                'character_name': metadata.get('character_name'),
-                'scene_id': metadata.get('scene_id'),
-                'generation_metadata': json.dumps(metadata.get('generation_metadata', {})),
-                'job_id': metadata['job_id'],
-                'file_hash': metadata['file_hash'],
-                'file_size': metadata['file_size']
-            })
+            self.db_session.execute(
+                query,
+                {
+                    "project_id": self.project_id,
+                    "file_path": metadata["organized_path"],
+                    "asset_type": metadata["asset_type"],
+                    "character_name": metadata.get("character_name"),
+                    "scene_id": metadata.get("scene_id"),
+                    "generation_metadata": json.dumps(metadata.get("generation_metadata", {})),
+                    "job_id": metadata["job_id"],
+                    "file_hash": metadata["file_hash"],
+                    "file_size": metadata["file_size"],
+                },
+            )
             self.db_session.commit()
 
         except Exception as e:
@@ -274,10 +279,7 @@ class CharacterConsistencyManager:
         self.asset_manager = project_asset_manager
 
     def prepare_character_workflow(
-        self,
-        character_name: str,
-        base_workflow: Dict,
-        scene_context: Optional[Dict] = None
+        self, character_name: str, base_workflow: Dict, scene_context: Optional[Dict] = None
     ) -> Dict:
         """
         Generate ComfyUI workflow with character-specific parameters
@@ -291,27 +293,29 @@ class CharacterConsistencyManager:
             Enhanced workflow with character consistency parameters
         """
         # Get character references
-        references = self.asset_manager.get_character_references(character_name)
+        self.asset_manager.get_character_references(character_name)
         style_guide = self.asset_manager.get_project_style_guide()
 
         # Clone base workflow
         enhanced_workflow = base_workflow.copy()
 
         # Add character-specific prompt enhancements (node 1 is positive prompt)
-        if '1' in enhanced_workflow and 'inputs' in enhanced_workflow['1']:
-            current_prompt = enhanced_workflow['1']['inputs']['text']
+        if "1" in enhanced_workflow and "inputs" in enhanced_workflow["1"]:
+            current_prompt = enhanced_workflow["1"]["inputs"]["text"]
 
             # Add character consistency tags
             character_tags = self._get_character_tags(character_name, style_guide)
             enhanced_prompt = f"{current_prompt}, {character_tags}"
 
-            enhanced_workflow['1']['inputs']['text'] = enhanced_prompt
+            enhanced_workflow["1"]["inputs"]["text"] = enhanced_prompt
 
         # Add negative prompt enhancements (node 2 is negative prompt)
-        if '2' in enhanced_workflow and 'inputs' in enhanced_workflow['2']:
-            current_negative = enhanced_workflow['2']['inputs']['text']
-            consistency_negative = "inconsistent character design, different character, character variation"
-            enhanced_workflow['2']['inputs']['text'] = f"{current_negative}, {consistency_negative}"
+        if "2" in enhanced_workflow and "inputs" in enhanced_workflow["2"]:
+            current_negative = enhanced_workflow["2"]["inputs"]["text"]
+            consistency_negative = (
+                "inconsistent character design, different character, character variation"
+            )
+            enhanced_workflow["2"]["inputs"]["text"] = f"{current_negative}, {consistency_negative}"
 
         # If we have reference images, we could add ControlNet or other consistency nodes here
         # This would require more complex workflow modification
@@ -326,11 +330,11 @@ class CharacterConsistencyManager:
 
         if character_name in style_guide:
             char_style = style_guide[character_name]
-            if 'hair_color' in char_style:
+            if "hair_color" in char_style:
                 base_tags += f", {char_style['hair_color']} hair"
-            if 'eye_color' in char_style:
+            if "eye_color" in char_style:
                 base_tags += f", {char_style['eye_color']} eyes"
-            if 'clothing_style' in char_style:
+            if "clothing_style" in char_style:
                 base_tags += f", {char_style['clothing_style']}"
 
         return base_tags

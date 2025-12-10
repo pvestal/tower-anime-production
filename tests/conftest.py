@@ -2,33 +2,27 @@
 Pytest configuration and fixtures for Tower Anime Production tests
 """
 
-import pytest
 import asyncio
-from pathlib import Path
-from unittest.mock import Mock, MagicMock, AsyncMock
 import json
-import numpy as np
+from unittest.mock import AsyncMock, Mock
 
+import numpy as np
+import pytest
 
 # Configure pytest-asyncio
-pytest_plugins = ('pytest_asyncio',)
+pytest_plugins = ("pytest_asyncio",)
 
 
 # Register custom markers
 def pytest_configure(config):
     """Register custom markers"""
-    config.addinivalue_line(
-        "markers", "performance: mark test as a performance benchmark"
-    )
-    config.addinivalue_line(
-        "markers", "e2e: mark test as an end-to-end test"
-    )
-    config.addinivalue_line(
-        "markers", "slow: mark test as slow running"
-    )
+    config.addinivalue_line("markers", "performance: mark test as a performance benchmark")
+    config.addinivalue_line("markers", "e2e: mark test as an end-to-end test")
+    config.addinivalue_line("markers", "slow: mark test as slow running")
 
 
 # ============= Mock Services =============
+
 
 @pytest.fixture
 def mock_comfyui():
@@ -45,16 +39,12 @@ def mock_comfyui():
         {"status": "processing", "progress": 25},
         {"status": "processing", "progress": 50},
         {"status": "processing", "progress": 75},
-        {"status": "completed", "progress": 100, "output": "/path/to/output.png"}
+        {"status": "completed", "progress": 100, "output": "/path/to/output.png"},
     ]
 
     # Mock history
     mock.get_history.return_value = {
-        "test-prompt-123": {
-            "outputs": {
-                "9": {"images": [{"filename": "test_output.png"}]}
-            }
-        }
+        "test-prompt-123": {"outputs": {"9": {"images": [{"filename": "test_output.png"}]}}}
     }
 
     return mock
@@ -93,13 +83,13 @@ def mock_echo_brain():
     mock.query.return_value = {
         "response": "Generated story content",
         "confidence": 0.95,
-        "model": "qwen2.5-coder:32b"
+        "model": "qwen2.5-coder:32b",
     }
 
     # Mock quality assessment
     mock.assess_quality.return_value = {
         "score": 0.88,
-        "feedback": "Good consistency, minor artifacts detected"
+        "feedback": "Good consistency, minor artifacts detected",
     }
 
     return mock
@@ -117,7 +107,7 @@ def mock_apple_music():
     # Mock track search
     mock.search_by_bpm.return_value = [
         {"id": "track1", "name": "Test Track", "bpm": 120, "artist": "Test Artist"},
-        {"id": "track2", "name": "Another Track", "bpm": 118, "artist": "Another Artist"}
+        {"id": "track2", "name": "Another Track", "bpm": 118, "artist": "Another Artist"},
     ]
 
     # Mock sync
@@ -127,6 +117,7 @@ def mock_apple_music():
 
 
 # ============= Sample Data =============
+
 
 @pytest.fixture
 def sample_project():
@@ -139,10 +130,10 @@ def sample_project():
         "bible": {
             "genre": "shounen",
             "themes": ["friendship", "adventure"],
-            "target_audience": "13-18"
+            "target_audience": "13-18",
         },
         "status": "active",
-        "created_at": "2025-12-10T00:00:00"
+        "created_at": "2025-12-10T00:00:00",
     }
 
 
@@ -158,11 +149,7 @@ def sample_character():
         "visual_description": "Spiky black hair, blue eyes, athletic build",
         "reference_image": "/path/to/reference.png",
         "embedding_data": [0.1] * 512,
-        "color_palette": {
-            "hair": [30, 30, 35],
-            "eyes": [100, 150, 200],
-            "skin": [250, 220, 190]
-        }
+        "color_palette": {"hair": [30, 30, 35], "eyes": [100, 150, 200], "skin": [250, 220, 190]},
     }
 
 
@@ -178,12 +165,7 @@ def sample_generation_job():
         "comfyui_prompt_id": "test-prompt-123",
         "output_path": None,
         "created_at": "2025-12-10T12:00:00",
-        "workflow_params": {
-            "model": "AOM3A1B",
-            "steps": 15,
-            "cfg_scale": 7.0,
-            "seed": 42
-        }
+        "workflow_params": {"model": "AOM3A1B", "steps": 15, "cfg_scale": 7.0, "seed": 42},
     }
 
 
@@ -202,6 +184,7 @@ def sample_embedding():
 
 
 # ============= File System =============
+
 
 @pytest.fixture
 def temp_project_dir(tmp_path):
@@ -234,14 +217,15 @@ def sample_workflow():
                     "model": ["4", 0],
                     "positive": ["6", 0],
                     "negative": ["7", 0],
-                    "latent_image": ["5", 0]
-                }
+                    "latent_image": ["5", 0],
+                },
             }
         }
     }
 
 
 # ============= API Client =============
+
 
 @pytest.fixture
 def api_base_url():
@@ -252,13 +236,11 @@ def api_base_url():
 @pytest.fixture
 def auth_headers():
     """Authentication headers for protected endpoints"""
-    return {
-        "Authorization": "Bearer test_token_12345",
-        "Content-Type": "application/json"
-    }
+    return {"Authorization": "Bearer test_token_12345", "Content-Type": "application/json"}
 
 
 # ============= Async Support =============
+
 
 @pytest.fixture
 def event_loop():
@@ -269,6 +251,7 @@ def event_loop():
 
 
 # ============= Performance Testing =============
+
 
 @pytest.fixture
 def benchmark_timer():
@@ -298,6 +281,7 @@ def benchmark_timer():
 
 
 # ============= WebSocket Testing =============
+
 
 @pytest.fixture
 async def mock_websocket():

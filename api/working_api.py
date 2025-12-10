@@ -2,16 +2,14 @@
 """
 Working Anime Production API - Minimal but functional
 """
+import sys
+import uuid
+from datetime import datetime
+
+import aiohttp
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from datetime import datetime
-import aiohttp
-import asyncio
-import uuid
-import json
-import os
-import sys
 
 # Add vram manager
 sys.path.append("/opt/tower-anime-production")
@@ -29,9 +27,11 @@ app.add_middleware(
 # In-memory job storage (for testing)
 jobs = {}
 
+
 class GenerateRequest(BaseModel):
     prompt: str
     type: str = "image"  # image or video
+
 
 class JobStatus(BaseModel):
     id: str
@@ -41,10 +41,12 @@ class JobStatus(BaseModel):
     output_path: str = None
     error: str = None
 
+
 @app.get("/health")
 async def health():
     """Health check endpoint"""
     return {"status": "healthy", "service": "working-anime-api"}
+
 
 @app.post("/api/anime/generate")
 async def generate(request: GenerateRequest):
@@ -59,24 +61,13 @@ async def generate(request: GenerateRequest):
     # Create simple workflow for image generation
     workflow = {
         "1": {
-            "inputs": {
-                "ckpt_name": "counterfeit_v3.safetensors"
-            },
-            "class_type": "CheckpointLoaderSimple"
+            "inputs": {"ckpt_name": "counterfeit_v3.safetensors"},
+            "class_type": "CheckpointLoaderSimple",
         },
-        "2": {
-            "inputs": {
-                "text": request.prompt,
-                "clip": ["1", 1]
-            },
-            "class_type": "CLIPTextEncode"
-        },
+        "2": {"inputs": {"text": request.prompt, "clip": ["1", 1]}, "class_type": "CLIPTextEncode"},
         "3": {
-            "inputs": {
-                "text": "blurry, low quality",
-                "clip": ["1", 1]
-            },
-            "class_type": "CLIPTextEncode"
+            "inputs": {"text": "blurry, low quality", "clip": ["1", 1]},
+            "class_type": "CLIPTextEncode",
         },
         "4": {
             "inputs": {
@@ -89,41 +80,25 @@ async def generate(request: GenerateRequest):
                 "model": ["1", 0],
                 "positive": ["2", 0],
                 "negative": ["3", 0],
-                "latent_image": ["5", 0]
+                "latent_image": ["5", 0],
             },
-            "class_type": "KSampler"
+            "class_type": "KSampler",
         },
         "5": {
-            "inputs": {
-                "width": 512,
-                "height": 512,
-                "batch_size": 1
-            },
-            "class_type": "EmptyLatentImage"
+            "inputs": {"width": 512, "height": 512, "batch_size": 1},
+            "class_type": "EmptyLatentImage",
         },
-        "6": {
-            "inputs": {
-                "samples": ["4", 0],
-                "vae": ["1", 2]
-            },
-            "class_type": "VAEDecode"
-        },
+        "6": {"inputs": {"samples": ["4", 0], "vae": ["1", 2]}, "class_type": "VAEDecode"},
         "7": {
-            "inputs": {
-                "filename_prefix": f"anime_{job_id}",
-                "images": ["6", 0]
-            },
-            "class_type": "SaveImage"
-        }
+            "inputs": {"filename_prefix": f"anime_{job_id}", "images": ["6", 0]},
+            "class_type": "SaveImage",
+        },
     }
 
     # Submit to ComfyUI
     try:
         async with aiohttp.ClientSession() as session:
-            payload = {
-                "prompt": workflow,
-                "client_id": job_id
-            }
+            payload = {"prompt": workflow, "client_id": job_id}
 
             async with session.post("http://localhost:8188/prompt", json=payload) as resp:
                 if resp.status == 200:
@@ -137,7 +112,7 @@ async def generate(request: GenerateRequest):
                         "progress": 0.1,
                         "stage": "submitted",
                         "prompt_id": prompt_id,
-                        "created_at": datetime.now().isoformat()
+                        "created_at": datetime.now().isoformat(),
                     }
 
                     return {"job_id": job_id, "status": "submitted"}
@@ -147,6 +122,7 @@ async def generate(request: GenerateRequest):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/api/anime/generation/{job_id}/status")
 async def get_status(job_id: str):
@@ -177,7 +153,9 @@ async def get_status(job_id: str):
                                     if "images" in node_output:
                                         images = node_output["images"]
                                         if images:
-                                            job["output_path"] = f"/mnt/1TB-storage/ComfyUI/output/{images[0]['filename']}"
+                                            job["output_path"] = (
+                                                f"/mnt/1TB-storage/ComfyUI/output/{images[0]['filename']}"
+                                            )
                                             break
                             else:
                                 # Still processing
@@ -188,11 +166,14 @@ async def get_status(job_id: str):
 
     return JobStatus(**job)
 
+
 @app.get("/api/anime/jobs")
 async def list_jobs():
     """List all jobs"""
     return list(jobs.values())
 
+
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8330)

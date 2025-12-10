@@ -4,8 +4,7 @@ Integration script to add character consistency system to main API
 This script modifies the main.py file to include the new endpoints
 """
 
-import os
-import sys
+
 
 def integrate_consistency_system():
     """Integrate the character consistency system into main.py"""
@@ -13,7 +12,7 @@ def integrate_consistency_system():
     main_py_path = "/opt/tower-anime-production/api/main.py"
 
     # Read the current main.py
-    with open(main_py_path, 'r') as f:
+    with open(main_py_path, "r") as f:
         content = f.read()
 
     # Check if already integrated
@@ -41,12 +40,12 @@ except ImportError as e:
 """
 
     # Add imports after the existing imports
-    lines = content.split('\n')
+    lines = content.split("\n")
 
     # Find where to insert imports (after other imports)
     import_insert_line = -1
     for i, line in enumerate(lines):
-        if line.startswith('from datetime import'):
+        if line.startswith("from datetime import"):
             import_insert_line = i + 1
             break
 
@@ -83,21 +82,26 @@ if CONSISTENCY_AVAILABLE:
         if "class ProductionJob(Base):" in line:
             # Find the end of the class
             for j in range(i, len(lines)):
-                if j + 1 < len(lines) and lines[j+1].strip() and not lines[j+1].startswith(' ') and not lines[j+1].startswith('\t'):
+                if (
+                    j + 1 < len(lines)
+                    and lines[j + 1].strip()
+                    and not lines[j + 1].startswith(" ")
+                    and not lines[j + 1].startswith("\t")
+                ):
                     lines.insert(j, model_updates)
                     break
             break
 
     # Write the updated content
-    updated_content = '\n'.join(lines)
+    updated_content = "\n".join(lines)
 
     # Create backup
     backup_path = f"{main_py_path}.backup_before_consistency"
-    with open(backup_path, 'w') as f:
+    with open(backup_path, "w") as f:
         f.write(content)
 
     # Write updated version
-    with open(main_py_path, 'w') as f:
+    with open(main_py_path, "w") as f:
         f.write(updated_content)
 
     print(f"✅ Character consistency system integrated into {main_py_path}")
@@ -111,9 +115,9 @@ if CONSISTENCY_AVAILABLE:
     print("- GET /api/anime/jobs/{id}/consistency-info - Get job consistency info")
     print("- GET /api/anime/workflow-templates - List workflow templates")
 
+
 def test_database_integration():
     """Test that database changes are working"""
-    import psql
 
     try:
         # Test query to verify tables exist
@@ -130,6 +134,7 @@ def test_database_integration():
     except Exception as e:
         print(f"⚠️  Database test failed: {e}")
         print("Please ensure the database migration was applied successfully")
+
 
 if __name__ == "__main__":
     print("🚀 Integrating Character Consistency System...")
