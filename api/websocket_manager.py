@@ -7,12 +7,12 @@ import asyncio
 import json
 import logging
 import time
-from typing import Dict, Set, Optional, Any
 from datetime import datetime
+from typing import Dict, Optional, Set
 
-from fastapi import WebSocket, WebSocketDisconnect
 import psycopg2
 import redis
+from fastapi import WebSocket
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -47,10 +47,10 @@ class ConnectionManager:
 
         # Database connection for progress sync
         self.db_config = {
-            'host': 'localhost',
-            'database': 'anime_production',
-            'user': 'patrick',
-            'password': 'tower_echo_brain_secret_key_2025'
+            "host": "localhost",
+            "database": "anime_production",
+            "user": "patrick",
+            "password": "tower_echo_brain_secret_key_2025",
         }
 
     async def connect(self, websocket: WebSocket, job_id: str, user_info: Optional[dict] = None):
@@ -76,19 +76,24 @@ class ConnectionManager:
             "job_id": job_id,
             "user_info": user_info or {},
             "connected_at": datetime.now().isoformat(),
-            "last_ping": time.time()
+            "last_ping": time.time(),
         }
 
-        logger.info(f"WebSocket connected for job {job_id}. Total connections: {len(self.connections[job_id])}")
+        logger.info(
+            f"WebSocket connected for job {job_id}. Total connections: {len(self.connections[job_id])}"
+        )
 
         # Send initial connection confirmation
-        await self.send_to_connection(websocket, {
-            "type": "connection",
-            "status": "connected",
-            "job_id": job_id,
-            "message": "WebSocket connection established",
-            "timestamp": datetime.now().isoformat()
-        })
+        await self.send_to_connection(
+            websocket,
+            {
+                "type": "connection",
+                "status": "connected",
+                "job_id": job_id,
+                "message": "WebSocket connection established",
+                "timestamp": datetime.now().isoformat(),
+            },
+        )
 
     async def disconnect(self, websocket: WebSocket):
         """
@@ -160,11 +165,20 @@ class ConnectionManager:
             await self.disconnect(websocket)
 
         if disconnected_connections:
-            logger.info(f"Cleaned up {len(disconnected_connections)} disconnected WebSockets for job {job_id}")
+            logger.info(
+                f"Cleaned up {len(disconnected_connections)} disconnected WebSockets for job {job_id}"
+            )
 
-    async def send_progress_update(self, job_id: str, progress: int, status: str,
-                                  estimated_remaining: int = 0, output_path: Optional[str] = None,
-                                  message: str = "", error: Optional[str] = None):
+    async def send_progress_update(
+        self,
+        job_id: str,
+        progress: int,
+        status: str,
+        estimated_remaining: int = 0,
+        output_path: Optional[str] = None,
+        message: str = "",
+        error: Optional[str] = None,
+    ):
         """
         Send standardized progress update to all job connections.
 
@@ -184,7 +198,7 @@ class ConnectionManager:
             "progress": max(0, min(100, progress)),  # Clamp to 0-100
             "estimated_remaining": estimated_remaining,
             "message": message,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
         }
 
         # Add optional fields if provided
@@ -197,7 +211,9 @@ class ConnectionManager:
         await self.broadcast_to_job(job_id, progress_data)
 
         # Sync to database
-        await self.sync_progress_to_db(job_id, progress, status, estimated_remaining, output_path, error)
+        await self.sync_progress_to_db(
+            job_id, progress, status, estimated_remaining, output_path, error
+        )
 
         # Publish to Redis for other services if available
         if self.redis_client:
@@ -206,8 +222,15 @@ class ConnectionManager:
             except Exception as e:
                 logger.warning(f"Failed to publish to Redis: {e}")
 
-    async def sync_progress_to_db(self, job_id: str, progress: int, status: str,
-                                 estimated_remaining: int, output_path: Optional[str], error: Optional[str]):
+    async def sync_progress_to_db(
+        self,
+        job_id: str,
+        progress: int,
+        status: str,
+        estimated_remaining: int,
+        output_path: Optional[str],
+        error: Optional[str],
+    ):
         """
         Synchronize progress to database for persistence.
 
@@ -241,15 +264,17 @@ class ConnectionManager:
                 WHERE id = %s
             """
 
-            metadata_update = json.dumps({
-                "progress": progress,
-                "estimated_remaining": estimated_remaining,
-                "last_updated": datetime.now().isoformat()
-            })
+            metadata_update = json.dumps(
+                {
+                    "progress": progress,
+                    "estimated_remaining": estimated_remaining,
+                    "last_updated": datetime.now().isoformat(),
+                }
+            )
 
-            cursor.execute(update_query, (
-                status, metadata_update, error, output_path, status, job_id_int
-            ))
+            cursor.execute(
+                update_query, (status, metadata_update, error, output_path, status, job_id_int)
+            )
 
             conn.commit()
             cursor.close()
@@ -285,25 +310,24 @@ class ConnectionManager:
         # Get connection details
         connection_details = {}
         for job_id, connections in self.connections.items():
-            connection_details[job_id] = {
-                "connection_count": len(connections),
-                "connections": []
-            }
+            connection_details[job_id] = {"connection_count": len(connections), "connections": []}
 
             for websocket in connections:
                 if websocket in self.connection_metadata:
                     metadata = self.connection_metadata[websocket]
-                    connection_details[job_id]["connections"].append({
-                        "connected_at": metadata["connected_at"],
-                        "user_info": metadata.get("user_info", {}),
-                        "last_ping": metadata.get("last_ping", 0)
-                    })
+                    connection_details[job_id]["connections"].append(
+                        {
+                            "connected_at": metadata["connected_at"],
+                            "user_info": metadata.get("user_info", {}),
+                            "last_ping": metadata.get("last_ping", 0),
+                        }
+                    )
 
         return {
             "total_connections": total_connections,
             "jobs_with_connections": jobs_with_connections,
             "connection_details": connection_details,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
         }
 
     async def cleanup_stale_connections(self, timeout_seconds: int = 300):
@@ -322,7 +346,9 @@ class ConnectionManager:
                 stale_connections.append(websocket)
 
         for websocket in stale_connections:
-            logger.info(f"Cleaning up stale connection for job {self.connection_metadata[websocket]['job_id']}")
+            logger.info(
+                f"Cleaning up stale connection for job {self.connection_metadata[websocket]['job_id']}"
+            )
             await self.disconnect(websocket)
 
         if stale_connections:
@@ -332,10 +358,7 @@ class ConnectionManager:
         """
         Send ping to all connections to check for stale ones.
         """
-        ping_message = {
-            "type": "ping",
-            "timestamp": datetime.now().isoformat()
-        }
+        ping_message = {"type": "ping", "timestamp": datetime.now().isoformat()}
 
         for job_id in self.connections.keys():
             await self.broadcast_to_job(job_id, ping_message)

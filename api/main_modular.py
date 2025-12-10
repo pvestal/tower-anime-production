@@ -5,26 +5,19 @@ Orchestrates ComfyUI generation with proper job tracking and file management
 Fixes the broken job status API and provides actual working progress tracking
 """
 
-import asyncio
 import logging
-import os
-from datetime import datetime
-from typing import Dict, Any, Optional, List
-from pathlib import Path
-
-from fastapi import FastAPI, HTTPException, BackgroundTasks
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
-import uvicorn
-
 # Import our modular components
 import sys
-sys.path.append('/opt/tower-anime-production')
-from modules import (
-    ComfyUIConnector, JobManager, WorkflowGenerator, DatabaseManager,
-    StatusMonitor, FileManager
-)
-from modules.job_manager import JobType, JobStatus
+from typing import Any, Dict, Optional
+
+import uvicorn
+from fastapi import BackgroundTasks, FastAPI, HTTPException
+from pydantic import BaseModel, Field
+
+sys.path.append("/opt/tower-anime-production")
+from modules import (ComfyUIConnector, DatabaseManager, FileManager, JobManager, StatusMonitor,
+                     WorkflowGenerator)
+from modules.job_manager import JobStatus, JobType
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -43,6 +36,7 @@ comfyui_connector = None
 COMFYUI_URL = "http://192.168.50.135:8188"
 OUTPUT_BASE_PATH = "/mnt/1TB-storage/ComfyUI/output"
 
+
 # Request models
 class ImageRequest(BaseModel):
     prompt: str = Field(..., description="Text prompt for image generation")
@@ -53,6 +47,7 @@ class ImageRequest(BaseModel):
     model: Optional[str] = Field(None, description="Model to use")
     negative_prompt: Optional[str] = Field("", description="Negative prompt")
 
+
 class VideoRequest(BaseModel):
     prompt: str = Field(..., description="Text prompt for video generation")
     duration: int = Field(2, ge=1, le=10, description="Duration in seconds")
@@ -62,9 +57,11 @@ class VideoRequest(BaseModel):
     steps: int = Field(20, ge=1, le=50, description="Generation steps")
     model: Optional[str] = Field(None, description="Model to use")
 
+
 # Global instances
 file_manager = None
 status_monitor = None
+
 
 @app.on_event("startup")
 async def startup_event():
@@ -99,6 +96,7 @@ async def startup_event():
         logger.error(f"❌ Startup failed: {e}")
         raise
 
+
 @app.post("/api/anime/generate/image")
 async def generate_image(request: ImageRequest, background_tasks: BackgroundTasks):
     """Generate a single image"""
@@ -114,7 +112,7 @@ async def generate_image(request: ImageRequest, background_tasks: BackgroundTask
             steps=request.steps,
             cfg=request.cfg,
             model=request.model,
-            negative_prompt=request.negative_prompt
+            negative_prompt=request.negative_prompt,
         )
 
         # Submit to ComfyUI in background
@@ -124,12 +122,13 @@ async def generate_image(request: ImageRequest, background_tasks: BackgroundTask
             "job_id": job.id,
             "status": job.status.value,
             "message": "Image generation job created",
-            "estimated_time": "30-60 seconds"
+            "estimated_time": "30-60 seconds",
         }
 
     except Exception as e:
         logger.error(f"Image generation failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/api/anime/generate/video")
 async def generate_video(request: VideoRequest, background_tasks: BackgroundTasks):
@@ -146,7 +145,7 @@ async def generate_video(request: VideoRequest, background_tasks: BackgroundTask
             width=request.width,
             height=request.height,
             steps=request.steps,
-            model=request.model
+            model=request.model,
         )
 
         # Submit to ComfyUI in background
@@ -156,12 +155,13 @@ async def generate_video(request: VideoRequest, background_tasks: BackgroundTask
             "job_id": job.id,
             "status": job.status.value,
             "message": "Video generation job created",
-            "estimated_time": f"{request.duration * 30}s - {request.duration * 60}s"
+            "estimated_time": f"{request.duration * 30}s - {request.duration * 60}s",
         }
 
     except Exception as e:
         logger.error(f"Video generation failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/api/anime/jobs/{job_id}")
 async def get_job_status(job_id: int):
@@ -178,13 +178,19 @@ async def get_job_status(job_id: int):
         estimated_completion = await status_monitor.estimate_completion(job_id)
 
         # Find output files
-        output_files = file_manager.get_output_files(job_id) if hasattr(file_manager, 'get_output_files') else []
+        output_files = (
+            file_manager.get_output_files(job_id)
+            if hasattr(file_manager, "get_output_files")
+            else []
+        )
 
         response = {
             **job.to_dict(),
             "progress": progress.__dict__ if progress else None,
-            "estimated_completion": estimated_completion.isoformat() if estimated_completion else None,
-            "output_files": output_files
+            "estimated_completion": (
+                estimated_completion.isoformat() if estimated_completion else None
+            ),
+            "output_files": output_files,
         }
 
         return response
@@ -194,6 +200,7 @@ async def get_job_status(job_id: int):
     except Exception as e:
         logger.error(f"Failed to get job status: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/api/anime/jobs")
 async def list_jobs(status: Optional[str] = None, limit: int = 50):
@@ -208,16 +215,14 @@ async def list_jobs(status: Optional[str] = None, limit: int = 50):
 
         jobs = job_manager.list_jobs(status_filter, limit)
 
-        return {
-            "jobs": [job.to_dict() for job in jobs],
-            "total": len(jobs)
-        }
+        return {"jobs": [job.to_dict() for job in jobs], "total": len(jobs)}
 
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Failed to list jobs: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/api/anime/queue")
 async def get_queue_status():
@@ -231,14 +236,14 @@ async def get_queue_status():
 
         # Get recent files if available
         recent_files = []
-        if hasattr(file_manager, 'get_latest_files'):
+        if hasattr(file_manager, "get_latest_files"):
             recent_files = file_manager.get_latest_files(5)
 
         return {
             "queue_statistics": queue_stats,
             "job_statistics": job_stats,
             "recent_files": recent_files,
-            "system_status": "operational"
+            "system_status": "operational",
         }
 
     except Exception as e:
@@ -247,8 +252,9 @@ async def get_queue_status():
             "queue_statistics": {"error": str(e)},
             "job_statistics": job_manager.get_statistics() if job_manager else {},
             "recent_files": [],
-            "system_status": "degraded"
+            "system_status": "degraded",
         }
+
 
 async def submit_job_to_comfyui(job_id: int, workflow: Dict[str, Any]):
     """Background task to submit job to ComfyUI"""
@@ -262,11 +268,7 @@ async def submit_job_to_comfyui(job_id: int, workflow: Dict[str, Any]):
 
             if prompt_id:
                 # Update job with ComfyUI ID
-                job_manager.update_job_status(
-                    job_id,
-                    JobStatus.PROCESSING,
-                    comfyui_id=prompt_id
-                )
+                job_manager.update_job_status(job_id, JobStatus.PROCESSING, comfyui_id=prompt_id)
 
                 # Get job type for monitoring
                 job = job_manager.get_job(job_id)
@@ -279,19 +281,14 @@ async def submit_job_to_comfyui(job_id: int, workflow: Dict[str, Any]):
             else:
                 # Submission failed
                 job_manager.update_job_status(
-                    job_id,
-                    JobStatus.FAILED,
-                    error_message="Failed to submit to ComfyUI"
+                    job_id, JobStatus.FAILED, error_message="Failed to submit to ComfyUI"
                 )
                 logger.error(f"❌ Job {job_id} failed to submit to ComfyUI")
 
     except Exception as e:
-        job_manager.update_job_status(
-            job_id,
-            JobStatus.FAILED,
-            error_message=str(e)
-        )
+        job_manager.update_job_status(job_id, JobStatus.FAILED, error_message=str(e))
         logger.error(f"❌ Job {job_id} background submission failed: {e}")
+
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -303,11 +300,6 @@ async def shutdown_event():
     except Exception as e:
         logger.error(f"Shutdown error: {e}")
 
+
 if __name__ == "__main__":
-    uvicorn.run(
-        "main_modular:app",
-        host="0.0.0.0",
-        port=8328,
-        reload=False,
-        log_level="info"
-    )
+    uvicorn.run("main_modular:app", host="0.0.0.0", port=8328, reload=False, log_level="info")

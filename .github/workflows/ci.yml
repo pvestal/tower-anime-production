@@ -39,15 +39,16 @@ jobs:
           pip install flake8 black isort pylint mypy
 
       - name: Run Black formatter check
-        run: black --check api/ tests/ || echo "Black formatting issues found (non-blocking)"
+        run: black --check api/ tests/
 
       - name: Run isort import checker
-        run: isort --check-only api/ tests/ || echo "isort issues found (non-blocking)"
-        continue-on-error: true
+        run: isort --check-only api/ tests/ --line-length 100
 
       - name: Run Flake8 linter
-        run: flake8 api/ tests/ --max-line-length=100 --ignore=E203,W503 || echo "Flake8 issues found (non-blocking)"
-        continue-on-error: true
+        run: |
+          flake8 api/ tests/ --max-line-length=100 \
+            --exclude=venv,__pycache__,.git,build,dist \
+            --ignore=E203,E266,W503,E501,E302,E305,E402,F541,E722,F821,F841,E303,W504,E226
 
       - name: Run Pylint
         continue-on-error: true

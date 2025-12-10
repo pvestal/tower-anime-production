@@ -3,10 +3,11 @@ Mock Character Consistency Engine for Testing
 Provides the expected interface for unit tests
 """
 
-import numpy as np
-from typing import Dict, List, Any, Optional
 import json
 from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+import numpy as np
 
 
 class CharacterConsistencyEngine:
@@ -30,7 +31,9 @@ class CharacterConsistencyEngine:
         np.random.seed(hash(str(image_or_path)) % 2**32)
         return np.random.randn(512)
 
-    def calculate_consistency_score(self, embedding1: List[float], embedding2: List[float]) -> float:
+    def calculate_consistency_score(
+        self, embedding1: List[float], embedding2: List[float]
+    ) -> float:
         """Calculate cosine similarity between embeddings"""
         if embedding1 is None or embedding2 is None:
             raise ValueError("Embeddings cannot be None")
@@ -65,7 +68,7 @@ class CharacterConsistencyEngine:
             "line_weight": 2.0,
             "color_saturation": 0.8,
             "shading_type": "cel",
-            "detail_level": "medium"
+            "detail_level": "medium",
         }
 
     def extract_color_palette(self, image) -> Dict[str, List[int]]:
@@ -78,7 +81,7 @@ class CharacterConsistencyEngine:
             "hair_color": [30, 30, 35],
             "eye_color": [100, 150, 200],
             "skin_tone": [250, 220, 190],
-            "clothing_primary": [50, 50, 150]
+            "clothing_primary": [50, 50, 150],
         }
 
     def ensure_consistency(self, character_id: int, generation_params: Dict) -> Dict:
@@ -110,7 +113,9 @@ class CharacterConsistencyEngine:
         """Evaluate if score meets threshold"""
         return score >= threshold
 
-    def batch_consistency_check(self, reference: List[float], candidates: List[List[float]]) -> List[float]:
+    def batch_consistency_check(
+        self, reference: List[float], candidates: List[List[float]]
+    ) -> List[float]:
         """Check consistency for multiple candidates"""
         scores = []
         for candidate in candidates:
@@ -136,7 +141,7 @@ class CharacterConsistencyEngine:
         modified_workflow["consistency_node"] = {
             "type": "character_consistency",
             "character_id": character_id,
-            "reference": self.reference_embeddings.get(character_id)
+            "reference": self.reference_embeddings.get(character_id),
         }
 
         return modified_workflow
@@ -148,15 +153,15 @@ class CharacterConsistencyEngine:
             "reference_embeddings": {str(k): v for k, v in self.reference_embeddings.items()},
             "style_templates": {str(k): v for k, v in self.style_templates.items()},
             "pose_library": {str(k): v for k, v in self.pose_library.items()},
-            "character_versions": {str(k): v for k, v in self.character_versions.items()}
+            "character_versions": {str(k): v for k, v in self.character_versions.items()},
         }
 
-        with open(path, 'w') as f:
+        with open(path, "w") as f:
             json.dump(state, f, indent=2, default=str)
 
     def load_state(self, path: Path):
         """Load engine state from file"""
-        with open(path, 'r') as f:
+        with open(path, "r") as f:
             state = json.load(f)
 
         # Convert string keys back to integers if possible

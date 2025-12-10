@@ -4,23 +4,24 @@ User Experience Enhancement Module for Tower Anime Production
 Provides real-time preview streaming, contextual progress, and smart error recovery
 """
 
-import asyncio
 import base64
 import io
 import json
 import logging
 import time
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Optional, Any, Callable
+from typing import Any, Callable, Dict, Optional
+
 from PIL import Image
-import numpy as np
 
 logger = logging.getLogger(__name__)
 
+
 class GenerationPhase(Enum):
     """Phases of generation with user-friendly descriptions"""
+
     INITIALIZING = ("Preparing workspace", 0, 5)
     LOADING_MODELS = ("Loading AI models", 5, 15)
     PROCESSING_PROMPT = ("Understanding your request", 15, 25)
@@ -36,9 +37,11 @@ class GenerationPhase(Enum):
         self.start_percent = start_percent
         self.end_percent = end_percent
 
+
 @dataclass
 class ProgressUpdate:
     """Rich progress update with contextual information"""
+
     job_id: str
     phase: GenerationPhase
     current_step: int
@@ -62,9 +65,10 @@ class ProgressUpdate:
             "percentage": self.percentage,
             "preview_image": self.preview_image,
             "estimated_time_remaining": self.estimated_time_remaining,
-            "metadata": self.metadata or {}
+            "metadata": self.metadata or {},
         }
         return json.dumps(data)
+
 
 class PreviewGenerator:
     """Generates real-time preview images during generation"""
@@ -74,9 +78,7 @@ class PreviewGenerator:
         self.preview_cache = {}
 
     async def generate_preview_from_latents(
-        self,
-        latents_path: Optional[str] = None,
-        target_size: tuple = (256, 256)
+        self, latents_path: Optional[str] = None, target_size: tuple = (256, 256)
     ) -> Optional[str]:
         """Generate a preview image from latents or intermediate output"""
         try:
@@ -89,7 +91,7 @@ class PreviewGenerator:
 
                 # Convert to base64
                 buffer = io.BytesIO()
-                img.save(buffer, format='JPEG', quality=60)
+                img.save(buffer, format="JPEG", quality=60)
                 img_str = base64.b64encode(buffer.getvalue()).decode()
 
                 return f"data:image/jpeg;base64,{img_str}"
@@ -98,15 +100,12 @@ class PreviewGenerator:
             return None
 
     async def create_progress_visualization(
-        self,
-        percentage: float,
-        phase: GenerationPhase,
-        size: tuple = (256, 64)
+        self, percentage: float, phase: GenerationPhase, size: tuple = (256, 64)
     ) -> str:
         """Create a visual progress bar as an image"""
         try:
             # Create progress bar image
-            img = Image.new('RGB', size, color='#1a1a1a')
+            img = Image.new("RGB", size, color="#1a1a1a")
             pixels = img.load()
 
             # Draw progress bar
@@ -121,13 +120,14 @@ class PreviewGenerator:
 
             # Convert to base64
             buffer = io.BytesIO()
-            img.save(buffer, format='JPEG', quality=80)
+            img.save(buffer, format="JPEG", quality=80)
             img_str = base64.b64encode(buffer.getvalue()).decode()
 
             return f"data:image/jpeg;base64,{img_str}"
         except Exception as e:
             logger.error(f"Failed to create progress visualization: {e}")
             return ""
+
 
 class ContextualProgressTracker:
     """Tracks generation progress with contextual messages"""
@@ -144,7 +144,7 @@ class ContextualProgressTracker:
             "total_steps": total_steps,
             "phase": GenerationPhase.INITIALIZING,
             "start_time": time.time(),
-            "phase_times": {}
+            "phase_times": {},
         }
         self.start_times[job_id] = time.time()
 
@@ -157,8 +157,9 @@ class ContextualProgressTracker:
                 phase_key = old_phase.name
                 if phase_key not in self.job_progress[job_id]["phase_times"]:
                     self.job_progress[job_id]["phase_times"][phase_key] = 0
-                self.job_progress[job_id]["phase_times"][phase_key] += \
-                    time.time() - self.job_progress[job_id].get("phase_start", time.time())
+                self.job_progress[job_id]["phase_times"][
+                    phase_key
+                ] += time.time() - self.job_progress[job_id].get("phase_start", time.time())
 
             self.job_progress[job_id]["phase"] = phase
             self.job_progress[job_id]["phase_start"] = time.time()
@@ -186,7 +187,7 @@ class ContextualProgressTracker:
         job_id: str,
         current_step: int,
         custom_message: Optional[str] = None,
-        preview_path: Optional[str] = None
+        preview_path: Optional[str] = None,
     ) -> ProgressUpdate:
         """Create a rich progress update with all context"""
         if job_id not in self.job_progress:
@@ -228,8 +229,8 @@ class ContextualProgressTracker:
             estimated_time_remaining=time_remaining,
             metadata={
                 "elapsed_time": time.time() - self.start_times[job_id],
-                "phase_times": progress.get("phase_times", {})
-            }
+                "phase_times": progress.get("phase_times", {}),
+            },
         )
 
     def _determine_phase(self, percentage: float) -> GenerationPhase:
@@ -248,48 +249,46 @@ class ContextualProgressTracker:
         messages = {
             GenerationPhase.INITIALIZING: [
                 "Setting up your creative workspace...",
-                "Preparing generation environment..."
+                "Preparing generation environment...",
             ],
             GenerationPhase.LOADING_MODELS: [
                 "Loading artistic AI models...",
-                "Preparing character generation models..."
+                "Preparing character generation models...",
             ],
             GenerationPhase.PROCESSING_PROMPT: [
                 "Analyzing your creative vision...",
-                "Understanding character requirements..."
+                "Understanding character requirements...",
             ],
             GenerationPhase.GENERATING_LATENTS: [
                 "Composing initial character structure...",
-                "Building foundational elements..."
+                "Building foundational elements...",
             ],
             GenerationPhase.REFINING_DETAILS: [
                 "Adding facial features and expressions...",
                 "Refining character proportions...",
-                "Enhancing clothing and accessories..."
+                "Enhancing clothing and accessories...",
             ],
             GenerationPhase.APPLYING_STYLE: [
                 "Applying anime art style...",
                 "Adding artistic finishing touches...",
-                "Enhancing colors and shading..."
+                "Enhancing colors and shading...",
             ],
             GenerationPhase.FINALIZING: [
                 "Producing high-quality output...",
-                "Applying final quality enhancements..."
+                "Applying final quality enhancements...",
             ],
             GenerationPhase.SAVING: [
                 "Saving your masterpiece...",
-                "Organizing generated assets..."
+                "Organizing generated assets...",
             ],
-            GenerationPhase.COMPLETE: [
-                "Your character is ready!",
-                "Generation successful!"
-            ]
+            GenerationPhase.COMPLETE: ["Your character is ready!", "Generation successful!"],
         }
 
         phase_messages = messages.get(phase, ["Processing..."])
         # Select message based on progress within phase
         index = min(int(percentage / 10) % len(phase_messages), len(phase_messages) - 1)
         return phase_messages[index]
+
 
 class SmartErrorRecovery:
     """Intelligent error recovery with user-friendly suggestions"""
@@ -301,7 +300,7 @@ class SmartErrorRecovery:
             "model not found": self._handle_model_error,
             "invalid prompt": self._handle_prompt_error,
             "timeout": self._handle_timeout_error,
-            "connection refused": self._handle_connection_error
+            "connection refused": self._handle_connection_error,
         }
 
         self.recovery_strategies = {
@@ -309,14 +308,10 @@ class SmartErrorRecovery:
             "model": ["download_model", "use_alternative_model", "wait_and_retry"],
             "prompt": ["sanitize_prompt", "provide_examples", "use_defaults"],
             "timeout": ["increase_timeout", "use_faster_mode", "retry_later"],
-            "connection": ["restart_service", "check_network", "use_fallback"]
+            "connection": ["restart_service", "check_network", "use_fallback"],
         }
 
-    async def handle_error(
-        self,
-        error: Exception,
-        context: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    async def handle_error(self, error: Exception, context: Dict[str, Any]) -> Dict[str, Any]:
         """Handle errors intelligently with recovery suggestions"""
         error_str = str(error).lower()
 
@@ -328,7 +323,9 @@ class SmartErrorRecovery:
         # Default error handling
         return await self._handle_generic_error(error, context)
 
-    async def _handle_memory_error(self, error: Exception, context: Dict[str, Any]) -> Dict[str, Any]:
+    async def _handle_memory_error(
+        self, error: Exception, context: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Handle out of memory errors"""
         current_resolution = context.get("width", 1024), context.get("height", 1024)
 
@@ -358,10 +355,12 @@ class SmartErrorRecovery:
             "suggestions": suggestions,
             "auto_fix_available": bool(auto_fix_params),
             "auto_fix_params": auto_fix_params,
-            "retry_with_fix": True
+            "retry_with_fix": True,
         }
 
-    async def _handle_model_error(self, error: Exception, context: Dict[str, Any]) -> Dict[str, Any]:
+    async def _handle_model_error(
+        self, error: Exception, context: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Handle model not found errors"""
         model_name = context.get("model", "unknown")
 
@@ -371,14 +370,16 @@ class SmartErrorRecovery:
             "suggestions": [
                 "Use the default model instead",
                 "Wait for model to download",
-                "Choose a different art style"
+                "Choose a different art style",
             ],
             "auto_fix_available": True,
             "auto_fix_params": {"model": "default"},
-            "retry_with_fix": True
+            "retry_with_fix": True,
         }
 
-    async def _handle_prompt_error(self, error: Exception, context: Dict[str, Any]) -> Dict[str, Any]:
+    async def _handle_prompt_error(
+        self, error: Exception, context: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Handle invalid prompt errors"""
         return {
             "error_type": "prompt",
@@ -386,14 +387,16 @@ class SmartErrorRecovery:
             "suggestions": [
                 "Remove special characters from prompt",
                 "Shorten prompt to under 200 characters",
-                "Use simpler descriptions"
+                "Use simpler descriptions",
             ],
             "auto_fix_available": True,
             "auto_fix_params": {"sanitize_prompt": True},
-            "retry_with_fix": True
+            "retry_with_fix": True,
         }
 
-    async def _handle_timeout_error(self, error: Exception, context: Dict[str, Any]) -> Dict[str, Any]:
+    async def _handle_timeout_error(
+        self, error: Exception, context: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Handle timeout errors"""
         return {
             "error_type": "timeout",
@@ -401,14 +404,16 @@ class SmartErrorRecovery:
             "suggestions": [
                 "Try draft mode for faster results",
                 "Reduce image complexity",
-                "Check if other jobs are running"
+                "Check if other jobs are running",
             ],
             "auto_fix_available": True,
             "auto_fix_params": {"quality_mode": "draft", "timeout": 300},
-            "retry_with_fix": True
+            "retry_with_fix": True,
         }
 
-    async def _handle_connection_error(self, error: Exception, context: Dict[str, Any]) -> Dict[str, Any]:
+    async def _handle_connection_error(
+        self, error: Exception, context: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Handle connection errors"""
         return {
             "error_type": "connection",
@@ -416,14 +421,16 @@ class SmartErrorRecovery:
             "suggestions": [
                 "Check if ComfyUI is running",
                 "Restart the generation service",
-                "Try again in a few moments"
+                "Try again in a few moments",
             ],
             "auto_fix_available": False,
             "auto_fix_params": {},
-            "retry_with_fix": False
+            "retry_with_fix": False,
         }
 
-    async def _handle_generic_error(self, error: Exception, context: Dict[str, Any]) -> Dict[str, Any]:
+    async def _handle_generic_error(
+        self, error: Exception, context: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Handle generic errors"""
         return {
             "error_type": "unknown",
@@ -431,18 +438,18 @@ class SmartErrorRecovery:
             "suggestions": [
                 "Try again with default settings",
                 "Check the system status",
-                "Contact support if problem persists"
+                "Contact support if problem persists",
             ],
             "auto_fix_available": False,
             "auto_fix_params": {},
-            "retry_with_fix": False
+            "retry_with_fix": False,
         }
 
     async def attempt_auto_recovery(
         self,
         error_response: Dict[str, Any],
         original_request: Dict[str, Any],
-        retry_function: Callable
+        retry_function: Callable,
     ) -> Optional[Any]:
         """Attempt automatic recovery with suggested fixes"""
         if not error_response.get("auto_fix_available"):
@@ -464,6 +471,7 @@ class SmartErrorRecovery:
             logger.error(f"Auto-recovery failed: {e}")
             return None
 
+
 class UXEnhancementManager:
     """Main manager for all UX enhancements"""
 
@@ -474,10 +482,7 @@ class UXEnhancementManager:
         self.websocket_connections = {}  # job_id -> websocket connection
 
     async def track_generation(
-        self,
-        job_id: str,
-        websocket_send: Optional[Callable] = None,
-        total_steps: int = 20
+        self, job_id: str, websocket_send: Optional[Callable] = None, total_steps: int = 20
     ):
         """Track generation progress with rich updates"""
         self.progress_tracker.start_job(job_id, total_steps)
@@ -493,7 +498,7 @@ class UXEnhancementManager:
         job_id: str,
         current_step: int,
         preview_path: Optional[str] = None,
-        custom_message: Optional[str] = None
+        custom_message: Optional[str] = None,
     ):
         """Send a progress update with preview"""
         update = await self.progress_tracker.create_progress_update(
@@ -511,18 +516,14 @@ class UXEnhancementManager:
         job_id: str,
         error: Exception,
         context: Dict[str, Any],
-        retry_function: Optional[Callable] = None
+        retry_function: Optional[Callable] = None,
     ) -> Dict[str, Any]:
         """Handle generation errors with smart recovery"""
         error_response = await self.error_recovery.handle_error(error, context)
 
         # Send error update via WebSocket
         if job_id in self.websocket_connections:
-            error_message = json.dumps({
-                "type": "error",
-                "job_id": job_id,
-                **error_response
-            })
+            error_message = json.dumps({"type": "error", "job_id": job_id, **error_response})
             await self.websocket_connections[job_id](error_message)
 
         # Attempt auto-recovery if available
@@ -534,12 +535,14 @@ class UXEnhancementManager:
             if recovery_result:
                 # Send recovery success update
                 if job_id in self.websocket_connections:
-                    success_message = json.dumps({
-                        "type": "recovery_success",
-                        "job_id": job_id,
-                        "message": "Successfully recovered with automatic fixes",
-                        "applied_fixes": error_response["auto_fix_params"]
-                    })
+                    success_message = json.dumps(
+                        {
+                            "type": "recovery_success",
+                            "job_id": job_id,
+                            "message": "Successfully recovered with automatic fixes",
+                            "applied_fixes": error_response["auto_fix_params"],
+                        }
+                    )
                     await self.websocket_connections[job_id](success_message)
 
                 return recovery_result
@@ -560,6 +563,7 @@ class UXEnhancementManager:
 
         if job_id in self.progress_tracker.start_times:
             del self.progress_tracker.start_times[job_id]
+
 
 # Export the main manager
 ux_manager = UXEnhancementManager()

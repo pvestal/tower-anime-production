@@ -3,21 +3,22 @@ PRODUCTION-READY Image Generation with Error Handling and Retries
 """
 
 import asyncio
-import aiohttp
-import json
-import time
 import logging
-from typing import Optional, Dict, Any
-from datetime import datetime
+import time
+from typing import Any, Dict, Optional
+
+import aiohttp
 from sqlalchemy import text
 
 # Note: ProductionJob is passed from main.py - no import needed
 
 logger = logging.getLogger(__name__)
 
+
 class ImageGenerationError(Exception):
     """Custom exception for image generation failures"""
-    pass
+
+
 
 class ComfyUIClient:
     """Production-ready ComfyUI client with retries and error handling"""
@@ -43,30 +44,38 @@ class ComfyUIClient:
         # Prepare the payload with correct structure
         payload = {
             "prompt": workflow,  # ComfyUI expects workflow under "prompt" key
-            "client_id": f"anime_image_{job_id}"
+            "client_id": f"anime_image_{job_id}",
         }
 
         last_error = None
 
         for attempt in range(self.max_retries):
             try:
-                logger.info(f"Job {job_id}: Attempt {attempt + 1}/{self.max_retries} to submit to ComfyUI")
+                logger.info(
+                    f"Job {job_id}: Attempt {attempt + 1}/{self.max_retries} to submit to ComfyUI"
+                )
 
                 async with aiohttp.ClientSession() as session:
                     async with session.post(
                         f"{self.base_url}/prompt",
                         json=payload,
-                        timeout=aiohttp.ClientTimeout(total=30)
+                        timeout=aiohttp.ClientTimeout(total=30),
                     ) as response:
 
                         # Log response status
-                        logger.info(f"Job {job_id}: ComfyUI responded with status {response.status}")
+                        logger.info(
+                            f"Job {job_id}: ComfyUI responded with status {response.status}"
+                        )
 
                         # Check HTTP status
                         if response.status != 200:
                             error_text = await response.text()
-                            logger.error(f"Job {job_id}: ComfyUI returned error {response.status}: {error_text}")
-                            raise ImageGenerationError(f"ComfyUI error {response.status}: {error_text}")
+                            logger.error(
+                                f"Job {job_id}: ComfyUI returned error {response.status}: {error_text}"
+                            )
+                            raise ImageGenerationError(
+                                f"ComfyUI error {response.status}: {error_text}"
+                            )
 
                         # Parse response
                         result = await response.json()
@@ -92,7 +101,9 @@ class ComfyUIClient:
                             raise ImageGenerationError("ComfyUI did not return a prompt_id")
 
                         # Success!
-                        logger.info(f"Job {job_id}: Successfully submitted, got prompt_id: {prompt_id}")
+                        logger.info(
+                            f"Job {job_id}: Successfully submitted, got prompt_id: {prompt_id}"
+                        )
                         return prompt_id
 
             except asyncio.TimeoutError:
@@ -121,7 +132,9 @@ class ComfyUIClient:
                 await asyncio.sleep(delay)
 
         # All retries failed
-        logger.error(f"Job {job_id}: All {self.max_retries} attempts failed. Last error: {last_error}")
+        logger.error(
+            f"Job {job_id}: All {self.max_retries} attempts failed. Last error: {last_error}"
+        )
         raise ImageGenerationError(f"Failed after {self.max_retries} attempts: {last_error}")
 
     async def check_job_status(self, prompt_id: str) -> Dict[str, Any]:
@@ -162,8 +175,8 @@ class ComfyUIClient:
                                         "output": {
                                             "filename": image.get("filename"),
                                             "subfolder": image.get("subfolder", ""),
-                                            "type": image.get("type", "output")
-                                        }
+                                            "type": image.get("type", "output"),
+                                        },
                                     }
 
                         # Job finished but no outputs (error?)
@@ -178,11 +191,7 @@ class ComfyUIClient:
 
 
 async def generate_anime_image_production(
-    prompt: str,
-    quality: str = "high",
-    style: str = "anime",
-    job_id: int = None,
-    db = None
+    prompt: str, quality: str = "high", style: str = "anime", job_id: int = None, db=None
 ) -> Dict[str, Any]:
     """
     Production-ready image generation with full error handling
@@ -192,7 +201,7 @@ async def generate_anime_image_production(
     quality_settings = {
         "low": {"width": 512, "height": 512, "steps": 15, "cfg": 6.0},
         "medium": {"width": 768, "height": 768, "steps": 20, "cfg": 7.0},
-        "high": {"width": 1024, "height": 1024, "steps": 30, "cfg": 8.0}
+        "high": {"width": 1024, "height": 1024, "steps": 30, "cfg": 8.0},
     }
 
     settings = quality_settings.get(quality, quality_settings["medium"])
@@ -203,32 +212,28 @@ async def generate_anime_image_production(
         "1": {
             "inputs": {"ckpt_name": "AOM3A1B.safetensors"},
             "class_type": "CheckpointLoaderSimple",
-            "_meta": {"title": "Load Checkpoint"}
+            "_meta": {"title": "Load Checkpoint"},
         },
         "2": {
             "inputs": {
                 "text": f"{prompt}, {style} style, masterpiece, best quality, detailed",
-                "clip": ["1", 1]
+                "clip": ["1", 1],
             },
             "class_type": "CLIPTextEncode",
-            "_meta": {"title": "Positive Prompt"}
+            "_meta": {"title": "Positive Prompt"},
         },
         "3": {
             "inputs": {
                 "text": "worst quality, low quality, blurry, ugly, distorted, watermark",
-                "clip": ["1", 1]
+                "clip": ["1", 1],
             },
             "class_type": "CLIPTextEncode",
-            "_meta": {"title": "Negative Prompt"}
+            "_meta": {"title": "Negative Prompt"},
         },
         "4": {
-            "inputs": {
-                "width": settings["width"],
-                "height": settings["height"],
-                "batch_size": 1
-            },
+            "inputs": {"width": settings["width"], "height": settings["height"], "batch_size": 1},
             "class_type": "EmptyLatentImage",
-            "_meta": {"title": "Latent Image"}
+            "_meta": {"title": "Latent Image"},
         },
         "5": {
             "inputs": {
@@ -241,27 +246,21 @@ async def generate_anime_image_production(
                 "model": ["1", 0],
                 "positive": ["2", 0],
                 "negative": ["3", 0],
-                "latent_image": ["4", 0]
+                "latent_image": ["4", 0],
             },
             "class_type": "KSampler",
-            "_meta": {"title": "KSampler"}
+            "_meta": {"title": "KSampler"},
         },
         "6": {
-            "inputs": {
-                "samples": ["5", 0],
-                "vae": ["1", 2]
-            },
+            "inputs": {"samples": ["5", 0], "vae": ["1", 2]},
             "class_type": "VAEDecode",
-            "_meta": {"title": "VAE Decode"}
+            "_meta": {"title": "VAE Decode"},
         },
         "7": {
-            "inputs": {
-                "filename_prefix": f"anime_{quality}_{job_id or seed}",
-                "images": ["6", 0]
-            },
+            "inputs": {"filename_prefix": f"anime_{quality}_{job_id or seed}", "images": ["6", 0]},
             "class_type": "SaveImage",
-            "_meta": {"title": "Save Image"}
-        }
+            "_meta": {"title": "Save Image"},
+        },
     }
 
     # Initialize ComfyUI client
@@ -279,8 +278,10 @@ async def generate_anime_image_production(
             # Use raw SQL with text() wrapper to avoid import issues
             # Update production_jobs table with ComfyUI job ID and set status to processing
             db.execute(
-                text("UPDATE anime_api.production_jobs SET comfyui_job_id = :prompt_id, status = 'processing' WHERE id = :job_id"),
-                {"prompt_id": prompt_id, "job_id": job_id}
+                text(
+                    "UPDATE anime_api.production_jobs SET comfyui_job_id = :prompt_id, status = 'processing' WHERE id = :job_id"
+                ),
+                {"prompt_id": prompt_id, "job_id": job_id},
             )
             db.commit()
 
@@ -292,7 +293,7 @@ async def generate_anime_image_production(
             "message": f"Image generation started ({settings['width']}x{settings['height']}, {settings['steps']} steps)",
             "estimated_time": f"{settings['steps'] * 1.5} seconds",
             "quality": quality,
-            "settings": settings
+            "settings": settings,
         }
 
     except ImageGenerationError as e:
@@ -302,8 +303,10 @@ async def generate_anime_image_production(
         # Update database to failed (use raw SQL with text() to avoid import)
         if db and job_id:
             db.execute(
-                text("UPDATE anime_api.production_jobs SET status = 'failed', error = :error WHERE id = :job_id"),
-                {"error": str(e), "job_id": job_id}
+                text(
+                    "UPDATE anime_api.production_jobs SET status = 'failed', error = :error WHERE id = :job_id"
+                ),
+                {"error": str(e), "job_id": job_id},
             )
             db.commit()
 
@@ -312,7 +315,7 @@ async def generate_anime_image_production(
             "job_id": job_id,
             "error": str(e),
             "status": "failed",
-            "message": f"Image generation failed after retries: {str(e)}"
+            "message": f"Image generation failed after retries: {str(e)}",
         }
 
     except Exception as e:
@@ -323,5 +326,5 @@ async def generate_anime_image_production(
             "success": False,
             "job_id": job_id,
             "error": f"Unexpected error: {str(e)}",
-            "status": "error"
+            "status": "error",
         }

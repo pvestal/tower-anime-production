@@ -4,13 +4,12 @@ Complete System Tests for Anime Production
 End-to-end tests that verify the entire system works together
 """
 
-import sys
 import os
+import sys
 import time
-import json
-import requests
+
 import pytest
-from pathlib import Path
+import requests
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -260,7 +259,7 @@ class TestAPIEndpoints:
         )
 
         if response.status_code == 200:
-            character = response.json()
+            response.json()
             print(f"✅ Character endpoints working")
         else:
             print("⚠️ Character endpoints not implemented yet")

@@ -4,15 +4,15 @@ Integration tests for Enhanced Generation API
 Tests the complete user experience flow
 """
 
-import pytest
-import asyncio
 import json
-import websocket
+import sys
 import threading
 import time
-from unittest.mock import Mock, AsyncMock, patch
-import sys
+from unittest.mock import Mock, patch
+
+import pytest
 import requests
+import websocket
 
 # Add the API directory to path
 sys.path.insert(0, '/opt/tower-anime-production/api')

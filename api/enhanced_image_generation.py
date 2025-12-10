@@ -3,15 +3,13 @@ Enhanced Image Generation with Project-Aware Asset Management
 Integrates ProjectAssetManager for organized file structure and character consistency
 """
 
-import os
 import json
-import asyncio
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional
 
-from project_asset_manager import ProjectAssetManager, CharacterConsistencyManager
 from image_generation_fixed import generate_anime_image_production
+from project_asset_manager import CharacterConsistencyManager, ProjectAssetManager
 
 
 async def generate_project_aware_image(
@@ -23,7 +21,7 @@ async def generate_project_aware_image(
     quality: str = "medium",
     style: str = "anime",
     job_id: int = None,
-    db_session = None
+    db_session=None,
 ) -> Dict:
     """
     Enhanced image generation with project-aware asset management
@@ -54,7 +52,7 @@ async def generate_project_aware_image(
     try:
         # Get base workflow
         workflow_path = "/opt/tower-anime-production/workflows/comfyui/single_image.json"
-        with open(workflow_path, 'r') as f:
+        with open(workflow_path, "r") as f:
             base_workflow = json.load(f)
 
         # Apply character consistency if character specified
@@ -74,31 +72,29 @@ async def generate_project_aware_image(
             from sqlalchemy import text
 
             db_session.execute(
-                text("""
+                text(
+                    """
                     UPDATE anime_api.production_jobs
                     SET project_id = :project_id,
                         character_name = :character_name,
                         scene_id = :scene_id,
                         asset_type = :asset_type
                     WHERE id = :job_id
-                """),
+                """
+                ),
                 {
                     "project_id": project_id,
                     "character_name": character_name,
                     "scene_id": scene_id,
                     "asset_type": asset_type,
-                    "job_id": job_id
-                }
+                    "job_id": job_id,
+                },
             )
             db_session.commit()
 
         # Generate image using production function
         generation_result = await generate_anime_image_production(
-            prompt=enhanced_prompt,
-            quality=quality,
-            style=style,
-            job_id=job_id,
-            db=db_session
+            prompt=enhanced_prompt, quality=quality, style=style, job_id=job_id, db=db_session
         )
 
         if not generation_result["success"]:
@@ -116,7 +112,8 @@ async def generate_project_aware_image(
                 potential_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
                 # Take the most recent file created in last 5 minutes
                 recent_files = [
-                    f for f in potential_files[:5]
+                    f
+                    for f in potential_files[:5]
                     if (datetime.now().timestamp() - f.stat().st_mtime) < 300
                 ]
                 if recent_files:
@@ -136,7 +133,7 @@ async def generate_project_aware_image(
             return {
                 "success": False,
                 "error": f"Generated file not found for job {job_id}",
-                "job_id": job_id
+                "job_id": job_id,
             }
 
         # Organize the generated file using ProjectAssetManager
@@ -149,7 +146,9 @@ async def generate_project_aware_image(
             "style": style,
             "workflow_type": "single_image",
             "generation_time": generation_result.get("estimated_time", "unknown"),
-            "model_used": enhanced_workflow.get("1", {}).get("inputs", {}).get("ckpt_name", "unknown")
+            "model_used": enhanced_workflow.get("1", {})
+            .get("inputs", {})
+            .get("ckpt_name", "unknown"),
         }
 
         organized_path = asset_manager.organize_generated_file(
@@ -159,40 +158,44 @@ async def generate_project_aware_image(
             job_id=job_id,
             character_name=character_name,
             scene_id=scene_id,
-            generation_metadata=generation_metadata
+            generation_metadata=generation_metadata,
         )
 
         # Update database with organized path
         if db_session and job_id:
             db_session.execute(
-                text("""
+                text(
+                    """
                     UPDATE anime_api.production_jobs
                     SET output_path = :organized_path,
                         status = 'completed',
                         completion_metadata = :metadata
                     WHERE id = :job_id
-                """),
+                """
+                ),
                 {
                     "organized_path": organized_path,
                     "metadata": json.dumps(generation_metadata),
-                    "job_id": job_id
-                }
+                    "job_id": job_id,
+                },
             )
             db_session.commit()
 
         # Enhanced result with project context
         enhanced_result = generation_result.copy()
-        enhanced_result.update({
-            "organized_path": organized_path,
-            "original_path": source_file,
-            "project_id": project_id,
-            "character_name": character_name,
-            "scene_id": scene_id,
-            "asset_type": asset_type,
-            "project_directory": str(asset_manager.project_root),
-            "metadata": generation_metadata,
-            "file_organization": "project_based"
-        })
+        enhanced_result.update(
+            {
+                "organized_path": organized_path,
+                "original_path": source_file,
+                "project_id": project_id,
+                "character_name": character_name,
+                "scene_id": scene_id,
+                "asset_type": asset_type,
+                "project_directory": str(asset_manager.project_root),
+                "metadata": generation_metadata,
+                "file_organization": "project_based",
+            }
+        )
 
         return enhanced_result
 
@@ -201,20 +204,22 @@ async def generate_project_aware_image(
             "success": False,
             "error": f"Project-aware generation failed: {str(e)}",
             "job_id": job_id,
-            "project_id": project_id
+            "project_id": project_id,
         }
 
         # Update database with error
         if db_session and job_id:
             try:
                 db_session.execute(
-                    text("""
+                    text(
+                        """
                         UPDATE anime_api.production_jobs
                         SET status = 'failed',
                             error = :error
                         WHERE id = :job_id
-                    """),
-                    {"error": str(e), "job_id": job_id}
+                    """
+                    ),
+                    {"error": str(e), "job_id": job_id},
                 )
                 db_session.commit()
             except Exception as db_error:
@@ -244,7 +249,9 @@ def extract_character_name_from_prompt(prompt: str) -> Optional[str]:
     return None
 
 
-def enhance_prompt_for_character(prompt: str, character_name: str, asset_manager: ProjectAssetManager) -> str:
+def enhance_prompt_for_character(
+    prompt: str, character_name: str, asset_manager: ProjectAssetManager
+) -> str:
     """Enhance prompt with character-specific consistency tags"""
 
     # Get project style guide

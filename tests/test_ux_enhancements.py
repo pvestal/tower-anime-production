@@ -4,22 +4,21 @@ Comprehensive tests for UX Enhancement Module
 Tests real-time preview, contextual progress, and smart error recovery
 """
 
-import pytest
 import asyncio
-import json
 import base64
-from unittest.mock import Mock, AsyncMock, patch, MagicMock
-from pathlib import Path
+import json
 import sys
 import time
+from unittest.mock import AsyncMock, Mock
+
+import pytest
 
 # Add the API directory to the path
 sys.path.insert(0, '/opt/tower-anime-production/api')
 
-from ux_enhancements import (
-    GenerationPhase, ProgressUpdate, PreviewGenerator,
-    ContextualProgressTracker, SmartErrorRecovery, UXEnhancementManager
-)
+from ux_enhancements import (ContextualProgressTracker, GenerationPhase, PreviewGenerator,
+                             ProgressUpdate, SmartErrorRecovery, UXEnhancementManager)
+
 
 class TestGenerationPhase:
     """Test generation phase enum"""

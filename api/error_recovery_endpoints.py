@@ -2,10 +2,12 @@
 Error Recovery API Endpoints
 Provides comprehensive error recovery and job monitoring capabilities
 """
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
-from typing import Dict, Any, Optional, List
-from pydantic import BaseModel
+
 import logging
+from typing import Any, Dict, Optional
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
 from ..modules.intelligent_job_processor import IntelligentJobProcessor
 from ..modules.job_manager import JobType
@@ -60,8 +62,7 @@ async def get_processor() -> IntelligentJobProcessor:
 
 @router.post("/jobs/submit")
 async def submit_job_with_recovery(
-    request: JobSubmissionRequest,
-    processor: IntelligentJobProcessor = Depends(get_processor)
+    request: JobSubmissionRequest, processor: IntelligentJobProcessor = Depends(get_processor)
 ) -> Dict[str, Any]:
     """
     Submit a job with intelligent error recovery
@@ -86,13 +87,13 @@ async def submit_job_with_recovery(
             workflow_data=request.workflow_data,
             job_type=job_type,
             parameters=request.parameters,
-            timeout_minutes=request.timeout_minutes
+            timeout_minutes=request.timeout_minutes,
         )
 
         return {
             "success": True,
             "message": "Job submitted with intelligent recovery",
-            "data": result
+            "data": result,
         }
 
     except Exception as e:
@@ -102,8 +103,7 @@ async def submit_job_with_recovery(
 
 @router.get("/jobs/{job_id}/status")
 async def get_job_status_with_recovery(
-    job_id: int,
-    processor: IntelligentJobProcessor = Depends(get_processor)
+    job_id: int, processor: IntelligentJobProcessor = Depends(get_processor)
 ) -> Dict[str, Any]:
     """
     Get comprehensive job status including recovery information
@@ -120,11 +120,7 @@ async def get_job_status_with_recovery(
         if not status:
             raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
 
-        return {
-            "success": True,
-            "job_id": job_id,
-            "data": status
-        }
+        return {"success": True, "job_id": job_id, "data": status}
 
     except HTTPException:
         raise
@@ -137,7 +133,7 @@ async def get_job_status_with_recovery(
 async def retry_failed_job(
     job_id: int,
     request: JobRecoveryRequest,
-    processor: IntelligentJobProcessor = Depends(get_processor)
+    processor: IntelligentJobProcessor = Depends(get_processor),
 ) -> Dict[str, Any]:
     """
     Manually retry a failed job with error recovery
@@ -158,7 +154,7 @@ async def retry_failed_job(
         if current_status not in ["failed", "timeout", "cancelled"] and not request.force_retry:
             raise HTTPException(
                 status_code=400,
-                detail=f"Job is in '{current_status}' state and cannot be retried. Use force_retry=true to override."
+                detail=f"Job is in '{current_status}' state and cannot be retried. Use force_retry=true to override.",
             )
 
         # Use the retry mechanism from job manager
@@ -168,13 +164,13 @@ async def retry_failed_job(
             return {
                 "success": True,
                 "message": f"Job {job_id} queued for retry with error recovery",
-                "job_id": job_id
+                "job_id": job_id,
             }
         else:
             return {
                 "success": False,
                 "message": f"Job {job_id} could not be retried - may have exceeded max attempts",
-                "job_id": job_id
+                "job_id": job_id,
             }
 
     except HTTPException:
@@ -186,8 +182,7 @@ async def retry_failed_job(
 
 @router.post("/jobs/retry-failed")
 async def retry_multiple_failed_jobs(
-    max_jobs: int = 5,
-    processor: IntelligentJobProcessor = Depends(get_processor)
+    max_jobs: int = 5, processor: IntelligentJobProcessor = Depends(get_processor)
 ) -> Dict[str, Any]:
     """
     Retry multiple failed jobs that might be recoverable
@@ -202,7 +197,7 @@ async def retry_multiple_failed_jobs(
             "success": True,
             "message": f"Attempted to retry {result['count']} failed jobs",
             "retried_job_ids": result["retried_job_ids"],
-            "count": result["count"]
+            "count": result["count"],
         }
 
     except Exception as e:
@@ -212,7 +207,7 @@ async def retry_multiple_failed_jobs(
 
 @router.get("/statistics")
 async def get_recovery_statistics(
-    processor: IntelligentJobProcessor = Depends(get_processor)
+    processor: IntelligentJobProcessor = Depends(get_processor),
 ) -> RecoveryStatistics:
     """
     Get comprehensive error recovery statistics
@@ -232,7 +227,7 @@ async def get_recovery_statistics(
             successful_recoveries=recovery_stats.get("successful_recoveries", 0),
             failed_recoveries=recovery_stats.get("failed_recoveries", 0),
             recovery_rate=recovery_stats.get("recovery_rate", 0.0),
-            error_distribution=recovery_stats.get("error_distribution", {})
+            error_distribution=recovery_stats.get("error_distribution", {}),
         )
 
     except Exception as e:
@@ -242,7 +237,7 @@ async def get_recovery_statistics(
 
 @router.get("/statistics/detailed")
 async def get_detailed_statistics(
-    processor: IntelligentJobProcessor = Depends(get_processor)
+    processor: IntelligentJobProcessor = Depends(get_processor),
 ) -> Dict[str, Any]:
     """
     Get detailed processing and recovery statistics
@@ -259,7 +254,7 @@ async def get_detailed_statistics(
         return {
             "success": True,
             "data": stats,
-            "message": "Detailed statistics retrieved successfully"
+            "message": "Detailed statistics retrieved successfully",
         }
 
     except Exception as e:
@@ -269,7 +264,7 @@ async def get_detailed_statistics(
 
 @router.post("/emergency-stop")
 async def emergency_stop(
-    processor: IntelligentJobProcessor = Depends(get_processor)
+    processor: IntelligentJobProcessor = Depends(get_processor),
 ) -> Dict[str, Any]:
     """
     Emergency stop - cancel all running jobs and clear queue
@@ -286,7 +281,7 @@ async def emergency_stop(
             "success": result["success"],
             "message": f"Emergency stop completed. Cancelled {result['count']} jobs",
             "cancelled_jobs": result["cancelled_jobs"],
-            "queue_cleared": result.get("queue_cleared", False)
+            "queue_cleared": result.get("queue_cleared", False),
         }
 
     except Exception as e:
@@ -296,8 +291,7 @@ async def emergency_stop(
 
 @router.delete("/cleanup")
 async def cleanup_old_data(
-    hours: int = 24,
-    processor: IntelligentJobProcessor = Depends(get_processor)
+    hours: int = 24, processor: IntelligentJobProcessor = Depends(get_processor)
 ) -> Dict[str, Any]:
     """
     Clean up old job data and recovery information
@@ -314,7 +308,7 @@ async def cleanup_old_data(
         return {
             "success": True,
             "message": f"Cleaned up data older than {hours} hours",
-            "data": result
+            "data": result,
         }
 
     except HTTPException:
@@ -326,7 +320,7 @@ async def cleanup_old_data(
 
 @router.get("/health")
 async def health_check(
-    processor: IntelligentJobProcessor = Depends(get_processor)
+    processor: IntelligentJobProcessor = Depends(get_processor),
 ) -> Dict[str, Any]:
     """
     Health check for error recovery system
@@ -352,7 +346,9 @@ async def health_check(
             "comfyui_connected": comfyui_health,
             "error_recovery_available": recovery_available,
             "total_jobs_processed": stats.get("total_jobs_processed", 0),
-            "recovery_rate": stats.get("job_manager", {}).get("recovery", {}).get("recovery_rate", 0.0)
+            "recovery_rate": stats.get("job_manager", {})
+            .get("recovery", {})
+            .get("recovery_rate", 0.0),
         }
 
     except Exception as e:
@@ -362,5 +358,5 @@ async def health_check(
             "status": "unhealthy",
             "error": str(e),
             "comfyui_connected": False,
-            "error_recovery_available": False
+            "error_recovery_available": False,
         }
