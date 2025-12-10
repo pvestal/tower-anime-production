@@ -32,11 +32,11 @@ class CharacterConsistencyEngine:
 
     def calculate_consistency_score(self, embedding1: List[float], embedding2: List[float]) -> float:
         """Calculate cosine similarity between embeddings"""
-        if len(embedding1) != len(embedding2):
-            raise ValueError("Embeddings must have same dimension")
-
         if embedding1 is None or embedding2 is None:
             raise ValueError("Embeddings cannot be None")
+
+        if len(embedding1) != len(embedding2):
+            raise ValueError("Embeddings must have same dimension")
 
         # Convert to numpy arrays
         e1 = np.array(embedding1)
@@ -143,11 +143,12 @@ class CharacterConsistencyEngine:
 
     def save_state(self, path: Path):
         """Save engine state to file"""
+        # Convert integer keys to strings for JSON serialization
         state = {
-            "reference_embeddings": self.reference_embeddings,
-            "style_templates": self.style_templates,
-            "pose_library": self.pose_library,
-            "character_versions": self.character_versions
+            "reference_embeddings": {str(k): v for k, v in self.reference_embeddings.items()},
+            "style_templates": {str(k): v for k, v in self.style_templates.items()},
+            "pose_library": {str(k): v for k, v in self.pose_library.items()},
+            "character_versions": {str(k): v for k, v in self.character_versions.items()}
         }
 
         with open(path, 'w') as f:
@@ -158,7 +159,17 @@ class CharacterConsistencyEngine:
         with open(path, 'r') as f:
             state = json.load(f)
 
-        self.reference_embeddings = state.get("reference_embeddings", {})
-        self.style_templates = state.get("style_templates", {})
-        self.pose_library = state.get("pose_library", {})
-        self.character_versions = state.get("character_versions", {})
+        # Convert string keys back to integers if possible
+        def convert_keys(d):
+            result = {}
+            for k, v in d.items():
+                try:
+                    result[int(k)] = v
+                except ValueError:
+                    result[k] = v
+            return result
+
+        self.reference_embeddings = convert_keys(state.get("reference_embeddings", {}))
+        self.style_templates = convert_keys(state.get("style_templates", {}))
+        self.pose_library = convert_keys(state.get("pose_library", {}))
+        self.character_versions = convert_keys(state.get("character_versions", {}))
