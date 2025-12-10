@@ -1,0 +1,433 @@
+name: Anime Production CI/CD
+
+on:
+  push:
+    branches: [ main, develop, feature/* ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    - cron: '0 2 * * *'  # Daily at 2 AM for performance benchmarks
+
+env:
+  PYTHON_VERSION: '3.10'
+  NODE_VERSION: '18'
+  CACHE_VERSION: v1
+
+jobs:
+  lint:
+    name: Code Quality Checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache Python dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ env.CACHE_VERSION }}-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-${{ env.CACHE_VERSION }}-
+
+      - name: Install linting tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8 black isort pylint mypy
+
+      - name: Run Black formatter check
+        run: black --check api/ tests/
+
+      - name: Run isort import checker
+        run: isort --check-only api/ tests/
+
+      - name: Run Flake8 linter
+        run: flake8 api/ tests/ --max-line-length=100 --ignore=E203,W503
+
+      - name: Run Pylint
+        continue-on-error: true
+        run: pylint api/ tests/ --max-line-length=100 --disable=C0114,C0115,C0116
+
+      - name: Run MyPy type checker
+        continue-on-error: true
+        run: mypy api/ --ignore-missing-imports
+
+  test-unit:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: lint
+    strategy:
+      matrix:
+        test-group: [character_consistency, ux_enhancements, optimization, api]
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-test-${{ env.CACHE_VERSION }}-${{ hashFiles('**/requirements.txt') }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov pytest-asyncio pytest-mock
+
+      - name: Run ${{ matrix.test-group }} tests
+        run: |
+          case "${{ matrix.test-group }}" in
+            character_consistency)
+              pytest tests/unit/test_character_consistency.py -v --cov=api.character_consistency
+              ;;
+            ux_enhancements)
+              pytest tests/test_ux_enhancements.py -v --cov=api.ux_enhancements
+              ;;
+            optimization)
+              pytest tests/test_optimization.py -v --cov=api.optimized_workflows --cov=api.gpu_optimization
+              ;;
+            api)
+              pytest tests/test_api.py tests/test_enhanced_api_integration.py -v --cov=api
+              ;;
+          esac
+
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.xml
+          flags: unittests-${{ matrix.test-group }}
+          name: ${{ matrix.test-group }}-coverage
+
+  test-integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: test-unit
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: patrick
+          POSTGRES_PASSWORD: tower_echo_brain_secret_key_2025
+          POSTGRES_DB: anime_production_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio httpx websocket-client
+
+      - name: Setup test database
+        run: |
+          PGPASSWORD=tower_echo_brain_secret_key_2025 psql -h localhost -U patrick -d anime_production_test < schema/anime_production_schema.sql
+
+      - name: Run integration tests
+        env:
+          DATABASE_URL: postgresql://patrick:tower_echo_brain_secret_key_2025@localhost/anime_production_test
+          REDIS_URL: redis://localhost:6379
+          TESTING: true
+        run: |
+          pytest tests/integration/ -v --tb=short
+
+      - name: Run API endpoint tests
+        run: |
+          # Start API server in background
+          python api/secured_api.py &
+          API_PID=$!
+          sleep 5
+
+          # Run endpoint tests
+          pytest tests/test_enhanced_api_integration.py -v
+
+          # Stop API server
+          kill $API_PID
+
+  test-performance:
+    name: Performance Benchmarks
+    runs-on: ubuntu-latest
+    needs: test-integration
+    if: github.event_name == 'schedule' || contains(github.event.head_commit.message, '[benchmark]')
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest-benchmark memory_profiler
+
+      - name: Run performance benchmarks
+        run: |
+          pytest tests/benchmarks/ -v --benchmark-only --benchmark-json=benchmark_results.json
+
+      - name: Store benchmark results
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          tool: 'pytest'
+          output-file-path: benchmark_results.json
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: true
+          alert-threshold: '150%'
+          comment-on-alert: true
+          fail-on-alert: true
+
+  security:
+    name: Security Scanning
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      - name: Run Bandit security linter
+        run: |
+          pip install bandit
+          bandit -r api/ -f json -o bandit-report.json
+
+      - name: Check for secrets
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+
+  build-docker:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    needs: [test-unit, test-integration]
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push API image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/api:${{ github.sha }}
+            ghcr.io/${{ github.repository }}/api:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push worker image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./Dockerfile.worker
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/worker:${{ github.sha }}
+            ghcr.io/${{ github.repository }}/worker:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [build-docker, security]
+    if: github.ref == 'refs/heads/develop'
+    environment: staging
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Deploy to staging server
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_KEY: ${{ secrets.STAGING_KEY }}
+        run: |
+          echo "$STAGING_KEY" > deploy_key
+          chmod 600 deploy_key
+
+          ssh -o StrictHostKeyChecking=no -i deploy_key $STAGING_USER@$STAGING_HOST << 'EOF'
+            cd /opt/tower-anime-production
+            git pull origin develop
+            docker-compose pull
+            docker-compose up -d --force-recreate
+            docker-compose run --rm api python manage.py migrate
+          EOF
+
+      - name: Run smoke tests
+        run: |
+          sleep 30
+          curl -f https://staging.anime.tower.local/api/health || exit 1
+
+      - name: Notify deployment
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          text: 'Staging deployment ${{ job.status }}'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+        if: always()
+
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [build-docker, security]
+    if: github.ref == 'refs/heads/main'
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Create deployment
+        uses: actions/github-script@v6
+        id: create-deployment
+        with:
+          script: |
+            const deployment = await github.rest.repos.createDeployment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: context.sha,
+              environment: 'production',
+              required_contexts: [],
+              auto_merge: false
+            });
+            return deployment.data.id;
+
+      - name: Deploy to production
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+          PROD_KEY: ${{ secrets.PROD_KEY }}
+        run: |
+          echo "$PROD_KEY" > deploy_key
+          chmod 600 deploy_key
+
+          ssh -o StrictHostKeyChecking=no -i deploy_key $PROD_USER@$PROD_HOST << 'EOF'
+            cd /opt/tower-anime-production
+
+            # Backup database
+            pg_dump anime_production > backup_$(date +%Y%m%d_%H%M%S).sql
+
+            # Deploy new version
+            git pull origin main
+            docker-compose pull
+            docker-compose up -d --force-recreate --scale worker=3
+            docker-compose run --rm api python manage.py migrate
+
+            # Health check
+            sleep 30
+            curl -f http://localhost:8328/api/health || exit 1
+          EOF
+
+      - name: Update deployment status
+        uses: actions/github-script@v6
+        if: always()
+        with:
+          script: |
+            await github.rest.repos.createDeploymentStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              deployment_id: ${{ steps.create-deployment.outputs.result }},
+              state: '${{ job.status }}',
+              environment_url: 'https://anime.tower.local',
+              description: 'Deployment ${{ job.status }}'
+            });
+
+      - name: Notify production deployment
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          text: '🚀 Production deployment ${{ job.status }}'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+          fields: repo,message,commit,author,action,eventName,ref,workflow
+        if: always()
+
+  update-docs:
+    name: Update Documentation
+    runs-on: ubuntu-latest
+    needs: test-unit
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install documentation tools
+        run: |
+          pip install mkdocs mkdocs-material mkdocstrings[python] pydoc-markdown
+
+      - name: Generate API documentation
+        run: |
+          pydoc-markdown -I api/ --render-toc > docs/api-reference.md
+
+      - name: Build documentation
+        run: mkdocs build
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./site

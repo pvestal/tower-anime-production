@@ -1,0 +1,105 @@
+name: Performance Monitoring
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'  # Every 6 hours
+  workflow_dispatch:
+    inputs:
+      benchmark_type:
+        description: 'Type of benchmark to run'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - generation_speed
+          - memory_usage
+          - gpu_utilization
+          - api_latency
+
+jobs:
+  performance-benchmarks:
+    name: Performance Benchmarks
+    runs-on: [self-hosted, gpu]  # Requires GPU runner for accurate tests
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest-benchmark memory_profiler py3nvml psutil
+
+      - name: Run generation speed benchmarks
+        if: ${{ github.event.inputs.benchmark_type == 'all' || github.event.inputs.benchmark_type == 'generation_speed' }}
+        run: |
+          python benchmarks/test_generation_speed.py --output=results/generation_speed.json
+
+      - name: Run memory usage benchmarks
+        if: ${{ github.event.inputs.benchmark_type == 'all' || github.event.inputs.benchmark_type == 'memory_usage' }}
+        run: |
+          python benchmarks/test_memory_usage.py --output=results/memory_usage.json
+
+      - name: Run GPU utilization benchmarks
+        if: ${{ github.event.inputs.benchmark_type == 'all' || github.event.inputs.benchmark_type == 'gpu_utilization' }}
+        run: |
+          python benchmarks/test_gpu_utilization.py --output=results/gpu_utilization.json
+
+      - name: Run API latency benchmarks
+        if: ${{ github.event.inputs.benchmark_type == 'all' || github.event.inputs.benchmark_type == 'api_latency' }}
+        run: |
+          python benchmarks/test_api_latency.py --output=results/api_latency.json
+
+      - name: Process benchmark results
+        run: |
+          python scripts/process_benchmarks.py \
+            --input=results/ \
+            --output=performance_report.md \
+            --compare-with=baseline/
+
+      - name: Upload results
+        uses: actions/upload-artifact@v3
+        with:
+          name: performance-results-${{ github.run_id }}
+          path: |
+            results/
+            performance_report.md
+
+      - name: Comment on PR with performance impact
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('performance_report.md', 'utf8');
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `## 📊 Performance Impact\n\n${report}`
+            });
+
+      - name: Alert on performance regression
+        if: failure()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: custom
+          custom_payload: |
+            {
+              text: "⚠️ Performance regression detected in anime production system",
+              attachments: [{
+                color: 'danger',
+                fields: [
+                  { title: 'Benchmark', value: '${{ github.event.inputs.benchmark_type }}' },
+                  { title: 'Branch', value: '${{ github.ref }}' },
+                  { title: 'Run', value: '${{ github.run_id }}' }
+                ]
+              }]
+            }
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
