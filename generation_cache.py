@@ -44,18 +44,23 @@ class CacheEntry:
 @dataclass
 class ModelCacheEntry(CacheEntry):
     """Cache entry for loaded models"""
-    model_name: str
-    model_type: str  # "checkpoint", "lora", "embedding"
-    vram_usage_mb: int
-    load_time_seconds: float
+    model_name: str = ""
+    model_type: str = "checkpoint"  # "checkpoint", "lora", "embedding"
+    vram_usage_mb: int = 0
+    load_time_seconds: float = 0.0
 
 @dataclass
 class OutputCacheEntry(CacheEntry):
     """Cache entry for generated outputs"""
-    prompt_hash: str
-    output_path: str
-    generation_params: Dict[str, Any]
+    prompt_hash: str = ""
+    output_path: str = ""
+    generation_params: Dict[str, Any] = None
     quality_score: float = 0.0
+
+    def __post_init__(self):
+        super().__post_init__() if hasattr(super(), '__post_init__') else None
+        if self.generation_params is None:
+            self.generation_params = {}
 
 class GenerationCache:
     """Generation caching system for optimized performance"""
