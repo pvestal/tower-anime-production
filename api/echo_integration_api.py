@@ -14,25 +14,27 @@ Branch: feature/echo-orchestration-engine
 import asyncio
 import json
 import logging
-import uuid
-from datetime import datetime
-from typing import Dict, List, Optional, Any
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
-import uvicorn
+import os
 
 # Import our Echo orchestration engine
 import sys
-import os
+import uuid
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+import uvicorn
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from services.echo_orchestration_engine import (
     EchoOrchestrationEngine,
-    UserIntent,
     InteractionSource,
-    WorkflowType
+    UserIntent,
+    WorkflowType,
 )
 
 # Configure logging
@@ -43,39 +45,66 @@ logger = logging.getLogger(__name__)
 # PYDANTIC MODELS FOR API
 # ================================
 
+
 class EchoCommand(BaseModel):
     """Base command model for Echo interactions"""
+
     command: str = Field(..., description="The command to execute")
-    source: str = Field(default="api", description="Source of the command (telegram, browser_studio, api)")
+    source: str = Field(
+        default="api",
+        description="Source of the command (telegram, browser_studio, api)",
+    )
     user_id: str = Field(..., description="User identifier")
     project_id: Optional[str] = Field(None, description="Project context")
-    parameters: Dict[str, Any] = Field(default_factory=dict, description="Command parameters")
-    context: Dict[str, Any] = Field(default_factory=dict, description="Additional context")
+    parameters: Dict[str, Any] = Field(
+        default_factory=dict, description="Command parameters"
+    )
+    context: Dict[str, Any] = Field(
+        default_factory=dict, description="Additional context"
+    )
+
 
 class ProjectCreationRequest(BaseModel):
     """Request model for creating new projects"""
+
     project_name: str = Field(..., description="Name of the project")
     genre: str = Field(default="anime", description="Project genre")
-    style_preferences: Dict[str, Any] = Field(default_factory=dict, description="Style preferences")
-    initial_characters: List[str] = Field(default_factory=list, description="Initial character list")
+    style_preferences: Dict[str, Any] = Field(
+        default_factory=dict, description="Style preferences"
+    )
+    initial_characters: List[str] = Field(
+        default_factory=list, description="Initial character list"
+    )
+
 
 class CharacterGenerationRequest(BaseModel):
     """Request model for character generation"""
+
     character_name: str = Field(..., description="Character name")
     project_id: str = Field(..., description="Project ID")
-    style_override: Optional[Dict[str, Any]] = Field(None, description="Style overrides")
+    style_override: Optional[Dict[str, Any]] = Field(
+        None, description="Style overrides"
+    )
     scene_context: str = Field(default="portrait", description="Scene context")
-    consistency_mode: bool = Field(default=True, description="Enable consistency checking")
+    consistency_mode: bool = Field(
+        default=True, description="Enable consistency checking"
+    )
+
 
 class StyleLearningRequest(BaseModel):
     """Request model for style learning"""
+
     style_name: str = Field(..., description="Name of the style")
     example_images: List[str] = Field(..., description="Example image paths")
     style_description: str = Field(..., description="Description of the style")
-    apply_to_project: Optional[str] = Field(None, description="Apply to specific project")
+    apply_to_project: Optional[str] = Field(
+        None, description="Apply to specific project"
+    )
+
 
 class EchoResponse(BaseModel):
     """Standard response model for Echo interactions"""
+
     success: bool
     orchestration_id: str
     result: Dict[str, Any] = Field(default_factory=dict)
@@ -84,6 +113,7 @@ class EchoResponse(BaseModel):
     error: Optional[str] = None
     processing_time_ms: Optional[int] = None
 
+
 # ================================
 # FASTAPI APPLICATION
 # ================================
@@ -91,7 +121,7 @@ class EchoResponse(BaseModel):
 app = FastAPI(
     title="Echo Integration API",
     description="Intelligent Anime Production with Persistent Learning",
-    version="2.0.0"
+    version="2.0.0",
 )
 
 # Add CORS middleware
@@ -110,6 +140,7 @@ echo_engine: Optional[EchoOrchestrationEngine] = None
 # APPLICATION STARTUP
 # ================================
 
+
 @app.on_event("startup")
 async def startup_event():
     """Initialize Echo Orchestration Engine on startup"""
@@ -118,18 +149,14 @@ async def startup_event():
     try:
         # Database configuration
         db_config = {
-            'host': 'localhost',
-            'database': 'anime_production',
-            'user': 'patrick',
-            'password': 'tower_echo_brain_secret_key_2025'
+            "host": "localhost",
+            "database": "anime_production",
+            "user": "patrick",
+            "password": "tower_echo_brain_secret_key_2025",
         }
 
         # Redis configuration
-        redis_config = {
-            'host': 'localhost',
-            'port': 6379,
-            'db': 0
-        }
+        redis_config = {"host": "localhost", "port": 6379, "db": 0}
 
         # Initialize Echo engine
         echo_engine = EchoOrchestrationEngine(db_config, redis_config)
@@ -140,9 +167,11 @@ async def startup_event():
         logger.error(f"Failed to initialize Echo engine: {e}")
         echo_engine = None
 
+
 # ================================
 # COMMAND INTERFACE ENDPOINTS
 # ================================
+
 
 @app.post("/api/echo/command", response_model=EchoResponse)
 async def execute_echo_command(command: EchoCommand, background_tasks: BackgroundTasks):
@@ -168,21 +197,24 @@ async def execute_echo_command(command: EchoCommand, background_tasks: Backgroun
         processing_time = int((datetime.now() - start_time).total_seconds() * 1000)
 
         return EchoResponse(
-            success=result['success'],
-            orchestration_id=result['orchestration_id'],
-            result=result.get('result', {}),
-            learned_adaptations=result.get('learned_adaptations', {}),
-            next_suggestions=result.get('next_suggestions', []),
-            error=result.get('error'),
-            processing_time_ms=processing_time
+            success=result["success"],
+            orchestration_id=result["orchestration_id"],
+            result=result.get("result", {}),
+            learned_adaptations=result.get("learned_adaptations", {}),
+            next_suggestions=result.get("next_suggestions", []),
+            error=result.get("error"),
+            processing_time_ms=processing_time,
         )
 
     except Exception as e:
         logger.error(f"Command execution failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.post("/api/echo/generate/character", response_model=EchoResponse)
-async def generate_character_intelligent(request: CharacterGenerationRequest, user_id: str):
+async def generate_character_intelligent(
+    request: CharacterGenerationRequest, user_id: str
+):
     """
     Intelligent character generation with consistency learning
 
@@ -198,11 +230,12 @@ async def generate_character_intelligent(request: CharacterGenerationRequest, us
             "character_name": request.character_name,
             "scene_context": request.scene_context,
             "consistency_mode": request.consistency_mode,
-            "style_override": request.style_override
-        }
+            "style_override": request.style_override,
+        },
     )
 
     return await execute_echo_command(command, BackgroundTasks())
+
 
 @app.post("/api/echo/project/create", response_model=EchoResponse)
 async def create_intelligent_project(request: ProjectCreationRequest, user_id: str):
@@ -220,11 +253,12 @@ async def create_intelligent_project(request: ProjectCreationRequest, user_id: s
             "project_name": request.project_name,
             "genre": request.genre,
             "style_preferences": request.style_preferences,
-            "initial_characters": request.initial_characters
-        }
+            "initial_characters": request.initial_characters,
+        },
     )
 
     return await execute_echo_command(command, BackgroundTasks())
+
 
 @app.post("/api/echo/style/learn", response_model=EchoResponse)
 async def learn_style_intelligent(request: StyleLearningRequest, user_id: str):
@@ -242,15 +276,17 @@ async def learn_style_intelligent(request: StyleLearningRequest, user_id: str):
         parameters={
             "style_name": request.style_name,
             "example_images": request.example_images,
-            "style_description": request.style_description
-        }
+            "style_description": request.style_description,
+        },
     )
 
     return await execute_echo_command(command, BackgroundTasks())
 
+
 # ================================
 # TELEGRAM INTEGRATION ENDPOINTS
 # ================================
+
 
 @app.post("/api/echo/telegram/command")
 async def handle_telegram_command(request: Dict[str, Any]):
@@ -262,9 +298,9 @@ async def handle_telegram_command(request: Dict[str, Any]):
     """
     try:
         # Extract Telegram command details
-        telegram_user_id = request.get('user_id')
-        message_text = request.get('message', '')
-        chat_context = request.get('context', {})
+        telegram_user_id = request.get("user_id")
+        message_text = request.get("message", "")
+        chat_context = request.get("context", {})
 
         # Parse Telegram command
         command = parse_telegram_command(message_text, telegram_user_id, chat_context)
@@ -279,9 +315,11 @@ async def handle_telegram_command(request: Dict[str, Any]):
         logger.error(f"Telegram command handling failed: {e}")
         return {"success": False, "error": str(e)}
 
+
 # ================================
 # USER PREFERENCE ENDPOINTS
 # ================================
+
 
 @app.get("/api/echo/user/{user_id}/preferences")
 async def get_user_preferences(user_id: str):
@@ -293,14 +331,15 @@ async def get_user_preferences(user_id: str):
         user_context = await echo_engine.load_user_creative_context(user_id)
         return {
             "success": True,
-            "user_profile": user_context['user_profile'],
-            "active_styles": user_context['active_styles'],
-            "adaptive_preferences": user_context['adaptive_preferences']
+            "user_profile": user_context["user_profile"],
+            "active_styles": user_context["active_styles"],
+            "adaptive_preferences": user_context["adaptive_preferences"],
         }
 
     except Exception as e:
         logger.error(f"Failed to get user preferences: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/api/echo/user/{user_id}/preferences/update")
 async def update_user_preferences(user_id: str, preferences: Dict[str, Any]):
@@ -316,9 +355,11 @@ async def update_user_preferences(user_id: str, preferences: Dict[str, Any]):
         logger.error(f"Failed to update user preferences: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 # ================================
 # PROJECT MANAGEMENT ENDPOINTS
 # ================================
+
 
 @app.get("/api/echo/projects/{user_id}")
 async def get_user_projects(user_id: str):
@@ -329,11 +370,16 @@ async def get_user_projects(user_id: str):
     try:
         # This would query the project_memory table for user's projects
         # Implementation depends on database query method
-        return {"success": True, "projects": [], "message": "Project listing not yet implemented"}
+        return {
+            "success": True,
+            "projects": [],
+            "message": "Project listing not yet implemented",
+        }
 
     except Exception as e:
         logger.error(f"Failed to get user projects: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/api/echo/project/{project_id}/context")
 async def get_project_context(project_id: str):
@@ -349,9 +395,11 @@ async def get_project_context(project_id: str):
         logger.error(f"Failed to get project context: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 # ================================
 # ANALYTICS AND LEARNING ENDPOINTS
 # ================================
+
 
 @app.get("/api/echo/analytics/{user_id}")
 async def get_user_analytics(user_id: str):
@@ -362,11 +410,16 @@ async def get_user_analytics(user_id: str):
     try:
         # Query echo_intelligence table for user analytics
         # This would show learning patterns, success rates, style evolution
-        return {"success": True, "analytics": {}, "message": "Analytics not yet implemented"}
+        return {
+            "success": True,
+            "analytics": {},
+            "message": "Analytics not yet implemented",
+        }
 
     except Exception as e:
         logger.error(f"Failed to get user analytics: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/api/echo/health")
 async def health_check():
@@ -379,37 +432,39 @@ async def health_check():
             "intelligent_workflows": echo_engine is not None,
             "persistent_learning": True,
             "style_adaptation": True,
-            "character_consistency": True
+            "character_consistency": True,
         },
-        "timestamp": datetime.now().isoformat()
+        "timestamp": datetime.now().isoformat(),
     }
+
 
 # ================================
 # UTILITY FUNCTIONS
 # ================================
+
 
 def parse_command_to_intent(command: EchoCommand) -> UserIntent:
     """Parse API command into UserIntent for Echo orchestration"""
 
     # Map command strings to actions and targets
     command_mapping = {
-        'generate_character': ('generate', 'character'),
-        'generate_scene': ('generate', 'scene'),
-        'create_project': ('create', 'project'),
-        'continue_project': ('continue', 'project'),
-        'learn_style': ('learn', 'style'),
-        'refine_style': ('refine', 'style'),
-        'batch_generate': ('generate', 'batch')
+        "generate_character": ("generate", "character"),
+        "generate_scene": ("generate", "scene"),
+        "create_project": ("create", "project"),
+        "continue_project": ("continue", "project"),
+        "learn_style": ("learn", "style"),
+        "refine_style": ("refine", "style"),
+        "batch_generate": ("generate", "batch"),
     }
 
-    action, target = command_mapping.get(command.command, ('generate', 'character'))
+    action, target = command_mapping.get(command.command, ("generate", "character"))
 
     # Map source string to enum
     source_mapping = {
-        'telegram': InteractionSource.TELEGRAM,
-        'browser_studio': InteractionSource.BROWSER_STUDIO,
-        'api': InteractionSource.API,
-        'scheduled': InteractionSource.SCHEDULED
+        "telegram": InteractionSource.TELEGRAM,
+        "browser_studio": InteractionSource.BROWSER_STUDIO,
+        "api": InteractionSource.API,
+        "scheduled": InteractionSource.SCHEDULED,
     }
 
     source = source_mapping.get(command.source, InteractionSource.API)
@@ -423,54 +478,52 @@ def parse_command_to_intent(command: EchoCommand) -> UserIntent:
         context=context,
         source=source,
         user_id=command.user_id,
-        project_id=command.project_id
+        project_id=command.project_id,
     )
 
-def parse_telegram_command(message_text: str, user_id: str, chat_context: Dict) -> Optional[EchoCommand]:
+
+def parse_telegram_command(
+    message_text: str, user_id: str, chat_context: Dict
+) -> Optional[EchoCommand]:
     """Parse Telegram message into Echo command"""
 
     # Basic Telegram command parsing
-    if message_text.startswith('/generate'):
+    if message_text.startswith("/generate"):
         # Example: "/generate character Yuki in cyberpunk style"
         parts = message_text.split()
         if len(parts) >= 3:
             target = parts[1]  # 'character'
-            name = parts[2]    # 'Yuki'
-            style_hint = ' '.join(parts[3:]) if len(parts) > 3 else ''
+            name = parts[2]  # 'Yuki'
+            style_hint = " ".join(parts[3:]) if len(parts) > 3 else ""
 
             return EchoCommand(
                 command=f"generate_{target}",
                 source="telegram",
                 user_id=user_id,
-                parameters={
-                    "character_name": name,
-                    "style_hint": style_hint
-                },
-                context=chat_context
+                parameters={"character_name": name, "style_hint": style_hint},
+                context=chat_context,
             )
 
-    elif message_text.startswith('/project'):
+    elif message_text.startswith("/project"):
         # Example: "/project create Cyberpunk Academy"
         parts = message_text.split()
         if len(parts) >= 3:
             action = parts[1]  # 'create'
-            project_name = ' '.join(parts[2:])  # 'Cyberpunk Academy'
+            project_name = " ".join(parts[2:])  # 'Cyberpunk Academy'
 
             return EchoCommand(
                 command=f"{action}_project",
                 source="telegram",
                 user_id=user_id,
-                parameters={
-                    "project_name": project_name
-                },
-                context=chat_context
+                parameters={"project_name": project_name},
+                context=chat_context,
             )
 
-    elif message_text.startswith('/style'):
+    elif message_text.startswith("/style"):
         # Example: "/style learn dramatic_lighting from scene_12.jpg"
         parts = message_text.split()
         if len(parts) >= 4:
-            action = parts[1]      # 'learn'
+            action = parts[1]  # 'learn'
             style_name = parts[2]  # 'dramatic_lighting'
             # Parse rest as examples or description
 
@@ -480,12 +533,13 @@ def parse_telegram_command(message_text: str, user_id: str, chat_context: Dict) 
                 user_id=user_id,
                 parameters={
                     "style_name": style_name,
-                    "style_description": ' '.join(parts[3:])
+                    "style_description": " ".join(parts[3:]),
                 },
-                context=chat_context
+                context=chat_context,
             )
 
     return None
+
 
 # ================================
 # MAIN APPLICATION
@@ -497,5 +551,5 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=8332,  # New port for Echo Integration API
         reload=True,
-        log_level="info"
+        log_level="info",
     )

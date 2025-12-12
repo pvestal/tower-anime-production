@@ -11,6 +11,7 @@ from datetime import datetime
 from typing import Dict, List, Optional
 
 import psycopg2
+from psycopg2 import pool
 from psycopg2.extras import RealDictCursor
 
 # Configure logging
@@ -32,20 +33,17 @@ class V2DatabaseManager:
     Database manager for v2.0 tables with integer compatibility
     """
 
-
     def __init__(self):
         self.pool = None
-
 
     def connect(self):
         """Initialize database connection pool"""
         try:
-            self.pool = psycopg2.pool.SimpleConnectionPool(1, 10, **DB_CONFIG)
+            self.pool = pool.SimpleConnectionPool(1, 10, **DB_CONFIG)
             logger.info("Database pool initialized")
         except Exception as e:
             logger.error(f"Database connection failed: {e}")
             raise
-
 
     def get_connection(self):
         """Get connection from pool"""
@@ -53,15 +51,15 @@ class V2DatabaseManager:
             self.connect()
         return self.pool.getconn()
 
-
     def return_connection(self, conn):
         """Return connection to pool"""
         self.pool.putconn(conn)
 
     # === Project Operations ===
 
-
-    def create_project(self, name: str, description: str = "", project_type: str = "anime") -> int:
+    def create_project(
+        self, name: str, description: str = "", project_type: str = "anime"
+    ) -> int:
         """Create new project and return ID"""
         conn = self.get_connection()
         try:
@@ -85,7 +83,6 @@ class V2DatabaseManager:
         finally:
             self.return_connection(conn)
 
-
     def get_projects(self) -> List[Dict]:
         """Get all projects"""
         conn = self.get_connection()
@@ -97,7 +94,6 @@ class V2DatabaseManager:
             self.return_connection(conn)
 
     # === Job Operations ===
-
 
     def create_job(
         self,
@@ -139,9 +135,12 @@ class V2DatabaseManager:
         finally:
             self.return_connection(conn)
 
-
     def update_job_status(
-        self, job_id: int, status: str, output_path: str = None, error_message: str = None
+        self,
+        job_id: int,
+        status: str,
+        output_path: str = None,
+        error_message: str = None,
     ):
         """Update job status and completion info"""
         conn = self.get_connection()
@@ -183,7 +182,6 @@ class V2DatabaseManager:
         finally:
             self.return_connection(conn)
 
-
     def get_job(self, job_id: int) -> Optional[Dict]:
         """Get job by ID"""
         conn = self.get_connection()
@@ -196,7 +194,6 @@ class V2DatabaseManager:
             self.return_connection(conn)
 
     # === Generation Parameters (Reproducibility) ===
-
 
     def store_generation_params(
         self,
@@ -246,7 +243,6 @@ class V2DatabaseManager:
 
     # === Quality Metrics ===
 
-
     def store_quality_score(
         self,
         job_id: int,
@@ -284,14 +280,15 @@ class V2DatabaseManager:
                     ),
                 )
                 conn.commit()
-                logger.info(f"Stored quality score: {metric_name}={score_value} for job {job_id}")
+                logger.info(
+                    f"Stored quality score: {metric_name}={score_value} for job {job_id}"
+                )
         except Exception as e:
             conn.rollback()
             logger.error(f"Failed to store quality score: {e}")
             raise
         finally:
             self.return_connection(conn)
-
 
     def get_job_quality_scores(self, job_id: int) -> List[Dict]:
         """Get all quality scores for a job"""
@@ -312,7 +309,6 @@ class V2DatabaseManager:
 
     # === Character Management ===
 
-
     def add_character_attribute(
         self,
         character_id: int,
@@ -331,7 +327,13 @@ class V2DatabaseManager:
                     (character_id, attribute_type, attribute_value, prompt_tokens, priority, created_at)
                     VALUES (%s, %s, %s, %s, %s, NOW())
                 """,
-                    (character_id, attribute_type, attribute_value, prompt_tokens or [], priority),
+                    (
+                        character_id,
+                        attribute_type,
+                        attribute_value,
+                        prompt_tokens or [],
+                        priority,
+                    ),
                 )
                 conn.commit()
                 logger.info(
@@ -343,7 +345,6 @@ class V2DatabaseManager:
             raise
         finally:
             self.return_connection(conn)
-
 
     def get_character_attributes(self, character_id: int) -> List[Dict]:
         """Get character attributes"""
@@ -368,11 +369,9 @@ class V2IntegrationAPI:
     Integration API that extends existing anime_api.py with v2.0 capabilities
     """
 
-
     def __init__(self):
         self.db = V2DatabaseManager()
         self.db.connect()
-
 
     async def create_anime_job_with_v2(
         self,
@@ -441,7 +440,6 @@ class V2IntegrationAPI:
             logger.error(f"Failed to create v2.0 job: {e}")
             raise
 
-
     async def update_job_with_quality_metrics(
         self,
         job_id: int,
@@ -485,7 +483,9 @@ class V2IntegrationAPI:
                 "passed_metrics": passed_count,
                 "total_metrics": total_count,
                 "pass_rate": passed_count / total_count if total_count > 0 else 0,
-                "gate_passed": (passed_count / total_count) >= 0.8 if total_count > 0 else False,
+                "gate_passed": (
+                    (passed_count / total_count) >= 0.8 if total_count > 0 else False
+                ),
             }
 
             logger.info(f"Job {job_id} quality gate: {gate_status}")
@@ -494,7 +494,6 @@ class V2IntegrationAPI:
         except Exception as e:
             logger.error(f"Failed to update job with quality metrics: {e}")
             raise
-
 
     async def reproduce_generation(self, job_id: int) -> Dict:
         """
@@ -518,7 +517,9 @@ class V2IntegrationAPI:
                     params = cur.fetchone()
 
                     if not params:
-                        raise ValueError(f"No generation parameters found for job {job_id}")
+                        raise ValueError(
+                            f"No generation parameters found for job {job_id}"
+                        )
 
                     reproduction_data = {
                         "original_job_id": job_id,
@@ -557,7 +558,9 @@ v2_integration = V2IntegrationAPI()
 
 async def create_tracked_job(character_name: str, prompt: str, **kwargs):
     """Create job with v2.0 tracking - use this in anime_api.py"""
-    return await v2_integration.create_anime_job_with_v2(character_name, prompt, **kwargs)
+    return await v2_integration.create_anime_job_with_v2(
+        character_name, prompt, **kwargs
+    )
 
 
 async def complete_job_with_quality(job_id: int, output_path: str, **quality_metrics):
@@ -574,7 +577,6 @@ async def reproduce_job(job_id: int):
 
 if __name__ == "__main__":
     # Test the integration
-
 
     async def test_integration():
         try:

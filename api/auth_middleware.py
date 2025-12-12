@@ -7,16 +7,16 @@ from typing import Optional
 
 import httpx
 import jwt
-from fastapi import HTTPException, Header
+from fastapi import Header, HTTPException
 
 # Configuration
 AUTH_SERVICE_URL = "http://localhost:8088"
-JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "tower_jwt_secret_2025")  # Should match auth service
+JWT_SECRET_KEY = os.getenv(
+    "JWT_SECRET_KEY", "tower_jwt_secret_2025"
+)  # Should match auth service
 
 
 @lru_cache()
-
-
 def get_jwt_secret():
     """Get JWT secret, preferably from Vault"""
     try:
@@ -38,7 +38,8 @@ async def verify_token_with_auth_service(token: str) -> dict:
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                f"{AUTH_SERVICE_URL}/api/auth/verify", headers={"Authorization": f"Bearer {token}"}
+                f"{AUTH_SERVICE_URL}/api/auth/verify",
+                headers={"Authorization": f"Bearer {token}"},
             )
             if response.status_code == 200:
                 return response.json()
@@ -106,16 +107,15 @@ async def optional_auth(authorization: Optional[str] = Header(None)) -> Optional
 
 from collections import defaultdict
 from datetime import datetime, timedelta
+
 # Rate limiting decorator
 from functools import wraps
 
 
 class RateLimiter:
 
-
     def __init__(self):
         self.requests = defaultdict(list)
-
 
     def is_allowed(self, key: str, max_requests: int, window_seconds: int) -> bool:
         """Check if request is allowed within rate limit"""
@@ -123,7 +123,9 @@ class RateLimiter:
         cutoff = now - timedelta(seconds=window_seconds)
 
         # Clean old requests
-        self.requests[key] = [req_time for req_time in self.requests[key] if req_time > cutoff]
+        self.requests[key] = [
+            req_time for req_time in self.requests[key] if req_time > cutoff
+        ]
 
         # Check limit
         if len(self.requests[key]) >= max_requests:
@@ -140,11 +142,8 @@ rate_limiter = RateLimiter()
 def rate_limit(max_requests: int = 10, window_seconds: int = 60):
     """Rate limiting decorator"""
 
-
     def decorator(func):
         @wraps(func)
-
-
         async def wrapper(*args, **kwargs):
             # Get user from auth if available
             user_data = kwargs.get("user_data", {})
