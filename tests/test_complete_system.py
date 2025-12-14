@@ -60,12 +60,14 @@ class TestSystemHealth:
 
         # Check VRAM availability
         for device in devices:
-            vram_free = device.get("vram_free_mb", 0)
-            vram_total = device.get("vram_total_mb", 1)
-            usage_percent = ((vram_total - vram_free) / vram_total) * 100
+            vram_free_bytes = device.get("vram_free", 0)
+            vram_total_bytes = device.get("vram_total", 1)
+            vram_free_mb = vram_free_bytes / (1024 * 1024)
+            vram_total_mb = vram_total_bytes / (1024 * 1024)
+            usage_percent = ((vram_total_mb - vram_free_mb) / vram_total_mb) * 100
 
-            print(f"📊 GPU {device.get('name', 'Unknown')}: {vram_free}MB free ({100-usage_percent:.1f}% available)")
-            assert vram_free > 1000, f"Insufficient VRAM: only {vram_free}MB free"
+            print(f"📊 GPU {device.get('name', 'Unknown')}: {vram_free_mb:.0f}MB free ({100-usage_percent:.1f}% available)")
+            assert vram_free_mb > 1000, f"Insufficient VRAM: only {vram_free_mb:.0f}MB free"
 
 
 class TestGenerationWorkflow:
