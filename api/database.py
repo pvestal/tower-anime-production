@@ -54,6 +54,8 @@ def get_db() -> Generator[Session, None, None]:
 
     Usage in FastAPI routes:
     @app.get("/api/anime/projects")
+
+
     async def get_projects(db: Session = Depends(get_db)):
         return db.query(Project).all()
     """
@@ -121,6 +123,8 @@ def receive_checkin(dbapi_connection, connection_record):
 
 
 # Database utilities
+
+
 class DatabaseHealth:
     """Database health check utilities"""
 
@@ -143,7 +147,9 @@ class DatabaseHealth:
         try:
             pool = engine.pool
             return {
-                "status": "healthy" if DatabaseHealth.check_connection() else "unhealthy",
+                "status": (
+                    "healthy" if DatabaseHealth.check_connection() else "unhealthy"
+                ),
                 "database": DB_CONFIG["database"],
                 "host": DB_CONFIG["host"],
                 "pool_size": pool.size(),

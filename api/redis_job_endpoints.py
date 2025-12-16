@@ -24,7 +24,11 @@ async def create_redis_job(project_id: str, job_type: str, params: dict = {}):
     """Create a new job in Redis queue"""
     try:
         job_id = job_queue.add_job(project_id, job_type, params)
-        return {"job_id": job_id, "status": "queued", "message": "Job added to Redis queue"}
+        return {
+            "job_id": job_id,
+            "status": "queued",
+            "message": "Job added to Redis queue",
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

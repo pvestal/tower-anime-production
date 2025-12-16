@@ -61,6 +61,8 @@ active_generation = None
 
 
 # Pydantic models for API requests
+
+
 class ProjectCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     description: Optional[str] = Field(None, max_length=1000)
@@ -96,7 +98,7 @@ class GenerateRequest(BaseModel):
         dangerous_patterns = ["DROP", "DELETE", "INSERT", "UPDATE", "--", ";"]
         for pattern in dangerous_patterns:
             if pattern in v.upper():
-                raise ValueError(f"Invalid characters in prompt")
+                raise ValueError("Invalid characters in prompt")
         return v.strip()
 
 
@@ -123,6 +125,8 @@ async def shutdown_event():
 
 
 # Existing GPU and ComfyUI functions (unchanged)
+
+
 async def check_gpu_availability() -> bool:
     """Check if GPU is available for new generation"""
     global active_generation
@@ -159,15 +163,25 @@ async def get_comfyui_job_status(prompt_id: str) -> Dict:
             # Check running queue
             for item in queue_data.get("queue_running", []):
                 if len(item) > 1 and item[1] == prompt_id:
-                    return {"status": "processing", "progress": 50, "estimated_remaining": 30}
+                    return {
+                        "status": "processing",
+                        "progress": 50,
+                        "estimated_remaining": 30,
+                    }
 
             # Check pending queue
             for item in queue_data.get("queue_pending", []):
                 if len(item) > 1 and item[1] == prompt_id:
-                    return {"status": "queued", "progress": 0, "estimated_remaining": 60}
+                    return {
+                        "status": "queued",
+                        "progress": 0,
+                        "estimated_remaining": 60,
+                    }
 
             # Check history for completion
-            history_response = await client.get(f"http://localhost:8188/history/{prompt_id}")
+            history_response = await client.get(
+                f"http://localhost:8188/history/{prompt_id}"
+            )
 
             if history_response.status_code == 200:
                 history = history_response.json()
@@ -180,7 +194,9 @@ async def get_comfyui_job_status(prompt_id: str) -> Dict:
                         for node_id, output in prompt_history["outputs"].items():
                             if "images" in output:
                                 filename = output["images"][0]["filename"]
-                                output_path = f"/mnt/1TB-storage/ComfyUI/output/{filename}"
+                                output_path = (
+                                    f"/mnt/1TB-storage/ComfyUI/output/{filename}"
+                                )
 
                                 return {
                                     "status": "completed",
@@ -190,7 +206,9 @@ async def get_comfyui_job_status(prompt_id: str) -> Dict:
                                 }
                             elif "videos" in output:
                                 filename = output["videos"][0]["filename"]
-                                output_path = f"/mnt/1TB-storage/ComfyUI/output/{filename}"
+                                output_path = (
+                                    f"/mnt/1TB-storage/ComfyUI/output/{filename}"
+                                )
 
                                 return {
                                     "status": "completed",
@@ -220,8 +238,12 @@ async def health(db: Session = Depends(get_db)):
         # Check ComfyUI connectivity
         async with httpx.AsyncClient(timeout=5) as client:
             comfyui_response = await client.get("http://localhost:8188/queue")
-            comfyui_status = "healthy" if comfyui_response.status_code == 200 else "unhealthy"
-            queue_data = comfyui_response.json() if comfyui_response.status_code == 200 else {}
+            comfyui_status = (
+                "healthy" if comfyui_response.status_code == 200 else "unhealthy"
+            )
+            queue_data = (
+                comfyui_response.json() if comfyui_response.status_code == 200 else {}
+            )
     except:
         comfyui_status = "unavailable"
         queue_data = {}
@@ -233,7 +255,9 @@ async def health(db: Session = Depends(get_db)):
     db_info = DatabaseHealth.get_connection_info()
 
     # Count active jobs from database
-    active_jobs_count = db.query(ProductionJob).filter(ProductionJob.status == "processing").count()
+    active_jobs_count = (
+        db.query(ProductionJob).filter(ProductionJob.status == "processing").count()
+    )
     total_jobs_count = db.query(ProductionJob).count()
     total_projects_count = db.query(Project).count()
     total_characters_count = db.query(Character).count()
@@ -250,7 +274,10 @@ async def health(db: Session = Depends(get_db)):
                 "queue_running": len(queue_data.get("queue_running", [])),
                 "queue_pending": len(queue_data.get("queue_pending", [])),
             },
-            "gpu": {"available": gpu_available, "active_generation": active_generation is not None},
+            "gpu": {
+                "available": gpu_available,
+                "active_generation": active_generation is not None,
+            },
             "stats": {
                 "projects": total_projects_count,
                 "characters": total_characters_count,
@@ -269,7 +296,13 @@ async def list_projects(
     user_data: dict = Depends(optional_auth),
 ):
     """List all projects with pagination"""
-    projects = db.query(Project).order_by(desc(Project.created_at)).offset(skip).limit(limit).all()
+    projects = (
+        db.query(Project)
+        .order_by(desc(Project.created_at))
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
     total = db.query(Project).count()
 
     return {
@@ -303,7 +336,9 @@ async def create_project(
     # Check if project with same name exists
     existing = db.query(Project).filter(Project.name == request.name).first()
     if existing:
-        raise HTTPException(status_code=400, detail="Project with this name already exists")
+        raise HTTPException(
+            status_code=400, detail="Project with this name already exists"
+        )
 
     project = Project(
         name=request.name,
@@ -333,7 +368,9 @@ async def create_project(
 
 @app.get("/api/anime/projects/{project_id}")
 async def get_project(
-    project_id: int, db: Session = Depends(get_db), user_data: dict = Depends(optional_auth)
+    project_id: int,
+    db: Session = Depends(get_db),
+    user_data: dict = Depends(optional_auth),
 ):
     """Get project details with related characters and jobs"""
     project = db.query(Project).filter(Project.id == project_id).first()
@@ -360,7 +397,12 @@ async def get_project(
         "created_at": project.created_at.isoformat() if project.created_at else None,
         "updated_at": project.updated_at.isoformat() if project.updated_at else None,
         "characters": [
-            {"id": c.id, "name": c.name, "description": c.description, "status": c.status}
+            {
+                "id": c.id,
+                "name": c.name,
+                "description": c.description,
+                "status": c.status,
+            }
             for c in characters
         ],
         "recent_jobs": [
@@ -390,7 +432,9 @@ async def list_characters(
     if project_id:
         query = query.filter(Character.project_id == project_id)
 
-    characters = query.order_by(desc(Character.created_at)).offset(skip).limit(limit).all()
+    characters = (
+        query.order_by(desc(Character.created_at)).offset(skip).limit(limit).all()
+    )
     total = query.count()
 
     return {
@@ -428,7 +472,9 @@ async def create_character(
     # Check if character name is unique
     existing = db.query(Character).filter(Character.name == request.name).first()
     if existing:
-        raise HTTPException(status_code=400, detail="Character with this name already exists")
+        raise HTTPException(
+            status_code=400, detail="Character with this name already exists"
+        )
 
     character = Character(
         name=request.name,
@@ -443,7 +489,9 @@ async def create_character(
     db.commit()
     db.refresh(character)
 
-    logger.info(f"Created character {character.id}: {character.name} for project {project.name}")
+    logger.info(
+        f"Created character {character.id}: {character.name} for project {project.name}"
+    )
 
     return {
         "id": character.id,
@@ -452,7 +500,9 @@ async def create_character(
         "description": character.description,
         "visual_traits": character.visual_traits,
         "status": character.status,
-        "created_at": character.created_at.isoformat() if character.created_at else None,
+        "created_at": (
+            character.created_at.isoformat() if character.created_at else None
+        ),
         "message": "Character created successfully",
     }
 

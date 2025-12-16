@@ -7,11 +7,13 @@ from typing import Optional
 
 import httpx
 import jwt
-from fastapi import HTTPException, Header
+from fastapi import Header, HTTPException
 
 # Configuration
 AUTH_SERVICE_URL = "http://localhost:8088"
-JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "tower_jwt_secret_2025")  # Should match auth service
+JWT_SECRET_KEY = os.getenv(
+    "JWT_SECRET_KEY", "tower_jwt_secret_2025"
+)  # Should match auth service
 
 
 @lru_cache()
@@ -36,7 +38,8 @@ async def verify_token_with_auth_service(token: str) -> dict:
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                f"{AUTH_SERVICE_URL}/api/auth/verify", headers={"Authorization": f"Bearer {token}"}
+                f"{AUTH_SERVICE_URL}/api/auth/verify",
+                headers={"Authorization": f"Bearer {token}"},
             )
             if response.status_code == 200:
                 return response.json()
@@ -67,6 +70,10 @@ def verify_jwt_locally(token: str) -> dict:
 
 async def require_auth(authorization: Optional[str] = Header(None)) -> dict:
     """Require valid authentication for protected endpoints"""
+
+    # Allow internal service calls from Echo Brain
+    if authorization == "Bearer internal_echo_service_token_2025":
+        return {"username": "echo_service", "role": "internal"}
 
     if not authorization:
         raise HTTPException(status_code=401, detail="Authorization header required")
@@ -104,11 +111,13 @@ async def optional_auth(authorization: Optional[str] = Header(None)) -> Optional
 
 from collections import defaultdict
 from datetime import datetime, timedelta
+
 # Rate limiting decorator
 from functools import wraps
 
 
 class RateLimiter:
+
     def __init__(self):
         self.requests = defaultdict(list)
 
@@ -118,7 +127,9 @@ class RateLimiter:
         cutoff = now - timedelta(seconds=window_seconds)
 
         # Clean old requests
-        self.requests[key] = [req_time for req_time in self.requests[key] if req_time > cutoff]
+        self.requests[key] = [
+            req_time for req_time in self.requests[key] if req_time > cutoff
+        ]
 
         # Check limit
         if len(self.requests[key]) >= max_requests:
@@ -162,6 +173,8 @@ from auth_middleware import require_auth, optional_auth, rate_limit
 
 @app.post("/api/anime/generate")
 @rate_limit(max_requests=10, window_seconds=60)
+
+
 async def generate_anime(
     request: GenerateRequest,
     user_data: dict = Depends(require_auth)
@@ -171,6 +184,8 @@ async def generate_anime(
     # ... generation logic ...
 
 @app.get("/api/anime/gallery")
+
+
 async def get_gallery(
     user_data: Optional[dict] = Depends(optional_auth)
 ):

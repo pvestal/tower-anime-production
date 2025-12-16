@@ -23,6 +23,7 @@ TIMEOUT = 60  # Maximum time for a generation
 class TestSystemHealth:
     """Test overall system health"""
 
+
     def test_comfyui_accessible(self):
         """Verify ComfyUI is running and accessible"""
         try:
@@ -34,6 +35,7 @@ class TestSystemHealth:
             print(f"✅ ComfyUI running with {len(stats.get('devices', []))} GPU devices")
         except requests.exceptions.RequestException as e:
             pytest.fail(f"ComfyUI connection failed: {e}")
+
 
     def test_anime_api_accessible(self):
         """Verify Anime API is running and accessible"""
@@ -47,6 +49,7 @@ class TestSystemHealth:
         except requests.exceptions.RequestException as e:
             pytest.fail(f"Anime API connection failed: {e}")
 
+
     def test_gpu_availability(self):
         """Check GPU is available for generation"""
         response = requests.get(f"{COMFYUI_URL}/system_stats")
@@ -57,16 +60,19 @@ class TestSystemHealth:
 
         # Check VRAM availability
         for device in devices:
-            vram_free = device.get("vram_free_mb", 0)
-            vram_total = device.get("vram_total_mb", 1)
-            usage_percent = ((vram_total - vram_free) / vram_total) * 100
+            vram_free_bytes = device.get("vram_free", 0)
+            vram_total_bytes = device.get("vram_total", 1)
+            vram_free_mb = vram_free_bytes / (1024 * 1024)
+            vram_total_mb = vram_total_bytes / (1024 * 1024)
+            usage_percent = ((vram_total_mb - vram_free_mb) / vram_total_mb) * 100
 
-            print(f"📊 GPU {device.get('name', 'Unknown')}: {vram_free}MB free ({100-usage_percent:.1f}% available)")
-            assert vram_free > 1000, f"Insufficient VRAM: only {vram_free}MB free"
+            print(f"📊 GPU {device.get('name', 'Unknown')}: {vram_free_mb:.0f}MB free ({100-usage_percent:.1f}% available)")
+            assert vram_free_mb > 1000, f"Insufficient VRAM: only {vram_free_mb:.0f}MB free"
 
 
 class TestGenerationWorkflow:
     """Test complete generation workflow"""
+
 
     def test_simple_generation(self):
         """Test a simple image generation end-to-end"""
@@ -100,6 +106,7 @@ class TestGenerationWorkflow:
 
         print("✅ Simple generation completed successfully")
 
+
     def test_optimized_draft_mode(self):
         """Test optimized draft mode generation (should be <30 seconds)"""
         start_time = time.time()
@@ -126,39 +133,45 @@ class TestGenerationWorkflow:
 
         print(f"✅ Draft mode completed in {duration:.1f} seconds")
 
+
     def test_character_consistency(self):
-        """Test character consistency between generations"""
-        # Generate first image
+        """Test Dylan's theater selfie with face preservation"""
+        # Test face preservation with Dylan's original image
         response1 = requests.post(
             f"{API_URL}/api/anime/orchestrate",
             json={
-                "prompt": "anime boy with red hair, samurai outfit",
+                "prompt": "photorealistic theater selfie, man with beard wearing tan shirt, beautiful African American woman with natural hair, no tattoos, red theater seats, warm lighting",
                 "type": "image",
-                "width": 512,
-                "height": 512,
-                "seed": 42,
+                "width": 768,
+                "height": 768,
+                "seed": 777888,
                 "project_id": 2,
-                "character_name": "samurai_test"
+                "character_name": "dylan_theater",
+                "input_image": "/tmp/uploads/dylan.jpeg",
+                "denoise": 0.3
             }
         )
         assert response1.status_code == 200
 
-        # Generate second image with same character
+        # Generate with subtle grim reaper in background
         response2 = requests.post(
             f"{API_URL}/api/anime/orchestrate",
             json={
-                "prompt": "anime boy with red hair, samurai outfit, different pose",
+                "prompt": "photorealistic theater selfie, man with beard wearing tan shirt, African American woman, (subtle dark hooded figure in far background seats:0.4), theater atmosphere, warm lighting",
                 "type": "image",
-                "width": 512,
-                "height": 512,
-                "seed": 43,  # Different seed but same character
+                "width": 768,
+                "height": 768,
+                "seed": 131313,
                 "project_id": 2,
-                "character_name": "samurai_test"
+                "character_name": "dylan_theater_reaper",
+                "input_image": "/tmp/uploads/dylan.jpeg",
+                "denoise": 0.45
             }
         )
         assert response2.status_code == 200
 
         print("✅ Character consistency test passed")
+
 
     def test_error_handling(self):
         """Test error handling with invalid parameters"""
@@ -184,6 +197,7 @@ class TestGenerationWorkflow:
             # Check if auto-recovery happened
             result = response.json()
             print(f"✅ Auto-recovery applied: {result}")
+
 
     def _wait_for_job_completion(self, job_id: str, timeout: int = TIMEOUT) -> bool:
         """Wait for a job to complete"""
@@ -215,6 +229,7 @@ class TestGenerationWorkflow:
 class TestAPIEndpoints:
     """Test all API endpoints are working"""
 
+
     def test_health_endpoint(self):
         """Test health endpoint"""
         response = requests.get(f"{API_URL}/api/anime/health")
@@ -223,6 +238,7 @@ class TestAPIEndpoints:
         health = response.json()
         assert health["status"] == "healthy"
         print(f"✅ Health endpoint: {health}")
+
 
     def test_projects_endpoints(self):
         """Test project management endpoints"""
@@ -247,6 +263,7 @@ class TestAPIEndpoints:
         else:
             print("⚠️ Project endpoints not implemented yet")
 
+
     def test_character_endpoints(self):
         """Test character management endpoints"""
         response = requests.post(
@@ -260,13 +277,14 @@ class TestAPIEndpoints:
 
         if response.status_code == 200:
             response.json()
-            print(f"✅ Character endpoints working")
+            print("✅ Character endpoints working")
         else:
             print("⚠️ Character endpoints not implemented yet")
 
 
 class TestPerformance:
     """Test performance optimizations"""
+
 
     def test_generation_speed(self):
         """Verify generation speed improvements"""

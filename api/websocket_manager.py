@@ -39,7 +39,9 @@ class ConnectionManager:
         # Redis for pub/sub if needed
         self.redis_client = None
         try:
-            self.redis_client = redis.Redis(host=redis_host, port=redis_port, decode_responses=True)
+            self.redis_client = redis.Redis(
+                host=redis_host, port=redis_port, decode_responses=True
+            )
             self.redis_client.ping()
             logger.info("Redis connection established for WebSocket pub/sub")
         except Exception as e:
@@ -53,7 +55,9 @@ class ConnectionManager:
             "password": "tower_echo_brain_secret_key_2025",
         }
 
-    async def connect(self, websocket: WebSocket, job_id: str, user_info: Optional[dict] = None):
+    async def connect(
+        self, websocket: WebSocket, job_id: str, user_info: Optional[dict] = None
+    ):
         """
         Connect a WebSocket client to job progress updates.
 
@@ -218,7 +222,9 @@ class ConnectionManager:
         # Publish to Redis for other services if available
         if self.redis_client:
             try:
-                self.redis_client.publish(f"anime_progress:{job_id}", json.dumps(progress_data))
+                self.redis_client.publish(
+                    f"anime_progress:{job_id}", json.dumps(progress_data)
+                )
             except Exception as e:
                 logger.warning(f"Failed to publish to Redis: {e}")
 
@@ -273,14 +279,17 @@ class ConnectionManager:
             )
 
             cursor.execute(
-                update_query, (status, metadata_update, error, output_path, status, job_id_int)
+                update_query,
+                (status, metadata_update, error, output_path, status, job_id_int),
             )
 
             conn.commit()
             cursor.close()
             conn.close()
 
-            logger.debug(f"Database progress synced for job {job_id}: {progress}% ({status})")
+            logger.debug(
+                f"Database progress synced for job {job_id}: {progress}% ({status})"
+            )
 
         except Exception as e:
             logger.error(f"Failed to sync progress to database for job {job_id}: {e}")
@@ -310,7 +319,10 @@ class ConnectionManager:
         # Get connection details
         connection_details = {}
         for job_id, connections in self.connections.items():
-            connection_details[job_id] = {"connection_count": len(connections), "connections": []}
+            connection_details[job_id] = {
+                "connection_count": len(connections),
+                "connections": [],
+            }
 
             for websocket in connections:
                 if websocket in self.connection_metadata:
