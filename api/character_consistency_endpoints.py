@@ -5,6 +5,7 @@ New endpoints for enhanced seed storage and character consistency management
 """
 
 import json
+
 # Import the main app dependencies
 import os
 import sys
@@ -19,9 +20,15 @@ from sqlalchemy.orm import Session
 sys.path.append("/opt/tower-anime-production/api")
 
 # Import from the patch
-from character_consistency_patch import (CharacterVersionCreate, CharacterVersionResponse,
-                                         EnhancedGenerationRequest, consistency_engine,
-                                         create_character_version, seed_manager, update_production_job_with_consistency_data)
+from character_consistency_patch import (
+    CharacterVersionCreate,
+    CharacterVersionResponse,
+    EnhancedGenerationRequest,
+    consistency_engine,
+    create_character_version,
+    seed_manager,
+    update_production_job_with_consistency_data,
+)
 
 # Create router for new endpoints
 router = APIRouter(prefix="/api/anime", tags=["character-consistency"])
@@ -35,9 +42,7 @@ except ImportError:
         from sqlalchemy import create_engine
         from sqlalchemy.orm import sessionmaker
 
-        DATABASE_URL = (
-            "postgresql://patrick:tower_echo_brain_secret_key_2025@localhost/anime_production"
-        )
+        DATABASE_URL = "postgresql://patrick:tower_echo_brain_secret_key_2025@localhost/anime_production"
         engine = create_engine(DATABASE_URL)
         SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
         db = SessionLocal()
@@ -85,7 +90,9 @@ async def generate_with_consistency(
 
         if not final_seed and request.use_character_seed and request.character_id:
             # Get canonical seed from character versions
-            final_seed = seed_manager.get_character_canonical_seed(db, request.character_id)
+            final_seed = seed_manager.get_character_canonical_seed(
+                db, request.character_id
+            )
 
         if not final_seed:
             # Generate deterministic or timestamp-based seed
@@ -129,7 +136,9 @@ async def generate_with_consistency(
         consistency_analysis = None
         if request.character_id:
             consistency_analysis = consistency_engine.analyze_consistency(
-                request.character_id, {"seed": final_seed, "workflow": workflow_params}, db
+                request.character_id,
+                {"seed": final_seed, "workflow": workflow_params},
+                db,
             )
 
         # Here would be the actual ComfyUI integration
@@ -168,7 +177,9 @@ async def generate_with_consistency(
             "seed": final_seed,
             "character_id": request.character_id,
             "workflow_template_path": template_path,
-            "consistency_analysis": consistency_analysis.dict() if consistency_analysis else None,
+            "consistency_analysis": (
+                consistency_analysis.dict() if consistency_analysis else None
+            ),
             "estimated_completion": "2-3 minutes",
             "message": "Consistent generation started with seed tracking",
         }
@@ -184,18 +195,25 @@ async def generate_with_consistency(
         db.add(job)
         db.commit()
 
-        raise HTTPException(status_code=500, detail=f"Consistent generation failed: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Consistent generation failed: {str(e)}"
+        )
 
 
-@router.post("/characters/{character_id}/versions", response_model=CharacterVersionResponse)
+@router.post(
+    "/characters/{character_id}/versions", response_model=CharacterVersionResponse
+)
 async def create_character_version_endpoint(
-    character_id: int, version_data: CharacterVersionCreate, db: Session = Depends(get_db)
+    character_id: int,
+    version_data: CharacterVersionCreate,
+    db: Session = Depends(get_db),
 ):
     """Create a new version for an existing character"""
     try:
         # Verify character exists
         character_check = db.execute(
-            text("SELECT id FROM anime_api.characters WHERE id = :id"), {"id": character_id}
+            text("SELECT id FROM anime_api.characters WHERE id = :id"),
+            {"id": character_id},
         ).fetchone()
 
         if not character_check:
@@ -239,12 +257,18 @@ async def create_character_version_endpoint(
         )
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create character version: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to create character version: {str(e)}"
+        )
 
 
-@router.get("/characters/{character_id}/versions", response_model=List[CharacterVersionResponse])
+@router.get(
+    "/characters/{character_id}/versions", response_model=List[CharacterVersionResponse]
+)
 async def get_character_versions(
-    character_id: int, db: Session = Depends(get_db), include_non_canonical: bool = False
+    character_id: int,
+    db: Session = Depends(get_db),
+    include_non_canonical: bool = False,
 ):
     """Get all versions for a character"""
     try:
@@ -284,7 +308,9 @@ async def get_character_versions(
         ]
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get character versions: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to get character versions: {str(e)}"
+        )
 
 
 @router.get("/characters/{character_id}/canonical-seed")
@@ -296,13 +322,16 @@ async def get_canonical_seed(character_id: int, db: Session = Depends(get_db)):
         if canonical_seed is None:
             # Return deterministic seed based on character name
             character = db.execute(
-                text("SELECT name FROM anime_api.characters WHERE id = :id"), {"id": character_id}
+                text("SELECT name FROM anime_api.characters WHERE id = :id"),
+                {"id": character_id},
             ).fetchone()
 
             if not character:
                 raise HTTPException(status_code=404, detail="Character not found")
 
-            canonical_seed = seed_manager.generate_deterministic_seed(character.name, "default")
+            canonical_seed = seed_manager.generate_deterministic_seed(
+                character.name, "default"
+            )
 
         return {
             "character_id": character_id,
@@ -311,7 +340,9 @@ async def get_canonical_seed(character_id: int, db: Session = Depends(get_db)):
         }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get canonical seed: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to get canonical seed: {str(e)}"
+        )
 
 
 @router.post("/characters/{character_id}/analyze-consistency")
@@ -320,7 +351,9 @@ async def analyze_character_consistency(
 ):
     """Analyze consistency for a potential generation"""
     try:
-        analysis = consistency_engine.analyze_consistency(character_id, generation_data, db)
+        analysis = consistency_engine.analyze_consistency(
+            character_id, generation_data, db
+        )
 
         return {
             "character_id": character_id,
@@ -330,7 +363,9 @@ async def analyze_character_consistency(
         }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to analyze consistency: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to analyze consistency: {str(e)}"
+        )
 
 
 @router.get("/jobs/{job_id}/consistency-info")
@@ -367,11 +402,15 @@ async def get_job_consistency_info(job_id: int, db: Session = Depends(get_db)):
             "character": character_info,
             "workflow_snapshot": job_info.workflow_snapshot,
             "status": job_info.status,
-            "created_at": job_info.created_at.isoformat() if job_info.created_at else None,
+            "created_at": (
+                job_info.created_at.isoformat() if job_info.created_at else None
+            ),
         }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get job consistency info: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to get job consistency info: {str(e)}"
+        )
 
 
 @router.get("/workflow-templates")
@@ -392,8 +431,12 @@ async def list_workflow_templates():
                             "filename": filename,
                             "path": filepath,
                             "size": stat.st_size,
-                            "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-                            "character": filename.split("_")[0] if "_" in filename else "unknown",
+                            "modified": datetime.fromtimestamp(
+                                stat.st_mtime
+                            ).isoformat(),
+                            "character": (
+                                filename.split("_")[0] if "_" in filename else "unknown"
+                            ),
                         }
                     )
 
@@ -404,4 +447,6 @@ async def list_workflow_templates():
         }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to list workflow templates: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to list workflow templates: {str(e)}"
+        )

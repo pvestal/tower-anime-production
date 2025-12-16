@@ -16,7 +16,9 @@ pytest_plugins = ("pytest_asyncio",)
 # Register custom markers
 def pytest_configure(config):
     """Register custom markers"""
-    config.addinivalue_line("markers", "performance: mark test as a performance benchmark")
+    config.addinivalue_line(
+        "markers", "performance: mark test as a performance benchmark"
+    )
     config.addinivalue_line("markers", "e2e: mark test as an end-to-end test")
     config.addinivalue_line("markers", "slow: mark test as slow running")
 
@@ -44,7 +46,9 @@ def mock_comfyui():
 
     # Mock history
     mock.get_history.return_value = {
-        "test-prompt-123": {"outputs": {"9": {"images": [{"filename": "test_output.png"}]}}}
+        "test-prompt-123": {
+            "outputs": {"9": {"images": [{"filename": "test_output.png"}]}}
+        }
     }
 
     return mock
@@ -107,7 +111,12 @@ def mock_apple_music():
     # Mock track search
     mock.search_by_bpm.return_value = [
         {"id": "track1", "name": "Test Track", "bpm": 120, "artist": "Test Artist"},
-        {"id": "track2", "name": "Another Track", "bpm": 118, "artist": "Another Artist"},
+        {
+            "id": "track2",
+            "name": "Another Track",
+            "bpm": 118,
+            "artist": "Another Artist",
+        },
     ]
 
     # Mock sync
@@ -149,7 +158,11 @@ def sample_character():
         "visual_description": "Spiky black hair, blue eyes, athletic build",
         "reference_image": "/path/to/reference.png",
         "embedding_data": [0.1] * 512,
-        "color_palette": {"hair": [30, 30, 35], "eyes": [100, 150, 200], "skin": [250, 220, 190]},
+        "color_palette": {
+            "hair": [30, 30, 35],
+            "eyes": [100, 150, 200],
+            "skin": [250, 220, 190],
+        },
     }
 
 
@@ -165,7 +178,12 @@ def sample_generation_job():
         "comfyui_prompt_id": "test-prompt-123",
         "output_path": None,
         "created_at": "2025-12-10T12:00:00",
-        "workflow_params": {"model": "AOM3A1B", "steps": 15, "cfg_scale": 7.0, "seed": 42},
+        "workflow_params": {
+            "model": "AOM3A1B",
+            "steps": 15,
+            "cfg_scale": 7.0,
+            "seed": 42,
+        },
     }
 
 
@@ -236,7 +254,10 @@ def api_base_url():
 @pytest.fixture
 def auth_headers():
     """Authentication headers for protected endpoints"""
-    return {"Authorization": "Bearer test_token_12345", "Content-Type": "application/json"}
+    return {
+        "Authorization": "Bearer test_token_12345",
+        "Content-Type": "application/json",
+    }
 
 
 # ============= Async Support =============

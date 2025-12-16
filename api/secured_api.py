@@ -95,15 +95,25 @@ async def get_comfyui_job_status(prompt_id: str) -> Dict:
             # Check running queue
             for item in queue_data.get("queue_running", []):
                 if len(item) > 1 and item[1] == prompt_id:
-                    return {"status": "processing", "progress": 50, "estimated_remaining": 30}
+                    return {
+                        "status": "processing",
+                        "progress": 50,
+                        "estimated_remaining": 30,
+                    }
 
             # Check pending queue
             for item in queue_data.get("queue_pending", []):
                 if len(item) > 1 and item[1] == prompt_id:
-                    return {"status": "queued", "progress": 0, "estimated_remaining": 60}
+                    return {
+                        "status": "queued",
+                        "progress": 0,
+                        "estimated_remaining": 60,
+                    }
 
             # Check history for completion
-            history_response = await client.get(f"http://localhost:8188/history/{prompt_id}")
+            history_response = await client.get(
+                f"http://localhost:8188/history/{prompt_id}"
+            )
 
             if history_response.status_code == 200:
                 history = history_response.json()
@@ -116,7 +126,9 @@ async def get_comfyui_job_status(prompt_id: str) -> Dict:
                         for node_id, output in prompt_history["outputs"].items():
                             if "images" in output:
                                 filename = output["images"][0]["filename"]
-                                output_path = f"/mnt/1TB-storage/ComfyUI/output/{filename}"
+                                output_path = (
+                                    f"/mnt/1TB-storage/ComfyUI/output/{filename}"
+                                )
 
                                 return {
                                     "status": "completed",
@@ -126,7 +138,9 @@ async def get_comfyui_job_status(prompt_id: str) -> Dict:
                                 }
                             elif "videos" in output:
                                 filename = output["videos"][0]["filename"]
-                                output_path = f"/mnt/1TB-storage/ComfyUI/output/{filename}"
+                                output_path = (
+                                    f"/mnt/1TB-storage/ComfyUI/output/{filename}"
+                                )
 
                                 return {
                                     "status": "completed",
@@ -139,9 +153,13 @@ async def get_comfyui_job_status(prompt_id: str) -> Dict:
                                 filename = output["gifs"][0]["filename"]
                                 # Handle both flat and organized paths
                                 if filename.startswith("projects/"):
-                                    output_path = f"/mnt/1TB-storage/ComfyUI/output/{filename}"
+                                    output_path = (
+                                        f"/mnt/1TB-storage/ComfyUI/output/{filename}"
+                                    )
                                 else:
-                                    output_path = f"/mnt/1TB-storage/ComfyUI/output/{filename}"
+                                    output_path = (
+                                        f"/mnt/1TB-storage/ComfyUI/output/{filename}"
+                                    )
 
                                 return {
                                     "status": "completed",
@@ -192,7 +210,11 @@ def get_gpu_memory() -> dict:
     """Get GPU memory usage"""
     try:
         result = subprocess.run(
-            ["nvidia-smi", "--query-gpu=memory.free,memory.total", "--format=csv,nounits,noheader"],
+            [
+                "nvidia-smi",
+                "--query-gpu=memory.free,memory.total",
+                "--format=csv,nounits,noheader",
+            ],
             capture_output=True,
             text=True,
             check=True,
@@ -210,7 +232,9 @@ def ensure_vram_available(required_mb: int = 8000) -> bool:
     logger.info(f"Current VRAM: {memory['free']}MB free / {memory['total']}MB total")
 
     if memory["free"] < required_mb:
-        logger.warning(f"Insufficient VRAM: {memory['free']}MB < {required_mb}MB required")
+        logger.warning(
+            f"Insufficient VRAM: {memory['free']}MB < {required_mb}MB required"
+        )
         return False
 
     print(f"✓ Sufficient VRAM available")
@@ -245,12 +269,21 @@ def submit_to_comfyui(prompt: str, job_id: str) -> bool:
                 "inputs": {"width": 512, "height": 512, "batch_size": 1},
                 "class_type": "EmptyLatentImage",
             },
-            "6": {"inputs": {"text": prompt, "clip": ["4", 1]}, "class_type": "CLIPTextEncode"},
-            "7": {
-                "inputs": {"text": "bad quality, blurry, low resolution", "clip": ["4", 1]},
+            "6": {
+                "inputs": {"text": prompt, "clip": ["4", 1]},
                 "class_type": "CLIPTextEncode",
             },
-            "8": {"inputs": {"samples": ["3", 0], "vae": ["4", 2]}, "class_type": "VAEDecode"},
+            "7": {
+                "inputs": {
+                    "text": "bad quality, blurry, low resolution",
+                    "clip": ["4", 1],
+                },
+                "class_type": "CLIPTextEncode",
+            },
+            "8": {
+                "inputs": {"samples": ["3", 0], "vae": ["4", 2]},
+                "class_type": "VAEDecode",
+            },
             "9": {
                 "inputs": {"filename_prefix": f"anime_{job_id}", "images": ["8", 0]},
                 "class_type": "SaveImage",
@@ -260,7 +293,9 @@ def submit_to_comfyui(prompt: str, job_id: str) -> bool:
         # Submit to ComfyUI
         import requests
 
-        response = requests.post("http://localhost:8188/prompt", json={"prompt": workflow})
+        response = requests.post(
+            "http://localhost:8188/prompt", json={"prompt": workflow}
+        )
 
         if response.status_code == 200:
             return True
@@ -280,8 +315,12 @@ async def health():
         # Check ComfyUI connectivity
         async with httpx.AsyncClient(timeout=5) as client:
             comfyui_response = await client.get("http://localhost:8188/queue")
-            comfyui_status = "healthy" if comfyui_response.status_code == 200 else "unhealthy"
-            queue_data = comfyui_response.json() if comfyui_response.status_code == 200 else {}
+            comfyui_status = (
+                "healthy" if comfyui_response.status_code == 200 else "unhealthy"
+            )
+            queue_data = (
+                comfyui_response.json() if comfyui_response.status_code == 200 else {}
+            )
     except:
         comfyui_status = "unavailable"
         queue_data = {}
@@ -306,7 +345,10 @@ async def health():
                 "queue_running": len(queue_data.get("queue_running", [])),
                 "queue_pending": len(queue_data.get("queue_pending", [])),
             },
-            "gpu": {"available": gpu_available, "active_generation": active_generation is not None},
+            "gpu": {
+                "available": gpu_available,
+                "active_generation": active_generation is not None,
+            },
             "jobs": {"active_count": active_jobs, "total_tracked": len(jobs)},
             "storage": {"project_structure": project_dirs_exist},
         },
@@ -323,7 +365,9 @@ async def health():
 
 
 @app.post("/api/anime/generate")
-async def generate_anime(request: GenerateRequest, user_data: dict = Depends(require_auth)):
+async def generate_anime(
+    request: GenerateRequest, user_data: dict = Depends(require_auth)
+):
     """Generate anime image (requires authentication)"""
 
     # Rate limiting per user
@@ -332,7 +376,8 @@ async def generate_anime(request: GenerateRequest, user_data: dict = Depends(req
     # Check VRAM availability
     if not ensure_vram_available(8000):
         raise HTTPException(
-            status_code=503, detail="Insufficient GPU resources. Please try again later."
+            status_code=503,
+            detail="Insufficient GPU resources. Please try again later.",
         )
 
     # Create job
@@ -432,7 +477,10 @@ async def get_gallery(user_data: Optional[dict] = Depends(optional_auth)):
 
     # Different content for authenticated users
     if user_data:
-        return {"message": f"Welcome {user_data['email']}!", "gallery": "Premium gallery content"}
+        return {
+            "message": f"Welcome {user_data['email']}!",
+            "gallery": "Premium gallery content",
+        }
     else:
         return {"message": "Public gallery", "gallery": "Limited gallery content"}
 
@@ -565,7 +613,9 @@ add_websocket_endpoints(app, jobs, get_comfyui_job_status)
 websocket_connections = {}
 
 
-async def send_progress_update(job_id: str, progress: int, status: str, message: str = ""):
+async def send_progress_update(
+    job_id: str, progress: int, status: str, message: str = ""
+):
     """Legacy function for backward compatibility - now uses connection manager"""
     try:
         from websocket_manager import connection_manager
@@ -583,7 +633,9 @@ if __name__ == "__main__":
     # Check for database password
     if not DB_CONFIG["password"]:
         logger.warning("Database password not set in environment. Using fallback.")
-        DB_CONFIG["password"] = "tower_echo_brain_secret_key_2025"  # Should be from Vault
+        DB_CONFIG["password"] = (
+            "tower_echo_brain_secret_key_2025"  # Should be from Vault
+        )
 
     # Start WebSocket background tasks
     try:
@@ -592,4 +644,6 @@ if __name__ == "__main__":
     except Exception as e:
         logger.error(f"Failed to start WebSocket background tasks: {e}")
 
-    uvicorn.run(app, host="0.0.0.0", port=8328, log_level="info")  # Anime production service port
+    uvicorn.run(
+        app, host="0.0.0.0", port=8328, log_level="info"
+    )  # Anime production service port

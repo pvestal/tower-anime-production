@@ -62,7 +62,8 @@ async def get_processor() -> IntelligentJobProcessor:
 
 @router.post("/jobs/submit")
 async def submit_job_with_recovery(
-    request: JobSubmissionRequest, processor: IntelligentJobProcessor = Depends(get_processor)
+    request: JobSubmissionRequest,
+    processor: IntelligentJobProcessor = Depends(get_processor),
 ) -> Dict[str, Any]:
     """
     Submit a job with intelligent error recovery
@@ -151,7 +152,10 @@ async def retry_failed_job(
 
         # Check if job is in a state that can be retried
         current_status = job_status.get("status")
-        if current_status not in ["failed", "timeout", "cancelled"] and not request.force_retry:
+        if (
+            current_status not in ["failed", "timeout", "cancelled"]
+            and not request.force_retry
+        ):
             raise HTTPException(
                 status_code=400,
                 detail=f"Job is in '{current_status}' state and cannot be retried. Use force_retry=true to override.",
@@ -259,7 +263,9 @@ async def get_detailed_statistics(
 
     except Exception as e:
         logger.error(f"Failed to get detailed statistics: {e}")
-        raise HTTPException(status_code=500, detail=f"Detailed statistics failed: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Detailed statistics failed: {str(e)}"
+        )
 
 
 @router.post("/emergency-stop")
