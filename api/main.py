@@ -17,8 +17,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from sqlalchemy import (BigInteger, Column, DateTime, Float, Integer, String, Text, create_engine,
-                        text)
+from sqlalchemy import (
+    BigInteger,
+    Column,
+    DateTime,
+    Float,
+    Integer,
+    String,
+    Text,
+    create_engine,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import Session, sessionmaker
@@ -71,7 +80,9 @@ except ImportError as e:
         quality_orchestrator = None
 
 # Database Setup
-DATABASE_URL = "postgresql://patrick:***REMOVED***@localhost/anime_production"
+DATABASE_URL = (
+    "postgresql://patrick:***REMOVED***@localhost/anime_production"
+)
 
 # ComfyUI Configuration
 COMFYUI_URL = "http://localhost:8188"
@@ -105,7 +116,9 @@ class AnimeProject(Base):
     __table_args__ = {"schema": "anime_api"}
 
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, index=True)  # Changed from title to name to match existing table
+    name = Column(
+        String, index=True
+    )  # Changed from title to name to match existing table
     description = Column(Text)
     status = Column(String, default="active")
     project_metadata = Column(
@@ -133,7 +146,9 @@ class ProductionJob(Base):
     status = Column(String, default="pending")
     output_path = Column(String)
     quality_score = Column(Float)
-    comfyui_job_id = Column(String, index=True)  # Store ComfyUI prompt_id for proper tracking
+    comfyui_job_id = Column(
+        String, index=True
+    )  # Store ComfyUI prompt_id for proper tracking
     created_at = Column(DateTime, default=datetime.utcnow)
     # New performance tracking columns
     generation_type = Column(String(20), default="auto")
@@ -334,16 +349,24 @@ else:
 async def submit_comfyui_workflow(workflow_data: dict):
     """Submit workflow to ComfyUI and return job ID"""
     try:
-        timeout = aiohttp.ClientTimeout(total=30)  # 30 second timeout for ComfyUI request
+        timeout = aiohttp.ClientTimeout(
+            total=30
+        )  # 30 second timeout for ComfyUI request
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(f"{COMFYUI_URL}/prompt", json=workflow_data) as response:
+            async with session.post(
+                f"{COMFYUI_URL}/prompt", json=workflow_data
+            ) as response:
                 if response.status == 200:
                     result = await response.json()
                     return result.get("prompt_id")
                 else:
-                    raise HTTPException(status_code=500, detail=f"ComfyUI error: {response.status}")
+                    raise HTTPException(
+                        status_code=500, detail=f"ComfyUI error: {response.status}"
+                    )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"ComfyUI connection failed: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"ComfyUI connection failed: {str(e)}"
+        )
 
 
 async def check_comfyui_job_status(prompt_id: str):
@@ -388,13 +411,17 @@ async def check_comfyui_job_status(prompt_id: str):
                         if status_info.get("completed", False):
                             # Check if there were any errors
                             messages = status_info.get("messages", [])
-                            has_error = any(msg[0] == "execution_error" for msg in messages)
+                            has_error = any(
+                                msg[0] == "execution_error" for msg in messages
+                            )
 
                             if has_error:
                                 error_msg = "Generation failed"
                                 for msg in messages:
                                     if msg[0] == "execution_error" and len(msg) > 1:
-                                        error_msg = msg[1].get("exception_message", "Unknown error")
+                                        error_msg = msg[1].get(
+                                            "exception_message", "Unknown error"
+                                        )
                                         break
 
                                 return {
@@ -489,7 +516,9 @@ async def generate_with_fixed_workflow(
             # Calculate frames based on duration (5 seconds @ 24fps = 120 frames)
             frames = min(120, duration * 24)
             print(f"DEBUG: Generating {duration}s video with {frames} frames")
-            logger.info(f"Generating {duration}s video with {frames} frames (batch_size)")
+            logger.info(
+                f"Generating {duration}s video with {frames} frames (batch_size)"
+            )
 
         # Choose appropriate workflow based on generation type and complexity
         if generation_type == "image":
@@ -540,7 +569,10 @@ async def generate_with_fixed_workflow(
                     "_meta": {"title": "VAE Decode"},
                 },
                 "9": {
-                    "inputs": {"filename_prefix": f"anime_image_{timestamp}", "images": ["8", 0]},
+                    "inputs": {
+                        "filename_prefix": f"anime_image_{timestamp}",
+                        "images": ["8", 0],
+                    },
                     "class_type": "SaveImage",
                     "_meta": {"title": "Save Image"},
                 },
@@ -801,7 +833,9 @@ async def generate_with_quality_control(
 
             await asyncio.sleep(wait_interval)
             total_waited += wait_interval
-            logger.info(f"⏳ Waiting for generation... ({total_waited}s/{max_wait_time}s)")
+            logger.info(
+                f"⏳ Waiting for generation... ({total_waited}s/{max_wait_time}s)"
+            )
 
         if not output_path:
             return {
@@ -816,8 +850,10 @@ async def generate_with_quality_control(
                 logger.info(f"🔍 Assessing quality of generated content...")
 
                 # Assess the generated content
-                quality_result = await quality_orchestrator.quality_agent.analyze_video_quality(
-                    output_path
+                quality_result = (
+                    await quality_orchestrator.quality_agent.analyze_video_quality(
+                        output_path
+                    )
                 )
 
                 quality_score = quality_result.overall_score
@@ -830,12 +866,16 @@ async def generate_with_quality_control(
 
                 # Step 4: Handle quality results
                 if not passes_standards:
-                    logger.warning(f"❌ Quality control REJECTED generation: {rejection_reasons}")
+                    logger.warning(
+                        f"❌ Quality control REJECTED generation: {rejection_reasons}"
+                    )
 
                     # Move failed file to rejected folder
                     rejected_dir = "/mnt/1TB-storage/ComfyUI/output/rejected"
                     os.makedirs(rejected_dir, exist_ok=True)
-                    rejected_path = os.path.join(rejected_dir, os.path.basename(output_path))
+                    rejected_path = os.path.join(
+                        rejected_dir, os.path.basename(output_path)
+                    )
 
                     try:
                         os.rename(output_path, rejected_path)
@@ -858,7 +898,9 @@ async def generate_with_quality_control(
                     # Move to approved folder
                     approved_dir = "/mnt/1TB-storage/ComfyUI/output/approved"
                     os.makedirs(approved_dir, exist_ok=True)
-                    approved_path = os.path.join(approved_dir, os.path.basename(output_path))
+                    approved_path = os.path.join(
+                        approved_dir, os.path.basename(output_path)
+                    )
 
                     try:
                         os.rename(output_path, approved_path)
@@ -937,7 +979,9 @@ async def check_comfyui_output(comfyui_job_id: str) -> Optional[str]:
     """Check if ComfyUI job has completed and return output file path"""
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(f"{COMFYUI_URL}/history/{comfyui_job_id}") as response:
+            async with session.get(
+                f"{COMFYUI_URL}/history/{comfyui_job_id}"
+            ) as response:
                 if response.status == 200:
                     data = await response.json()
                     job_data = data.get(comfyui_job_id)
@@ -947,12 +991,16 @@ async def check_comfyui_output(comfyui_job_id: str) -> Optional[str]:
                         for node_id, output in outputs.items():
                             if "videos" in output and output["videos"]:
                                 filename = output["videos"][0]["filename"]
-                                full_path = f"/mnt/1TB-storage/ComfyUI/output/{filename}"
+                                full_path = (
+                                    f"/mnt/1TB-storage/ComfyUI/output/{filename}"
+                                )
                                 if os.path.exists(full_path):
                                     return full_path
                             elif "images" in output and output["images"]:
                                 filename = output["images"][0]["filename"]
-                                full_path = f"/mnt/1TB-storage/ComfyUI/output/{filename}"
+                                full_path = (
+                                    f"/mnt/1TB-storage/ComfyUI/output/{filename}"
+                                )
                                 if os.path.exists(full_path):
                                     return full_path
     except Exception as e:
@@ -1289,7 +1337,9 @@ async def test_generate_with_quality(quality: str = "low", duration: int = 2):
 
     async with aiohttp.ClientSession() as session:
         start_time = time.time()
-        async with session.post(f"{COMFYUI_URL}/prompt", json=prompt_data, timeout=30) as response:
+        async with session.post(
+            f"{COMFYUI_URL}/prompt", json=prompt_data, timeout=30
+        ) as response:
             if response.status == 200:
                 result = await response.json()
                 return {
@@ -1305,7 +1355,9 @@ async def test_generate_with_quality(quality: str = "low", duration: int = 2):
 
 
 @app.post("/api/anime/generate")
-async def generate_anime_content(request: AnimeGenerationRequest, db: Session = Depends(get_db)):
+async def generate_anime_content(
+    request: AnimeGenerationRequest, db: Session = Depends(get_db)
+):
     """Unified anime generation endpoint - handles both image and video based on explicit type selection"""
     try:
         # Determine job type and generation method based on explicit type
@@ -1420,12 +1472,16 @@ async def generate_anime_content(request: AnimeGenerationRequest, db: Session = 
 
 
 @app.post("/api/anime/generate-fast")
-async def generate_anime_video_fast(request: AnimeGenerationRequest, db: Session = Depends(get_db)):
+async def generate_anime_video_fast(
+    request: AnimeGenerationRequest, db: Session = Depends(get_db)
+):
     """Fast 5-second anime video generation using parallel segments via Echo Brain task queue"""
     try:
         # Validate duration (this endpoint is optimized for 5-second videos)
         if request.duration > 10:
-            raise HTTPException(status_code=400, detail="Fast generation limited to 10 seconds max")
+            raise HTTPException(
+                status_code=400, detail="Fast generation limited to 10 seconds max"
+            )
 
         # Calculate segments (1 second each = 24 frames per segment)
         total_segments = max(1, request.duration)
@@ -1482,7 +1538,9 @@ async def generate_anime_video_fast(request: AnimeGenerationRequest, db: Session
                 }
 
                 try:
-                    async with session.post(echo_brain_url, json=task_payload) as response:
+                    async with session.post(
+                        echo_brain_url, json=task_payload
+                    ) as response:
                         if response.status == 200:
                             task_result = await response.json()
                             segment_tasks.append(
@@ -1614,7 +1672,9 @@ async def create_project_bible(
         raise HTTPException(status_code=404, detail="Project not found")
 
     # Check if bible already exists
-    existing_bible = db.query(ProjectBible).filter(ProjectBible.project_id == project_id).first()
+    existing_bible = (
+        db.query(ProjectBible).filter(ProjectBible.project_id == project_id).first()
+    )
     if existing_bible:
         raise HTTPException(status_code=400, detail="Project bible already exists")
 
@@ -1689,7 +1749,9 @@ async def add_character_to_bible(
     # Check if character already exists
     existing_character = (
         db.query(BibleCharacter)
-        .filter(BibleCharacter.bible_id == bible.id, BibleCharacter.name == character.name)
+        .filter(
+            BibleCharacter.bible_id == bible.id, BibleCharacter.name == character.name
+        )
         .first()
     )
     if existing_character:
@@ -1723,7 +1785,9 @@ async def get_bible_characters(project_id: int, db: Session = Depends(get_db)):
     if not bible:
         raise HTTPException(status_code=404, detail="Project bible not found")
 
-    characters = db.query(BibleCharacter).filter(BibleCharacter.bible_id == bible.id).all()
+    characters = (
+        db.query(BibleCharacter).filter(BibleCharacter.bible_id == bible.id).all()
+    )
     return characters
 
 
@@ -1822,13 +1886,19 @@ async def get_generation_status(request_id: str, db: Session = Depends(get_db)):
         logger.info(f"Found job by database ID: {job.id if job else 'None'}")
     except ValueError:
         # Try as ComfyUI job ID (prompt_id)
-        job = db.query(ProductionJob).filter(ProductionJob.comfyui_job_id == request_id).first()
+        job = (
+            db.query(ProductionJob)
+            .filter(ProductionJob.comfyui_job_id == request_id)
+            .first()
+        )
         if job:
             logger.info(f"Found job by ComfyUI job ID: {job.id}")
         else:
             # Fallback: try as string in parameters (legacy support)
             jobs_with_id = (
-                db.query(ProductionJob).filter(ProductionJob.parameters.contains(request_id)).all()
+                db.query(ProductionJob)
+                .filter(ProductionJob.parameters.contains(request_id))
+                .all()
             )
             if jobs_with_id:
                 job = jobs_with_id[0]  # Take the first match
@@ -1849,7 +1919,9 @@ async def get_generation_status(request_id: str, db: Session = Depends(get_db)):
             actual_output = await check_comfyui_output(comfyui_job_id)
             if actual_output:
                 # CRITICAL QC CHECK: Don't mark as completed until QC passes
-                logger.info(f"🔍 Running QC analysis on {actual_output} for job {job.id}")
+                logger.info(
+                    f"🔍 Running QC analysis on {actual_output} for job {job.id}"
+                )
 
                 try:
                     # Run QC analysis using our proven QC system
@@ -1899,7 +1971,11 @@ async def get_generation_status(request_id: str, db: Session = Depends(get_db)):
                         # Extract score from analysis
                         import re
 
-                        patterns = [r"(\d+)/10", r"score[:\s]*(\d+)", r"(\d+)\s*out\s*of\s*10"]
+                        patterns = [
+                            r"(\d+)/10",
+                            r"score[:\s]*(\d+)",
+                            r"(\d+)\s*out\s*of\s*10",
+                        ]
                         for pattern in patterns:
                             match = re.search(pattern, qc_analysis.lower())
                             if match:
@@ -1922,10 +1998,14 @@ async def get_generation_status(request_id: str, db: Session = Depends(get_db)):
                             {
                                 "qc_score": qc_score,
                                 "qc_passed": True,
-                                "qc_analysis": qc_analysis[:200],  # Truncate for storage
+                                "qc_analysis": qc_analysis[
+                                    :200
+                                ],  # Truncate for storage
                             }
                         )
-                        logger.info(f"✅ Job {job.id} completed with QC score {qc_score}")
+                        logger.info(
+                            f"✅ Job {job.id} completed with QC score {qc_score}"
+                        )
                     else:
                         job.status = "qc_failed"
                         job.error = f"QC Failed: Score {qc_score}/10. Anatomical issues detected."
@@ -1938,7 +2018,9 @@ async def get_generation_status(request_id: str, db: Session = Depends(get_db)):
                                 "rejection_reason": "Anatomical validation failed",
                             }
                         )
-                        logger.warning(f"❌ Job {job.id} failed QC with score {qc_score}")
+                        logger.warning(
+                            f"❌ Job {job.id} failed QC with score {qc_score}"
+                        )
 
                 except Exception as qc_error:
                     logger.error(f"🚨 QC analysis failed for job {job.id}: {qc_error}")
@@ -1947,9 +2029,15 @@ async def get_generation_status(request_id: str, db: Session = Depends(get_db)):
                     job.output_path = actual_output
                     job.metadata = job.metadata or {}
                     job.metadata.update(
-                        {"qc_score": None, "qc_passed": False, "qc_error": str(qc_error)}
+                        {
+                            "qc_score": None,
+                            "qc_passed": False,
+                            "qc_error": str(qc_error),
+                        }
                     )
-                    logger.info(f"Job {job.id} completed: {actual_output} (QC failed to run)")
+                    logger.info(
+                        f"Job {job.id} completed: {actual_output} (QC failed to run)"
+                    )
             else:
                 job.status = "processing"  # Still generating
                 logger.info(f"Job {job.id} still processing (no output found yet)")
@@ -1969,7 +2057,11 @@ async def get_generation_status(request_id: str, db: Session = Depends(get_db)):
 
     # Fallback to ComfyUI queue check for orphaned jobs
     progress = await get_real_comfyui_progress(request_id)
-    status = "completed" if progress >= 1.0 else "processing" if progress > 0 else "not_found"
+    status = (
+        "completed"
+        if progress >= 1.0
+        else "processing" if progress > 0 else "not_found"
+    )
 
     logger.warning(
         f"Job not found in database for request_id: {request_id}, ComfyUI progress: {progress}"
@@ -1989,7 +2081,11 @@ async def check_fast_generation_status(job: ProductionJob, db: Session):
     try:
         import json
 
-        params = json.loads(job.parameters) if isinstance(job.parameters, str) else job.parameters
+        params = (
+            json.loads(job.parameters)
+            if isinstance(job.parameters, str)
+            else job.parameters
+        )
         segment_tasks = params.get("segment_tasks", [])
         batch_id = params.get("batch_id")
         total_segments = params.get("total_segments", 0)
@@ -2078,7 +2174,9 @@ async def check_fast_generation_status(job: ProductionJob, db: Session):
             "output_path": job.output_path,
             "created_at": job.created_at.isoformat(),
             "estimated_completion": (
-                f"{len(processing_segments) * 2} minutes" if processing_segments else "Complete"
+                f"{len(processing_segments) * 2} minutes"
+                if processing_segments
+                else "Complete"
             ),
         }
 
@@ -2091,7 +2189,9 @@ async def check_fast_generation_status(job: ProductionJob, db: Session):
         }
 
 
-async def merge_video_segments(batch_id: str, total_segments: int, original_request: dict):
+async def merge_video_segments(
+    batch_id: str, total_segments: int, original_request: dict
+):
     """Merge completed video segments into final video using ffmpeg"""
     try:
         import os
@@ -2247,7 +2347,9 @@ async def clear_stuck_projects(db: Session = Depends(get_db)):
 
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"Error clearing stuck projects: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error clearing stuck projects: {str(e)}"
+        )
 
 
 @app.get("/api/anime/media/video/{filename}")
@@ -2396,7 +2498,10 @@ async def generate_with_integrated_pipeline(
                     "class_type": "CLIPTextEncode",
                 },
                 "2": {
-                    "inputs": {"text": "low quality, blurry, distorted", "clip": ["4", 1]},
+                    "inputs": {
+                        "text": "low quality, blurry, distorted",
+                        "clip": ["4", 1],
+                    },
                     "class_type": "CLIPTextEncode",
                 },
                 "3": {
@@ -2440,7 +2545,9 @@ async def generate_with_integrated_pipeline(
         comfyui_job_id = await submit_comfyui_workflow(workflow)
         job.status = "processing"
         job.comfyui_job_id = comfyui_job_id
-        job.output_path = f"/mnt/1TB-storage/ComfyUI/output/integrated_anime_{timestamp}"
+        job.output_path = (
+            f"/mnt/1TB-storage/ComfyUI/output/integrated_anime_{timestamp}"
+        )
         db.commit()
         db.refresh(job)
 
@@ -2458,7 +2565,9 @@ async def generate_with_integrated_pipeline(
             job.status = "failed"
             job.error = str(e)
             db.commit()
-        raise HTTPException(status_code=500, detail=f"Integrated generation failed: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Integrated generation failed: {str(e)}"
+        )
 
 
 @app.post("/generate/professional")
@@ -2568,7 +2677,9 @@ async def generate_professional_anime(
         comfyui_job_id = await submit_comfyui_workflow(workflow)
         job.status = "processing"
         job.comfyui_job_id = comfyui_job_id  # Store the ComfyUI job ID
-        job.output_path = f"/mnt/1TB-storage/ComfyUI/output/echo_anime_professional_{timestamp}"
+        job.output_path = (
+            f"/mnt/1TB-storage/ComfyUI/output/echo_anime_professional_{timestamp}"
+        )
         db.commit()
         db.refresh(job)
 
@@ -2670,7 +2781,9 @@ async def generate_personal_creative(
         # Submit to ComfyUI
         comfyui_job_id = await submit_comfyui_workflow(workflow)
         job.comfyui_job_id = comfyui_job_id
-        job.output_path = f"/mnt/1TB-storage/ComfyUI/output/personal_creative_{timestamp}"
+        job.output_path = (
+            f"/mnt/1TB-storage/ComfyUI/output/personal_creative_{timestamp}"
+        )
         db.commit()
 
         return {
@@ -2685,7 +2798,9 @@ async def generate_personal_creative(
         job.status = "failed"
         job.error = str(e)
         db.commit()
-        raise HTTPException(status_code=500, detail=f"Personal generation failed: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Personal generation failed: {str(e)}"
+        )
 
 
 @app.get("/api/anime/jobs")
@@ -2708,7 +2823,12 @@ async def get_all_jobs(
         query = query.filter(ProductionJob.project_id == project_id)
 
     total = query.count()
-    jobs = query.order_by(ProductionJob.created_at.desc()).limit(limit).offset(offset).all()
+    jobs = (
+        query.order_by(ProductionJob.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+        .all()
+    )
 
     # Get pipeline statistics
     from sqlalchemy import func
@@ -2773,7 +2893,9 @@ async def get_job(job_id: int, db: Session = Depends(get_db)):
     }
 
 
-def check_and_update_job_timeout(job: ProductionJob, db: Session, timeout_minutes: int = 15):
+def check_and_update_job_timeout(
+    job: ProductionJob, db: Session, timeout_minutes: int = 15
+):
     """Check if a job has timed out and update its status"""
     if job.status in ["completed", "failed", "timeout"]:
         return  # Job already finished
@@ -2802,7 +2924,9 @@ def check_and_update_job_timeout(job: ProductionJob, db: Session, timeout_minute
                             timeout=aiohttp.ClientTimeout(total=5),
                         ) as resp:
                             if resp.status == 200:
-                                logger.info(f"Interrupted ComfyUI job {job.comfyui_job_id}")
+                                logger.info(
+                                    f"Interrupted ComfyUI job {job.comfyui_job_id}"
+                                )
 
                 asyncio.create_task(interrupt_comfyui())
             except Exception as e:
@@ -2839,25 +2963,25 @@ async def get_job_status(job_id: int, db: Session = Depends(get_db)):
                         for node_id, node_outputs in outputs.items():
                             if "images" in node_outputs or "videos" in node_outputs:
                                 # Update output path with actual ComfyUI output
-                                job.output_path = (
-                                    f"/mnt/1TB-storage/ComfyUI/output/{job.comfyui_job_id}"
-                                )
+                                job.output_path = f"/mnt/1TB-storage/ComfyUI/output/{job.comfyui_job_id}"
 
                                 # Find the actual generated image file
                                 import glob
 
-                                search_pattern = (
-                                    f"/mnt/1TB-storage/ComfyUI/output/*{job.comfyui_job_id}*.png"
-                                )
+                                search_pattern = f"/mnt/1TB-storage/ComfyUI/output/*{job.comfyui_job_id}*.png"
                                 image_files = glob.glob(search_pattern)
                                 if image_files:
-                                    generated_image_path = image_files[0]  # Take the first match
+                                    generated_image_path = image_files[
+                                        0
+                                    ]  # Take the first match
                                 break
 
                     # STEP 2: Run QC analysis before marking as completed
                     if generated_image_path and os.path.exists(generated_image_path):
                         try:
-                            logger.info(f"🔍 Running QC analysis on {generated_image_path}")
+                            logger.info(
+                                f"🔍 Running QC analysis on {generated_image_path}"
+                            )
 
                             # Run QC analysis using our proven QC system
                             import base64
@@ -2922,7 +3046,9 @@ async def get_job_status(job_id: int, db: Session = Depends(get_db)):
 
                                 qc_passed = qc_score >= 7.0  # Strict QC threshold
 
-                                logger.info(f"🎯 QC Score: {qc_score}/10, Passed: {qc_passed}")
+                                logger.info(
+                                    f"🎯 QC Score: {qc_score}/10, Passed: {qc_passed}"
+                                )
 
                             # STEP 3: Mark job status based on QC results
                             if qc_passed:
@@ -2932,15 +3058,17 @@ async def get_job_status(job_id: int, db: Session = Depends(get_db)):
                                     {
                                         "qc_score": qc_score,
                                         "qc_passed": True,
-                                        "qc_analysis": qc_analysis[:200],  # Truncate for storage
+                                        "qc_analysis": qc_analysis[
+                                            :200
+                                        ],  # Truncate for storage
                                     }
                                 )
-                                logger.info(f"✅ Job {job.id} completed with QC score {qc_score}")
+                                logger.info(
+                                    f"✅ Job {job.id} completed with QC score {qc_score}"
+                                )
                             else:
                                 job.status = "qc_failed"
-                                job.error = (
-                                    f"QC Failed: Score {qc_score}/10. Anatomical issues detected."
-                                )
+                                job.error = f"QC Failed: Score {qc_score}/10. Anatomical issues detected."
                                 job.metadata = job.metadata or {}
                                 job.metadata.update(
                                     {
@@ -2950,7 +3078,9 @@ async def get_job_status(job_id: int, db: Session = Depends(get_db)):
                                         "rejection_reason": "Anatomical validation failed",
                                     }
                                 )
-                                logger.warning(f"❌ Job {job.id} failed QC with score {qc_score}")
+                                logger.warning(
+                                    f"❌ Job {job.id} failed QC with score {qc_score}"
+                                )
 
                         except Exception as qc_error:
                             logger.error(f"🚨 QC analysis failed: {qc_error}")
@@ -2958,12 +3088,18 @@ async def get_job_status(job_id: int, db: Session = Depends(get_db)):
                             job.status = "completed"
                             job.metadata = job.metadata or {}
                             job.metadata.update(
-                                {"qc_score": None, "qc_passed": False, "qc_error": str(qc_error)}
+                                {
+                                    "qc_score": None,
+                                    "qc_passed": False,
+                                    "qc_error": str(qc_error),
+                                }
                             )
                     else:
                         # No image found, mark as completed (backward compatibility)
                         job.status = "completed"
-                        logger.warning(f"⚠️  No image found for QC analysis, marking as completed")
+                        logger.warning(
+                            f"⚠️  No image found for QC analysis, marking as completed"
+                        )
 
                 db.commit()
                 db.refresh(job)
@@ -3016,7 +3152,9 @@ async def check_all_timeouts(db: Session = Depends(get_db)):
     """Check all processing jobs for timeouts"""
     # Get all processing jobs
     processing_jobs = (
-        db.query(ProductionJob).filter(ProductionJob.status.in_(["processing", "pending"])).all()
+        db.query(ProductionJob)
+        .filter(ProductionJob.status.in_(["processing", "pending"]))
+        .all()
     )
 
     timed_out_jobs = []
@@ -3106,7 +3244,8 @@ async def get_job_progress(job_id: int, db: Session = Depends(get_db)):
                                 job.generation_end_time = datetime.utcnow()
                                 if job.generation_start_time:
                                     job.processing_time_seconds = (
-                                        job.generation_end_time - job.generation_start_time
+                                        job.generation_end_time
+                                        - job.generation_start_time
                                     ).total_seconds()
                             else:
                                 job.status = "failed"
@@ -3153,7 +3292,9 @@ async def assess_quality(job_id: int, db: Session = Depends(get_db)):
 
         # Find output files for this job
         if job.output_path and os.path.exists(job.output_path):
-            quality_result = await quality_integration.assess_video_quality(job.output_path)
+            quality_result = await quality_integration.assess_video_quality(
+                job.output_path
+            )
             quality_score = quality_result.get("quality_score", 0.0)
             passes_standards = quality_result.get("passes_standards", False)
             rejection_reasons = quality_result.get("rejection_reasons", [])
@@ -3404,7 +3545,9 @@ async def create_git_branch(request: GitBranchRequest):
 
     except Exception as e:
         logger.error(f"Git branch creation failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Git branch creation failed: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Git branch creation failed: {str(e)}"
+        )
 
 
 @app.get("/api/anime/git/branches/{project_id}")
@@ -3438,7 +3581,9 @@ async def analyze_storyline(project_id: int, branch_name: str = "main"):
 
     except Exception as e:
         logger.error(f"Storyline analysis failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Storyline analysis failed: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Storyline analysis failed: {str(e)}"
+        )
 
 
 @app.post("/api/anime/storyline/markers")
@@ -3449,7 +3594,9 @@ async def create_storyline_markers(request: StorylineMarkersRequest):
         from echo_integration import EchoIntegration
 
         echo = EchoIntegration()
-        markers = await echo.create_storyline_markers(request.project_id, request.scenes)
+        markers = await echo.create_storyline_markers(
+            request.project_id, request.scenes
+        )
 
         return {
             "success": True,
@@ -3460,7 +3607,9 @@ async def create_storyline_markers(request: StorylineMarkersRequest):
 
     except Exception as e:
         logger.error(f"Storyline markers creation failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Storyline markers failed: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Storyline markers failed: {str(e)}"
+        )
 
 
 @app.get("/api/anime/git/status/{project_id}")
@@ -3468,7 +3617,11 @@ async def get_git_status(project_id: int):
     """Get comprehensive git status for a project including Echo analysis"""
     try:
         sys.path.append("/opt/tower-anime-production")
-        from git_branching import echo_analyze_storyline, get_commit_history, list_branches
+        from git_branching import (
+            echo_analyze_storyline,
+            get_commit_history,
+            list_branches,
+        )
 
         # Get all branches
         branches = list_branches(project_id)
@@ -3562,7 +3715,9 @@ async def get_available_models():
     try:
         for file_path in glob.glob(os.path.join(checkpoints_dir, "*.safetensors")):
             filename = os.path.basename(file_path)
-            if filename in model_info and os.path.getsize(file_path) > 1000000:  # Skip empty files
+            if (
+                filename in model_info and os.path.getsize(file_path) > 1000000
+            ):  # Skip empty files
                 info = model_info[filename]
                 models.append(
                     {
@@ -3663,7 +3818,9 @@ async def update_configuration(config: dict):
 
     try:
         # Update the actual workflow file
-        workflow_path = "/opt/tower-anime-production/workflows/comfyui/anime_30sec_standard.json"
+        workflow_path = (
+            "/opt/tower-anime-production/workflows/comfyui/anime_30sec_standard.json"
+        )
 
         if os.path.exists(workflow_path):
             # Backup original
@@ -3701,16 +3858,22 @@ async def update_configuration(config: dict):
                         workflow["3"]["inputs"]["steps"] = preset_settings["steps"]
                         workflow["3"]["inputs"]["cfg"] = preset_settings["cfg"]
                         if "sampler" in preset_settings:
-                            workflow["3"]["inputs"]["sampler_name"] = preset_settings["sampler"]
+                            workflow["3"]["inputs"]["sampler_name"] = preset_settings[
+                                "sampler"
+                            ]
                         if "scheduler" in preset_settings:
-                            workflow["3"]["inputs"]["scheduler"] = preset_settings["scheduler"]
+                            workflow["3"]["inputs"]["scheduler"] = preset_settings[
+                                "scheduler"
+                            ]
                         result["sampling_updated"] = preset_settings
 
                     # Update latent image size (node 5)
                     if "5" in workflow and "inputs" in workflow["5"]:
                         workflow["5"]["inputs"]["width"] = preset_settings["width"]
                         workflow["5"]["inputs"]["height"] = preset_settings["height"]
-                        workflow["5"]["inputs"]["batch_size"] = preset_settings["batch_size"]
+                        workflow["5"]["inputs"]["batch_size"] = preset_settings[
+                            "batch_size"
+                        ]
                         result["resolution_updated"] = (
                             f"{
                                 preset_settings['width']}x{
@@ -3733,7 +3896,9 @@ async def update_configuration(config: dict):
                 # VAE
                 if "6" in workflow and "inputs" in workflow["6"]:
                     workflow["6"]["inputs"]["vae"] = ["13", 0]  # Use dedicated VAE
-                    result["vae_fixed"] = "Using dedicated VAE instead of checkpoint VAE"
+                    result["vae_fixed"] = (
+                        "Using dedicated VAE instead of checkpoint VAE"
+                    )
                     result["files_modified"].append("VAE configuration")
 
             # Save updated workflow
@@ -3799,7 +3964,9 @@ async def generate_anime_image(request: dict, db: Session = Depends(get_db)):
     if result["success"]:
         return result
     else:
-        raise HTTPException(status_code=500, detail=result.get("error", "Image generation failed"))
+        raise HTTPException(
+            status_code=500, detail=result.get("error", "Image generation failed")
+        )
 
     # OLD BROKEN CODE BELOW (TO BE REMOVED):
     import time
@@ -3812,7 +3979,10 @@ async def generate_anime_image(request: dict, db: Session = Depends(get_db)):
             "class_type": "CheckpointLoaderSimple",
         },
         "2": {
-            "inputs": {"text": f"{prompt}, {style} style, high quality", "clip": ["1", 1]},
+            "inputs": {
+                "text": f"{prompt}, {style} style, high quality",
+                "clip": ["1", 1],
+            },
             "class_type": "CLIPTextEncode",
         },
         "3": {
@@ -3842,9 +4012,15 @@ async def generate_anime_image(request: dict, db: Session = Depends(get_db)):
             },
             "class_type": "KSampler",
         },
-        "6": {"inputs": {"samples": ["5", 0], "vae": ["1", 2]}, "class_type": "VAEDecode"},
+        "6": {
+            "inputs": {"samples": ["5", 0], "vae": ["1", 2]},
+            "class_type": "VAEDecode",
+        },
         "7": {
-            "inputs": {"filename_prefix": f"anime_image_{job.id}_{seed}", "images": ["6", 0]},
+            "inputs": {
+                "filename_prefix": f"anime_image_{job.id}_{seed}",
+                "images": ["6", 0],
+            },
             "class_type": "SaveImage",
         },
     }
@@ -3876,7 +4052,9 @@ async def generate_anime_image(request: dict, db: Session = Depends(get_db)):
     except Exception as e:
         job.status = "failed"
         db.commit()
-        raise HTTPException(status_code=500, detail=f"Image generation failed: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Image generation failed: {str(e)}"
+        )
 
 
 @app.get("/api/anime/images")
@@ -3884,7 +4062,9 @@ async def list_generated_images(db: Session = Depends(get_db), limit: int = 50):
     """List all generated images with their paths"""
     jobs = (
         db.query(ProductionJob)
-        .filter(ProductionJob.pipeline_type == "image", ProductionJob.status == "completed")
+        .filter(
+            ProductionJob.pipeline_type == "image", ProductionJob.status == "completed"
+        )
         .order_by(ProductionJob.id.desc())
         .limit(limit)
         .all()
@@ -4034,7 +4214,9 @@ async def check_image_status(job_id: int, db: Session = Depends(get_db)):
     # Check ComfyUI for actual status
     if job.comfyui_job_id and job.status == "processing":
         async with aiohttp.ClientSession() as session:
-            async with session.get(f"{COMFYUI_URL}/history/{job.comfyui_job_id}") as response:
+            async with session.get(
+                f"{COMFYUI_URL}/history/{job.comfyui_job_id}"
+            ) as response:
                 if response.status == 200:
                     history = await response.json()
                     if job.comfyui_job_id in history:
@@ -4046,18 +4228,19 @@ async def check_image_status(job_id: int, db: Session = Depends(get_db)):
                                 if "images" in node_output:
                                     for img in node_output["images"]:
                                         filename = img.get("filename")
-                                        job.output_path = (
-                                            f"/mnt/1TB-storage/ComfyUI/output/{filename}"
-                                        )
+                                        job.output_path = f"/mnt/1TB-storage/ComfyUI/output/{filename}"
                                         job.status = "completed"
                                         job.generation_end_time = datetime.utcnow()
 
                                         # Calculate processing time
                                         if job.generation_start_time:
                                             delta = (
-                                                job.generation_end_time - job.generation_start_time
+                                                job.generation_end_time
+                                                - job.generation_start_time
                                             )
-                                            job.processing_time_seconds = delta.total_seconds()
+                                            job.processing_time_seconds = (
+                                                delta.total_seconds()
+                                            )
 
                                         db.commit()
                                         break
@@ -4106,7 +4289,9 @@ async def periodic_timeout_checker():
                         logger.info(f"Job {job.id} marked as timed out")
 
                 if timed_out_count > 0:
-                    logger.info(f"Timeout checker: Marked {timed_out_count} jobs as timed out")
+                    logger.info(
+                        f"Timeout checker: Marked {timed_out_count} jobs as timed out"
+                    )
             finally:
                 db.close()
 
@@ -4118,7 +4303,9 @@ async def periodic_timeout_checker():
 @app.on_event("startup")
 async def startup_event():
     """Start background tasks on app startup"""
-    logger.info("Starting anime production API with quality control and timeout monitoring")
+    logger.info(
+        "Starting anime production API with quality control and timeout monitoring"
+    )
 
     # Initialize quality control system if available
     if QUALITY_CONTROL_AVAILABLE and quality_orchestrator:
@@ -4144,7 +4331,9 @@ async def startup_event():
 async def assess_generated_content(file_path: str):
     """Assess quality of generated anime content"""
     if not QUALITY_CONTROL_AVAILABLE:
-        raise HTTPException(status_code=503, detail="Quality control system not available")
+        raise HTTPException(
+            status_code=503, detail="Quality control system not available"
+        )
 
     try:
         # Validate file exists
@@ -4152,7 +4341,9 @@ async def assess_generated_content(file_path: str):
             raise HTTPException(status_code=404, detail=f"File not found: {file_path}")
 
         # Use quality orchestrator to assess content
-        result = await quality_orchestrator.quality_agent.analyze_video_quality(file_path)
+        result = await quality_orchestrator.quality_agent.analyze_video_quality(
+            file_path
+        )
 
         assessment = result.dict()
 
@@ -4172,14 +4363,19 @@ async def assess_generated_content(file_path: str):
                     )
                 )
             ),
-            "main_issues": result.rejection_reasons[:3] if result.rejection_reasons else [],
+            "main_issues": (
+                result.rejection_reasons[:3] if result.rejection_reasons else []
+            ),
             "recommended_actions": [],
         }
 
         # Add specific recommendations based on issues
         if result.rejection_reasons:
             for reason in result.rejection_reasons:
-                if "multiple body parts" in reason.lower() or "motion smoothness" in reason.lower():
+                if (
+                    "multiple body parts" in reason.lower()
+                    or "motion smoothness" in reason.lower()
+                ):
                     assessment["interpretation"]["recommended_actions"].append(
                         "Regenerate with improved prompt: add 'single person, clear anatomy, well-defined limbs'"
                     )
@@ -4195,7 +4391,9 @@ async def assess_generated_content(file_path: str):
         return assessment
     except Exception as e:
         logger.error(f"Quality assessment failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Quality assessment failed: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Quality assessment failed: {str(e)}"
+        )
 
 
 @app.post("/api/anime/quality/assess-current-image")
@@ -4206,7 +4404,9 @@ async def assess_current_generated_image():
         current_image_path = "/mnt/1TB-storage/anime-projects/project_1/output/drafts/character_26_20251201_212910.png"
 
         if not os.path.exists(current_image_path):
-            raise HTTPException(status_code=404, detail="No current image found to assess")
+            raise HTTPException(
+                status_code=404, detail="No current image found to assess"
+            )
 
         return await assess_generated_content(current_image_path)
 
@@ -4245,7 +4445,10 @@ async def get_quality_standards():
 async def get_quality_system_status():
     """Get quality control system status"""
     if not QUALITY_CONTROL_AVAILABLE:
-        return {"quality_control": "disabled", "message": "Quality control system not initialized"}
+        return {
+            "quality_control": "disabled",
+            "message": "Quality control system not initialized",
+        }
 
     try:
         status = await quality_orchestrator.get_system_status()

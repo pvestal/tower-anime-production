@@ -14,7 +14,9 @@ from websocket_manager import connection_manager
 logger = logging.getLogger(__name__)
 
 
-def add_websocket_endpoints(app: FastAPI, jobs: Dict[str, dict], get_comfyui_job_status_func):
+def add_websocket_endpoints(
+    app: FastAPI, jobs: Dict[str, dict], get_comfyui_job_status_func
+):
     """
     Add WebSocket endpoints to the FastAPI app.
 
@@ -71,7 +73,9 @@ def add_websocket_endpoints(app: FastAPI, jobs: Dict[str, dict], get_comfyui_job
                             job_id=job_id,
                             progress=real_status.get("progress", 0),
                             status=real_status.get("status", "unknown"),
-                            estimated_remaining=real_status.get("estimated_remaining", 0),
+                            estimated_remaining=real_status.get(
+                                "estimated_remaining", 0
+                            ),
                             output_path=real_status.get("output_path"),
                             message=f"Generation in progress - {real_status.get('status', 'processing')}",
                         )
@@ -90,7 +94,11 @@ def add_websocket_endpoints(app: FastAPI, jobs: Dict[str, dict], get_comfyui_job
                             )
                             await connection_manager.send_progress_update(
                                 job_id=job_id,
-                                progress=100 if real_status.get("status") == "completed" else 0,
+                                progress=(
+                                    100
+                                    if real_status.get("status") == "completed"
+                                    else 0
+                                ),
                                 status=real_status.get("status"),
                                 estimated_remaining=0,
                                 output_path=real_status.get("output_path"),
@@ -149,10 +157,14 @@ def add_websocket_endpoints(app: FastAPI, jobs: Dict[str, dict], get_comfyui_job
             while True:
                 try:
                     # Get system-wide status
-                    connection_info = await connection_manager.get_all_connections_info()
+                    connection_info = (
+                        await connection_manager.get_all_connections_info()
+                    )
 
                     # Get job statistics
-                    active_jobs = len([j for j in jobs.values() if j.get("status") == "processing"])
+                    active_jobs = len(
+                        [j for j in jobs.values() if j.get("status") == "processing"]
+                    )
                     total_jobs = len(jobs)
 
                     # Prepare system status message
@@ -163,15 +175,25 @@ def add_websocket_endpoints(app: FastAPI, jobs: Dict[str, dict], get_comfyui_job
                             "total": total_jobs,
                             "active": active_jobs,
                             "completed": len(
-                                [j for j in jobs.values() if j.get("status") == "completed"]
+                                [
+                                    j
+                                    for j in jobs.values()
+                                    if j.get("status") == "completed"
+                                ]
                             ),
                             "failed": len(
-                                [j for j in jobs.values() if j.get("status") == "failed"]
+                                [
+                                    j
+                                    for j in jobs.values()
+                                    if j.get("status") == "failed"
+                                ]
                             ),
                         },
                         "websockets": {
                             "total_connections": connection_info["total_connections"],
-                            "jobs_with_connections": connection_info["jobs_with_connections"],
+                            "jobs_with_connections": connection_info[
+                                "jobs_with_connections"
+                            ],
                         },
                         "recent_jobs": [
                             {
@@ -181,7 +203,9 @@ def add_websocket_endpoints(app: FastAPI, jobs: Dict[str, dict], get_comfyui_job
                                 "progress": job.get("progress", 0),
                             }
                             for job_id, job in sorted(
-                                jobs.items(), key=lambda x: x[1].get("created_at", 0), reverse=True
+                                jobs.items(),
+                                key=lambda x: x[1].get("created_at", 0),
+                                reverse=True,
                             )[:10]
                         ],
                     }
@@ -218,7 +242,9 @@ def add_websocket_endpoints(app: FastAPI, jobs: Dict[str, dict], get_comfyui_job
             }
         except Exception as e:
             logger.error(f"Error getting WebSocket status: {e}")
-            raise HTTPException(status_code=500, detail=f"WebSocket status error: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"WebSocket status error: {str(e)}"
+            )
 
 
 def start_background_tasks():

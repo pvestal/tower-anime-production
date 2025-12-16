@@ -151,7 +151,9 @@ class CharacterGenerationRequest(BaseModel):
     quality: str = "high"
 
 
-def build_character_prompt(character: CharacterProfile, additional_prompt: str = "") -> str:
+def build_character_prompt(
+    character: CharacterProfile, additional_prompt: str = ""
+) -> str:
     """Build comprehensive prompt from character data"""
     prompt_parts = []
 

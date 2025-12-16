@@ -21,7 +21,9 @@ class ProjectAssetManager:
 
     def __init__(self, project_id: int, db_session=None):
         self.project_id = project_id
-        self.project_root = Path(f"/mnt/1TB-storage/anime-projects/project_{project_id}")
+        self.project_root = Path(
+            f"/mnt/1TB-storage/anime-projects/project_{project_id}"
+        )
         self.db_session = db_session
         self.ensure_project_structure()
 
@@ -226,13 +228,17 @@ class ProjectAssetManager:
             char_name = asset_metadata["character_name"]
             if char_name not in project_data["characters"]:
                 project_data["characters"][char_name] = {"assets": [], "references": []}
-            project_data["characters"][char_name]["assets"].append(asset_metadata["organized_path"])
+            project_data["characters"][char_name]["assets"].append(
+                asset_metadata["organized_path"]
+            )
 
         if asset_metadata.get("scene_id"):
             scene_id = str(asset_metadata["scene_id"])
             if scene_id not in project_data["scenes"]:
                 project_data["scenes"][scene_id] = {"assets": []}
-            project_data["scenes"][scene_id]["assets"].append(asset_metadata["organized_path"])
+            project_data["scenes"][scene_id]["assets"].append(
+                asset_metadata["organized_path"]
+            )
 
         with open(metadata_file, "w") as f:
             json.dump(project_data, f, indent=2)
@@ -259,7 +265,9 @@ class ProjectAssetManager:
                     "asset_type": metadata["asset_type"],
                     "character_name": metadata.get("character_name"),
                     "scene_id": metadata.get("scene_id"),
-                    "generation_metadata": json.dumps(metadata.get("generation_metadata", {})),
+                    "generation_metadata": json.dumps(
+                        metadata.get("generation_metadata", {})
+                    ),
                     "job_id": metadata["job_id"],
                     "file_hash": metadata["file_hash"],
                     "file_size": metadata["file_size"],
@@ -279,7 +287,10 @@ class CharacterConsistencyManager:
         self.asset_manager = project_asset_manager
 
     def prepare_character_workflow(
-        self, character_name: str, base_workflow: Dict, scene_context: Optional[Dict] = None
+        self,
+        character_name: str,
+        base_workflow: Dict,
+        scene_context: Optional[Dict] = None,
     ) -> Dict:
         """
         Generate ComfyUI workflow with character-specific parameters
@@ -312,10 +323,10 @@ class CharacterConsistencyManager:
         # Add negative prompt enhancements (node 2 is negative prompt)
         if "2" in enhanced_workflow and "inputs" in enhanced_workflow["2"]:
             current_negative = enhanced_workflow["2"]["inputs"]["text"]
-            consistency_negative = (
-                "inconsistent character design, different character, character variation"
-            )
-            enhanced_workflow["2"]["inputs"]["text"] = f"{current_negative}, {consistency_negative}"
+            consistency_negative = "inconsistent character design, different character, character variation"
+            enhanced_workflow["2"]["inputs"][
+                "text"
+            ] = f"{current_negative}, {consistency_negative}"
 
         # If we have reference images, we could add ControlNet or other consistency nodes here
         # This would require more complex workflow modification

@@ -159,7 +159,9 @@ class ContextualProgressTracker:
                     self.job_progress[job_id]["phase_times"][phase_key] = 0
                 self.job_progress[job_id]["phase_times"][
                     phase_key
-                ] += time.time() - self.job_progress[job_id].get("phase_start", time.time())
+                ] += time.time() - self.job_progress[job_id].get(
+                    "phase_start", time.time()
+                )
 
             self.job_progress[job_id]["phase"] = phase
             self.job_progress[job_id]["phase_start"] = time.time()
@@ -203,7 +205,9 @@ class ContextualProgressTracker:
         # Generate preview if available
         preview_image = None
         if preview_path:
-            preview_image = await self.preview_generator.generate_preview_from_latents(preview_path)
+            preview_image = await self.preview_generator.generate_preview_from_latents(
+                preview_path
+            )
         elif percentage > 25:  # Generate progress visualization after 25%
             preview_image = await self.preview_generator.create_progress_visualization(
                 percentage, phase
@@ -244,7 +248,9 @@ class ContextualProgressTracker:
                 return phase
         return GenerationPhase.COMPLETE
 
-    def _generate_contextual_message(self, phase: GenerationPhase, percentage: float) -> str:
+    def _generate_contextual_message(
+        self, phase: GenerationPhase, percentage: float
+    ) -> str:
         """Generate a contextual message based on phase and progress"""
         messages = {
             GenerationPhase.INITIALIZING: [
@@ -281,7 +287,10 @@ class ContextualProgressTracker:
                 "Saving your masterpiece...",
                 "Organizing generated assets...",
             ],
-            GenerationPhase.COMPLETE: ["Your character is ready!", "Generation successful!"],
+            GenerationPhase.COMPLETE: [
+                "Your character is ready!",
+                "Generation successful!",
+            ],
         }
 
         phase_messages = messages.get(phase, ["Processing..."])
@@ -311,7 +320,9 @@ class SmartErrorRecovery:
             "connection": ["restart_service", "check_network", "use_fallback"],
         }
 
-    async def handle_error(self, error: Exception, context: Dict[str, Any]) -> Dict[str, Any]:
+    async def handle_error(
+        self, error: Exception, context: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Handle errors intelligently with recovery suggestions"""
         error_str = str(error).lower()
 
@@ -461,7 +472,9 @@ class SmartErrorRecovery:
         # Apply auto-fix parameters
         fixed_request = {**original_request, **error_response["auto_fix_params"]}
 
-        logger.info(f"Attempting auto-recovery with fixes: {error_response['auto_fix_params']}")
+        logger.info(
+            f"Attempting auto-recovery with fixes: {error_response['auto_fix_params']}"
+        )
 
         try:
             # Retry with fixed parameters
@@ -482,7 +495,10 @@ class UXEnhancementManager:
         self.websocket_connections = {}  # job_id -> websocket connection
 
     async def track_generation(
-        self, job_id: str, websocket_send: Optional[Callable] = None, total_steps: int = 20
+        self,
+        job_id: str,
+        websocket_send: Optional[Callable] = None,
+        total_steps: int = 20,
     ):
         """Track generation progress with rich updates"""
         self.progress_tracker.start_job(job_id, total_steps)
@@ -523,7 +539,9 @@ class UXEnhancementManager:
 
         # Send error update via WebSocket
         if job_id in self.websocket_connections:
-            error_message = json.dumps({"type": "error", "job_id": job_id, **error_response})
+            error_message = json.dumps(
+                {"type": "error", "job_id": job_id, **error_response}
+            )
             await self.websocket_connections[job_id](error_message)
 
         # Attempt auto-recovery if available

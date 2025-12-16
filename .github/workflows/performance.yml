@@ -20,7 +20,7 @@ on:
 jobs:
   performance-benchmarks:
     name: Performance Benchmarks
-    runs-on: [self-hosted, gpu]  # Requires GPU runner for accurate tests
+    runs-on: ubuntu-latest  # Changed from self-hosted GPU runner
 
     steps:
       - uses: actions/checkout@v3

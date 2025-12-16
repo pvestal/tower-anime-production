@@ -89,7 +89,9 @@ class CharacterConsistencyEngine:
         modified_params = generation_params.copy()
 
         if character_id in self.reference_embeddings:
-            modified_params["reference_embedding"] = self.reference_embeddings[character_id]
+            modified_params["reference_embedding"] = self.reference_embeddings[
+                character_id
+            ]
             modified_params["consistency_weight"] = 0.8
 
         if character_id in self.style_templates:
@@ -103,7 +105,9 @@ class CharacterConsistencyEngine:
             self.pose_library[character_id] = {}
         self.pose_library[character_id][pose_name] = pose_data
 
-    def get_pose_from_library(self, character_id: int, pose_name: str) -> Optional[Dict]:
+    def get_pose_from_library(
+        self, character_id: int, pose_name: str
+    ) -> Optional[Dict]:
         """Retrieve pose from library"""
         if character_id in self.pose_library:
             return self.pose_library[character_id].get(pose_name)
@@ -123,7 +127,9 @@ class CharacterConsistencyEngine:
             scores.append(score)
         return scores
 
-    def add_character_version(self, character_id: int, version_name: str, version_data: Dict):
+    def add_character_version(
+        self, character_id: int, version_name: str, version_data: Dict
+    ):
         """Add character version for evolution tracking"""
         if character_id not in self.character_versions:
             self.character_versions[character_id] = {}
@@ -150,10 +156,14 @@ class CharacterConsistencyEngine:
         """Save engine state to file"""
         # Convert integer keys to strings for JSON serialization
         state = {
-            "reference_embeddings": {str(k): v for k, v in self.reference_embeddings.items()},
+            "reference_embeddings": {
+                str(k): v for k, v in self.reference_embeddings.items()
+            },
             "style_templates": {str(k): v for k, v in self.style_templates.items()},
             "pose_library": {str(k): v for k, v in self.pose_library.items()},
-            "character_versions": {str(k): v for k, v in self.character_versions.items()},
+            "character_versions": {
+                str(k): v for k, v in self.character_versions.items()
+            },
         }
 
         with open(path, "w") as f:

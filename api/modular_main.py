@@ -15,6 +15,7 @@ import redis
 import requests
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+
 # Import modular components
 from models import AnimeProject, Base, ProductionJob
 from pydantic import BaseModel
@@ -24,7 +25,9 @@ from sqlalchemy.orm import Session, sessionmaker
 from workflows import get_simple_image_workflow, get_video_workflow
 
 # Configuration
-DATABASE_URL = "postgresql://patrick:***REMOVED***@localhost/anime_production"
+DATABASE_URL = (
+    "postgresql://patrick:***REMOVED***@localhost/anime_production"
+)
 REDIS_URL = "redis://localhost:6379"
 COMFYUI_URL = "http://localhost:8188"
 OUTPUT_DIR = Path("/mnt/1TB-storage/ComfyUI/output")
@@ -112,12 +115,18 @@ async def create_project(project: ProjectCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(db_project)
 
-    return {"id": db_project.id, "name": db_project.name, "message": "Project created successfully"}
+    return {
+        "id": db_project.id,
+        "name": db_project.name,
+        "message": "Project created successfully",
+    }
 
 
 @app.post("/api/anime/generate")
 async def generate_anime(
-    request: GenerationRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)
+    request: GenerationRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
 ):
     """Generate anime image or video."""
 
@@ -175,7 +184,9 @@ async def process_job(job_id: int):
 
         # Generate based on type
         if job.job_type == "image":
-            workflow = get_simple_image_workflow(job.prompt, job.metadata_.get("negative_prompt"))
+            workflow = get_simple_image_workflow(
+                job.prompt, job.metadata_.get("negative_prompt")
+            )
         else:
             workflow = get_video_workflow(job.prompt)
 

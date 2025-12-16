@@ -56,7 +56,9 @@ class V2DatabaseManager:
 
     # === Project Operations ===
 
-    def create_project(self, name: str, description: str = "", project_type: str = "anime") -> int:
+    def create_project(
+        self, name: str, description: str = "", project_type: str = "anime"
+    ) -> int:
         """Create new project and return ID"""
         conn = self.get_connection()
         try:
@@ -133,7 +135,11 @@ class V2DatabaseManager:
             self.return_connection(conn)
 
     def update_job_status(
-        self, job_id: int, status: str, output_path: str = None, error_message: str = None
+        self,
+        job_id: int,
+        status: str,
+        output_path: str = None,
+        error_message: str = None,
     ):
         """Update job status and completion info"""
         conn = self.get_connection()
@@ -273,7 +279,9 @@ class V2DatabaseManager:
                     ),
                 )
                 conn.commit()
-                logger.info(f"Stored quality score: {metric_name}={score_value} for job {job_id}")
+                logger.info(
+                    f"Stored quality score: {metric_name}={score_value} for job {job_id}"
+                )
         except Exception as e:
             conn.rollback()
             logger.error(f"Failed to store quality score: {e}")
@@ -318,7 +326,13 @@ class V2DatabaseManager:
                     (character_id, attribute_type, attribute_value, prompt_tokens, priority, created_at)
                     VALUES (%s, %s, %s, %s, %s, NOW())
                 """,
-                    (character_id, attribute_type, attribute_value, prompt_tokens or [], priority),
+                    (
+                        character_id,
+                        attribute_type,
+                        attribute_value,
+                        prompt_tokens or [],
+                        priority,
+                    ),
                 )
                 conn.commit()
                 logger.info(
@@ -468,7 +482,9 @@ class V2IntegrationAPI:
                 "passed_metrics": passed_count,
                 "total_metrics": total_count,
                 "pass_rate": passed_count / total_count if total_count > 0 else 0,
-                "gate_passed": (passed_count / total_count) >= 0.8 if total_count > 0 else False,
+                "gate_passed": (
+                    (passed_count / total_count) >= 0.8 if total_count > 0 else False
+                ),
             }
 
             logger.info(f"Job {job_id} quality gate: {gate_status}")
@@ -500,7 +516,9 @@ class V2IntegrationAPI:
                     params = cur.fetchone()
 
                     if not params:
-                        raise ValueError(f"No generation parameters found for job {job_id}")
+                        raise ValueError(
+                            f"No generation parameters found for job {job_id}"
+                        )
 
                     reproduction_data = {
                         "original_job_id": job_id,
@@ -537,7 +555,9 @@ v2_integration = V2IntegrationAPI()
 # Export key functions for use in anime_api.py
 async def create_tracked_job(character_name: str, prompt: str, **kwargs):
     """Create job with v2.0 tracking - use this in anime_api.py"""
-    return await v2_integration.create_anime_job_with_v2(character_name, prompt, **kwargs)
+    return await v2_integration.create_anime_job_with_v2(
+        character_name, prompt, **kwargs
+    )
 
 
 async def complete_job_with_quality(job_id: int, output_path: str, **quality_metrics):

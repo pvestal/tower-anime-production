@@ -143,7 +143,9 @@ class DatabaseHealth:
         try:
             pool = engine.pool
             return {
-                "status": "healthy" if DatabaseHealth.check_connection() else "unhealthy",
+                "status": (
+                    "healthy" if DatabaseHealth.check_connection() else "unhealthy"
+                ),
                 "database": DB_CONFIG["database"],
                 "host": DB_CONFIG["host"],
                 "pool_size": pool.size(),
