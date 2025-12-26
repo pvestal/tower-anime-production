@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tower Anime Production - Dashboard</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <style>
+        :root {
+            --primary: #3b82f6;
+            --secondary: #10b981;
+            --danger: #ef4444;
+            --dark: #1f2937;
+            --light: #f9fafb;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .dashboard {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+            overflow: hidden;
+        }
+
+        .header {
+            background: var(--dark);
+            color: white;
+            padding: 24px 32px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            font-weight: 700;
+        }
+
+        .nav-tabs {
+            display: flex;
+            background: #f3f4f6;
+            padding: 0 32px;
+            gap: 2px;
+        }
+
+        .nav-tab {
+            padding: 16px 24px;
+            background: white;
+            border: none;
+            border-bottom: 3px solid transparent;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s;
+            font-size: 14px;
+        }
+
+        .nav-tab:hover {
+            background: #f9fafb;
+        }
+
+        .nav-tab.active {
+            border-bottom-color: var(--primary);
+            color: var(--primary);
+        }
+
+        .content {
+            padding: 32px;
+            min-height: 600px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 24px;
+            margin-bottom: 32px;
+        }
+
+        .stat-card {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            border: 1px solid #e5e7eb;
+        }
+
+        .stat-card h3 {
+            font-size: 14px;
+            color: #6b7280;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            font-weight: 600;
+        }
+
+        .stat-value {
+            font-size: 36px;
+            font-weight: 700;
+            color: var(--dark);
+        }
+
+        .recent-section {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            border: 1px solid #e5e7eb;
+        }
+
+        .recent-section h2 {
+            font-size: 20px;
+            margin-bottom: 20px;
+            color: var(--dark);
+        }
+
+        .recent-item {
+            padding: 16px;
+            border-bottom: 1px solid #e5e7eb;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .recent-item:last-child {
+            border-bottom: none;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border-radius: 8px;
+            border: none;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 14px;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #2563eb;
+        }
+
+        .btn-secondary {
+            background: var(--secondary);
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #059669;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #6b7280;
+        }
+
+        .character-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            background: var(--primary);
+            color: white;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .time-ago {
+            color: #6b7280;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard">
+        <div class="header">
+            <h1>🎬 Tower Anime Production</h1>
+            <div>
+                <button class="btn btn-secondary" onclick="generateAll()">⚡ Generate All</button>
+                <button class="btn btn-primary" onclick="location.href='/editor/new'">➕ New Scene</button>
+            </div>
+        </div>
+
+        <div class="nav-tabs">
+            <button class="nav-tab active" onclick="switchTab('dashboard', this)">📊 Dashboard</button>
+            <button class="nav-tab" onclick="switchTab('characters', this)">👤 Characters</button>
+            <button class="nav-tab" onclick="switchTab('storylines', this)">📖 Storylines</button>
+            <button class="nav-tab" onclick="switchTab('scenes', this)">🎬 Scenes</button>
+            <button class="nav-tab" onclick="switchTab('models', this)">🔄 Models</button>
+            <button class="nav-tab" onclick="switchTab('jobs', this)">⚙️ Jobs</button>
+        </div>
+
+        <div class="content" id="content">
+            <div hx-get="/api/dashboard/stats" hx-trigger="load" hx-target="#stats-container">
+                <div id="stats-container">
+                    <div class="loading">Loading dashboard statistics...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function switchTab(tab, element) {
+            // Update active tab
+            document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+            element.classList.add('active');
+
+            // Load content
+            const content = document.getElementById('content');
+
+            if (tab === 'dashboard') {
+                content.innerHTML = '<div hx-get="/api/dashboard/stats" hx-trigger="load" hx-target="#stats-container"><div id="stats-container"><div class="loading">Loading dashboard statistics...</div></div></div>';
+                htmx.process(content);
+            } else {
+                location.href = '/' + tab;
+            }
+        }
+
+        function generateAll() {
+            if (confirm('Generate all pending scenes?')) {
+                fetch('/api/generate/all', {method: 'POST'})
+                    .then(response => response.json())
+                    .then(data => {
+                        alert(data.message);
+                    });
+            }
+        }
+
+        // Handle stats response
+        document.body.addEventListener('htmx:afterSwap', function(evt) {
+            if (evt.detail.target.id === 'stats-container') {
+                // Stats loaded via HTMX
+                fetch('/api/dashboard/stats')
+                    .then(response => response.json())
+                    .then(data => {
+                        displayStats(data);
+                    });
+            }
+        });
+
+        function displayStats(data) {
+            const container = document.getElementById('stats-container');
+
+            let recentHTML = '';
+            if (data.recent_generations && data.recent_generations.length > 0) {
+                data.recent_generations.forEach(gen => {
+                    recentHTML += `
+                        <div class="recent-item">
+                            <div>
+                                <span class="character-badge">${gen.character || 'Unknown'}</span>
+                                <span style="margin-left: 12px;">${gen.project || 'No project'}</span>
+                            </div>
+                            <span class="time-ago">${formatTimeAgo(gen.created_at)}</span>
+                        </div>
+                    `;
+                });
+            } else {
+                recentHTML = '<div class="recent-item">No recent generations</div>';
+            }
+
+            container.innerHTML = `
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <h3>Characters</h3>
+                        <div class="stat-value">${data.total_characters || 0}</div>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Generations</h3>
+                        <div class="stat-value">${data.total_generations || 0}</div>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Storylines</h3>
+                        <div class="stat-value">${data.total_storylines || 0}</div>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Scenes</h3>
+                        <div class="stat-value">${data.total_scenes || 0}</div>
+                    </div>
+                </div>
+
+                <div class="recent-section">
+                    <h2>Recent Generations</h2>
+                    ${recentHTML}
+                </div>
+            `;
+        }
+
+        function formatTimeAgo(timestamp) {
+            if (!timestamp) return 'Unknown';
+            const date = new Date(timestamp);
+            const now = new Date();
+            const diff = Math.floor((now - date) / 1000);
+
+            if (diff < 60) return 'Just now';
+            if (diff < 3600) return Math.floor(diff / 60) + ' minutes ago';
+            if (diff < 86400) return Math.floor(diff / 3600) + ' hours ago';
+            return Math.floor(diff / 86400) + ' days ago';
+        }
+
+        // Auto-refresh every 10 seconds
+        setInterval(() => {
+            if (document.querySelector('.nav-tab.active').textContent.includes('Dashboard')) {
+                fetch('/api/dashboard/stats')
+                    .then(response => response.json())
+                    .then(data => displayStats(data));
+            }
+        }, 10000);
+    </script>
+</body>
+</html>

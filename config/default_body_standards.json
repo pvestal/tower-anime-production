@@ -1,0 +1,25 @@
+{
+  "tokyo_debt_desire_body_standard": {
+    "description": "Default body proportions - ALWAYS USE THESE",
+    "positive_prompts": [
+      "curvy athletic build",
+      "healthy body weight",
+      "thick thighs",
+      "curvy hips",
+      "REALISTIC small breasts",
+      "B cup to C cup chest",
+      "modest bust",
+      "proportionate to body",
+      "voluptuous but natural"
+    ],
+    "negative_prompts": [
+      "(large breasts:2.0)",
+      "(huge breasts:2.0)",
+      "(busty:2.0)",
+      "(skinny:1.8)",
+      "(thin:1.8)",
+      "(underweight:1.8)"
+    ],
+    "notes": "Error on curvy side, NOT underweight. B-C cup max ALWAYS."
+  }
+}

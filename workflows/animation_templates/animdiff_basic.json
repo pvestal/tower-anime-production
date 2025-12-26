@@ -1,0 +1,79 @@
+{
+  "1": {
+    "inputs": {
+      "ckpt_name": "realisticVision_v51.safetensors"
+    },
+    "class_type": "CheckpointLoaderSimple"
+  },
+  "2": {
+    "inputs": {
+      "text": "POSITIVE_PROMPT_PLACEHOLDER",
+      "clip": ["1", 1]
+    },
+    "class_type": "CLIPTextEncode"
+  },
+  "3": {
+    "inputs": {
+      "text": "NEGATIVE_PROMPT_PLACEHOLDER",
+      "clip": ["1", 1]
+    },
+    "class_type": "CLIPTextEncode"
+  },
+  "4": {
+    "inputs": {
+      "model_name": "mm_sd_v15_v2.ckpt"
+    },
+    "class_type": "ADE_LoadAnimateDiffModel"
+  },
+  "5": {
+    "inputs": {
+      "motion_model": ["4", 0]
+    },
+    "class_type": "ADE_ApplyAnimateDiffModelSimple"
+  },
+  "6": {
+    "inputs": {
+      "model": ["1", 0],
+      "beta_schedule": "sqrt_linear (AnimateDiff)",
+      "m_models": ["5", 0]
+    },
+    "class_type": "ADE_UseEvolvedSampling"
+  },
+  "7": {
+    "inputs": {
+      "width": 512,
+      "height": 768,
+      "batch_size": 16
+    },
+    "class_type": "ADE_EmptyLatentImageLarge"
+  },
+  "8": {
+    "inputs": {
+      "seed": 60108,
+      "steps": 25,
+      "cfg": 7.5,
+      "sampler_name": "dpmpp_2m",
+      "scheduler": "karras",
+      "denoise": 1.0,
+      "model": ["6", 0],
+      "positive": ["2", 0],
+      "negative": ["3", 0],
+      "latent_image": ["7", 0]
+    },
+    "class_type": "KSampler"
+  },
+  "9": {
+    "inputs": {
+      "samples": ["8", 0],
+      "vae": ["1", 2]
+    },
+    "class_type": "VAEDecode"
+  },
+  "10": {
+    "inputs": {
+      "filename_prefix": "animdiff_video",
+      "images": ["9", 0]
+    },
+    "class_type": "SaveImage"
+  }
+}

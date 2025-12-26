@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Video Generator - Tokyo Debt Desire</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .video-generator {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 30px;
+            max-width: 700px;
+            margin: 0 auto;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+
+        h3 {
+            font-size: 28px;
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+            border-bottom: 3px solid #667eea;
+            padding-bottom: 15px;
+        }
+
+        .frame-controls {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+        }
+
+        .control-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        label {
+            font-weight: 600;
+            color: #444;
+            flex: 1;
+        }
+
+        input[type="range"] {
+            flex: 2;
+            margin: 0 15px;
+            height: 8px;
+            background: #ddd;
+            border-radius: 5px;
+            outline: none;
+            -webkit-appearance: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            background: #667eea;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+
+        .range-value {
+            font-weight: bold;
+            color: #667eea;
+            min-width: 50px;
+            text-align: center;
+        }
+
+        button {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.2s;
+            width: 100%;
+            margin: 10px 0;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .progress {
+            background: #f0f0f0;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+            display: none;
+        }
+
+        .progress.visible {
+            display: block;
+        }
+
+        .bar-container {
+            background: #ddd;
+            border-radius: 10px;
+            height: 20px;
+            overflow: hidden;
+            margin: 15px 0;
+        }
+
+        .bar {
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            height: 100%;
+            width: 0%;
+            transition: width 0.5s ease;
+            border-radius: 10px;
+        }
+
+        .progress-text {
+            text-align: center;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .video-controls {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 12px;
+            margin: 20px 0;
+            display: none;
+        }
+
+        .video-controls.visible {
+            display: block;
+        }
+
+        .button-row {
+            display: flex;
+            gap: 15px;
+        }
+
+        .button-row button {
+            flex: 1;
+        }
+
+        video {
+            width: 100%;
+            border-radius: 12px;
+            margin: 20px 0;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+
+        .status-log {
+            background: #000;
+            color: #0f0;
+            font-family: 'Courier New', monospace;
+            padding: 15px;
+            border-radius: 8px;
+            height: 200px;
+            overflow-y: auto;
+            margin: 20px 0;
+            font-size: 12px;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 20px;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <div class="video-generator">
+        <h3>🎭 Tokyo Debt Desire - Yuki Takahashi</h3>
+        <div class="subtitle">Simple Video Generator - Using YOUR existing workflow</div>
+
+        <div class="frame-controls">
+            <div class="control-row">
+                <label>Frames:</label>
+                <input type="range" id="frameRange" min="8" max="64" value="24" oninput="updateValue('frameValue', this.value)">
+                <span class="range-value" id="frameValue">24</span>
+            </div>
+
+            <div class="control-row">
+                <label>FPS:</label>
+                <input type="range" id="fpsRange" min="8" max="30" value="24" oninput="updateValue('fpsValue', this.value)">
+                <span class="range-value" id="fpsValue">24</span>
+            </div>
+
+            <button onclick="generateFrames()" id="generateBtn">
+                🎬 Generate Frames
+            </button>
+        </div>
+
+        <div class="progress" id="frameProgress">
+            <div class="progress-text" id="frameProgressText">Generating frames...</div>
+            <div class="bar-container">
+                <div class="bar" id="frameBar"></div>
+            </div>
+            <div style="text-align: center; font-size: 14px; color: #666;">
+                <span id="frameStatus">Frame 0/24 generated</span>
+            </div>
+        </div>
+
+        <div class="video-controls" id="videoControls">
+            <div class="button-row">
+                <button onclick="renderVideo()" id="renderBtn">
+                    🎬 Render MP4
+                </button>
+                <button onclick="downloadVideo()" id="downloadBtn" style="display:none;">
+                    📥 Download
+                </button>
+            </div>
+
+            <video controls id="preview" style="display:none;">
+                <source src="" type="video/mp4">
+            </video>
+        </div>
+
+        <div class="status-log" id="statusLog"></div>
+    </div>
+
+    <script>
+        let currentJobId = null;
+
+        function updateValue(elementId, value) {
+            document.getElementById(elementId).textContent = value;
+        }
+
+        function log(message) {
+            const logDiv = document.getElementById('statusLog');
+            const timestamp = new Date().toLocaleTimeString();
+            logDiv.innerHTML += `[${timestamp}] ${message}\n`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        async function generateFrames() {
+            const frames = document.getElementById('frameRange').value;
+            const generateBtn = document.getElementById('generateBtn');
+            const frameProgress = document.getElementById('frameProgress');
+
+            generateBtn.disabled = true;
+            generateBtn.textContent = "🔄 Generating...";
+            frameProgress.classList.add('visible');
+
+            log("🎬 Starting frame generation...");
+            log(`   Frames: ${frames}`);
+            log("   Character: Yuki Takahashi (Tokyo Debt Desire)");
+
+            try {
+                const response = await fetch('/api/simple/frames', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        character: 'yuki_takahashi',
+                        num_frames: parseInt(frames),
+                        prompt_addition: 'walking down Tokyo street, night, rain'
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    currentJobId = result.job_id;
+                    log(`✅ Frame generation started: ${result.job_id}`);
+
+                    // Start monitoring progress
+                    monitorFrameGeneration();
+                } else {
+                    throw new Error(result.error || 'Frame generation failed');
+                }
+
+            } catch (error) {
+                log(`❌ Frame generation failed: ${error.message}`);
+                generateBtn.disabled = false;
+                generateBtn.textContent = "🎬 Generate Frames";
+                frameProgress.classList.remove('visible');
+            }
+        }
+
+        async function monitorFrameGeneration() {
+            const maxAttempts = 60; // 5 minutes
+            let attempts = 0;
+
+            const checkProgress = async () => {
+                try {
+                    const response = await fetch(`/api/simple/frames/status/${currentJobId}`);
+                    const status = await response.json();
+
+                    // Update progress bar
+                    const progress = (status.frames_generated / status.total_frames) * 100;
+                    document.getElementById('frameBar').style.width = progress + '%';
+                    document.getElementById('frameStatus').textContent =
+                        `Frame ${status.frames_generated}/${status.total_frames} generated`;
+
+                    log(`   Progress: ${progress.toFixed(0)}% - ${status.frames_generated}/${status.total_frames} frames`);
+
+                    if (status.completed) {
+                        log("🎉 Frame generation complete!");
+                        document.getElementById('generateBtn').disabled = false;
+                        document.getElementById('generateBtn').textContent = "🎬 Generate Frames";
+                        document.getElementById('videoControls').classList.add('visible');
+                        return;
+                    }
+
+                    attempts++;
+                    if (attempts < maxAttempts) {
+                        setTimeout(checkProgress, 5000); // Check every 5 seconds
+                    } else {
+                        log("⏰ Timeout - check manually");
+                        document.getElementById('generateBtn').disabled = false;
+                        document.getElementById('generateBtn').textContent = "🎬 Generate Frames";
+                    }
+
+                } catch (error) {
+                    log(`❌ Status check failed: ${error.message}`);
+                    attempts++;
+                    if (attempts < maxAttempts) {
+                        setTimeout(checkProgress, 5000);
+                    }
+                }
+            };
+
+            checkProgress();
+        }
+
+        async function renderVideo() {
+            const fps = document.getElementById('fpsRange').value;
+            const renderBtn = document.getElementById('renderBtn');
+
+            renderBtn.disabled = true;
+            renderBtn.textContent = "🔄 Rendering...";
+
+            log("🎬 Starting video rendering...");
+            log(`   FPS: ${fps}`);
+            log("   Using simple FFmpeg conversion...");
+
+            try {
+                const response = await fetch('/api/simple/video', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        character: 'yuki_takahashi',
+                        fps: parseInt(fps)
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    log(`✅ Video rendered successfully!`);
+                    log(`📁 ${result.video_path}`);
+
+                    // Show video preview
+                    const videoElement = document.getElementById('preview');
+                    videoElement.src = result.video_url;
+                    videoElement.style.display = 'block';
+
+                    // Show download button
+                    const downloadBtn = document.getElementById('downloadBtn');
+                    downloadBtn.style.display = 'block';
+                    downloadBtn.onclick = () => window.open(result.video_url, '_blank');
+
+                } else {
+                    throw new Error(result.error || 'Video rendering failed');
+                }
+
+            } catch (error) {
+                log(`❌ Video rendering failed: ${error.message}`);
+            } finally {
+                renderBtn.disabled = false;
+                renderBtn.textContent = "🎬 Render MP4";
+            }
+        }
+
+        function downloadVideo() {
+            log("📥 Initiating download...");
+        }
+
+        // Initialize
+        log("🎭 Simple Video Generator initialized");
+        log("   Using YOUR Tokyo Debt Desire configuration");
+        log("   Ready to generate frames and videos");
+    </script>
+</body>
+</html>

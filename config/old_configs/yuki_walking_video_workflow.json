@@ -1,0 +1,101 @@
+{
+  "1": {
+    "inputs": {
+      "ckpt_name": "dreamshaper_8.safetensors"
+    },
+    "class_type": "CheckpointLoaderSimple"
+  },
+  "2": {
+    "inputs": {
+      "width": 512,
+      "height": 768,
+      "batch_size": 16
+    },
+    "class_type": "EmptyLatentImage"
+  },
+  "3": {
+    "inputs": {
+      "text": "tokyo debt desire, photorealistic Asian woman, Yuki Takahashi, walking down street, smooth walking motion, consistent character, same person, identical face, masterpiece, best quality, detailed, cinematic lighting, smooth flowing motion, shoulder-length black hair with subtle red highlights, almond-shaped dark brown eyes, pale skin, small beauty mark under left eye, curvy, voluptuous",
+      "clip": ["1", 1]
+    },
+    "class_type": "CLIPTextEncode"
+  },
+  "4": {
+    "inputs": {
+      "text": "skinny, thin, slim, petite, small breasts, flat chest, narrow hips, thin thighs, young looking, teen, child, little girl, different person, different face, inconsistent features, changing appearance, anime, cartoon, bad anatomy, deformed, static, morphing, inconsistent",
+      "clip": ["1", 1]
+    },
+    "class_type": "CLIPTextEncode"
+  },
+  "5": {
+    "inputs": {
+      "model_name": "mm_sd_v15_v2.ckpt"
+    },
+    "class_type": "ADE_LoadAnimateDiffModel"
+  },
+  "6": {
+    "inputs": {
+      "motion_scale": 1.0,
+      "apply_v2_models_properly": true,
+      "model": ["1", 0],
+      "m_models": ["5", 0]
+    },
+    "class_type": "ADE_ApplyAnimateDiffModel"
+  },
+  "7": {
+    "inputs": {
+      "batch_offset": 0,
+      "noise_type": "default",
+      "seed_gen": "comfy",
+      "seed_offset": 0
+    },
+    "class_type": "ADE_AnimateDiffSamplingSettings"
+  },
+  "8": {
+    "inputs": {
+      "context_length": 16,
+      "context_stride": 1,
+      "context_overlap": 4,
+      "closed_loop": false
+    },
+    "class_type": "ADE_AnimateDiffUniformContextOptions"
+  },
+  "9": {
+    "inputs": {
+      "seed": 888890,
+      "steps": 30,
+      "cfg": 8.5,
+      "sampler_name": "dpmpp_2m",
+      "scheduler": "karras",
+      "denoise": 1.0,
+      "model": ["6", 0],
+      "positive": ["3", 0],
+      "negative": ["4", 0],
+      "latent_image": ["2", 0]
+    },
+    "class_type": "KSampler"
+  },
+  "10": {
+    "inputs": {
+      "samples": ["9", 0],
+      "vae": ["1", 2]
+    },
+    "class_type": "VAEDecode"
+  },
+  "11": {
+    "inputs": {
+      "filename_prefix": "yuki_walking_sequence",
+      "images": ["10", 0]
+    },
+    "class_type": "SaveImage"
+  },
+  "12": {
+    "inputs": {
+      "filename_prefix": "yuki_walking_video",
+      "fps": 8,
+      "compress_level": 4,
+      "images": ["10", 0]
+    },
+    "class_type": "VHS_VideoCombine"
+  }
+}

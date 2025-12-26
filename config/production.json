@@ -1,0 +1,100 @@
+{
+  "orchestrator": {
+    "max_concurrent_jobs": 6,
+    "worker_count": 4,
+    "retry_attempts": 3,
+    "progress_update_interval": 0.5,
+    "batch_size": 10,
+    "job_timeout": 1800
+  },
+  "database": {
+    "connection_pool_size": 20,
+    "max_overflow": 10,
+    "pool_timeout": 30,
+    "pool_recycle": 3600,
+    "pool_pre_ping": true,
+    "echo": false
+  },
+  "redis": {
+    "max_connections": 10,
+    "retry_on_timeout": true,
+    "socket_keepalive": true,
+    "default_cache_ttl": 300
+  },
+  "qdrant": {
+    "timeout": 30,
+    "prefer_grpc": true,
+    "api_key": null,
+    "prefix": "anime_production"
+  },
+  "comfyui": {
+    "timeout": 600,
+    "max_retries": 3,
+    "queue_check_interval": 2.0,
+    "websocket_timeout": 300
+  },
+  "performance": {
+    "enable_monitoring": true,
+    "monitoring_interval": 1.0,
+    "enable_caching": true,
+    "cache_embeddings": true,
+    "cache_workflows": true,
+    "enable_compression": true,
+    "memory_threshold": 80,
+    "cpu_threshold": 90,
+    "gpu_memory_threshold": 85
+  },
+  "security": {
+    "enable_rate_limiting": true,
+    "requests_per_minute": 60,
+    "burst_allowance": 10,
+    "enable_auth_middleware": true,
+    "cors_origins": ["http://localhost:3000", "https://192.168.50.135"],
+    "allowed_file_types": ["jpg", "jpeg", "png", "webp", "mp4", "avi", "mov"]
+  },
+  "logging": {
+    "level": "INFO",
+    "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    "file": "/opt/tower-anime-production/logs/production.log",
+    "max_size": "100MB",
+    "backup_count": 5,
+    "enable_json_logging": true
+  },
+  "generation": {
+    "default_resolution": [512, 768],
+    "max_resolution": [1024, 1536],
+    "supported_formats": ["image", "video", "animation"],
+    "video_duration_limits": {
+      "min": 1,
+      "max": 30
+    },
+    "quality_presets": {
+      "draft": {
+        "steps": 20,
+        "cfg_scale": 7.0
+      },
+      "standard": {
+        "steps": 30,
+        "cfg_scale": 8.0
+      },
+      "high": {
+        "steps": 50,
+        "cfg_scale": 9.0
+      }
+    }
+  },
+  "storage": {
+    "output_directory": "/opt/tower-anime-production/output",
+    "temp_directory": "/tmp/anime_generation",
+    "max_file_size": "500MB",
+    "cleanup_interval": 3600,
+    "retention_days": 30
+  },
+  "models": {
+    "clip_model": "clip-ViT-B-32",
+    "sentence_transformer": "all-MiniLM-L6-v2",
+    "default_checkpoint": "AOM3A1B.safetensors",
+    "model_cache_size": "10GB",
+    "auto_download": false
+  }
+}

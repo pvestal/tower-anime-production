@@ -1,0 +1,6 @@
+ sleep 3 curl -X POST http://localhost:8329/api/anime/video/test  -H Content-Type: application/json  -d {
+    "character": "yuki_takahashi", 
+    "duration": 5,
+    "output_format": "mp4",
+    "preview_frames": true
+  }

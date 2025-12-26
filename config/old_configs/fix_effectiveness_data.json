@@ -1,0 +1,67 @@
+{
+  "fix_history": [
+    {
+      "shot_id": "updated_autofix_test",
+      "issue_type": "consistency_low",
+      "parameters_used": {
+        "sampling_steps_multiplier": 2.5,
+        "cfg_scale_multiplier": 0.67,
+        "prompt_enhancements": [
+          "high quality",
+          "detailed",
+          "masterpiece"
+        ],
+        "denoising_strength": 0.75,
+        "expected_improvement": 0.13,
+        "validation_date": "2025-12-16"
+      },
+      "quality_improvement": -0.18158139879015572,
+      "original_score": 9.440398407077362,
+      "fixed_score": 7.726197659183897,
+      "test_type": "validation_after_update",
+      "original_parameters": {
+        "prompt": "cyberpunk character validation test",
+        "type": "image",
+        "width": 512,
+        "height": 512,
+        "steps": 8,
+        "cfg": 12.0
+      },
+      "fixed_parameters": {
+        "prompt": "cyberpunk character validation test, high quality, detailed, masterpiece",
+        "type": "image",
+        "width": 512,
+        "height": 512,
+        "steps": 20,
+        "cfg": 8.040000000000001
+      },
+      "timestamp": "2025-12-16T02:55:58.013978",
+      "monitoring_version": "1.0",
+      "effectiveness_threshold": 0.1
+    }
+  ],
+  "degradation_alerts": [
+    {
+      "alert_type": "QUALITY_DEGRADATION",
+      "timestamp": "2025-12-16T02:55:58.013993",
+      "shot_id": "updated_autofix_test",
+      "issue_type": "consistency_low",
+      "degradation_amount": -0.18158139879015572,
+      "parameters_used": {
+        "sampling_steps_multiplier": 2.5,
+        "cfg_scale_multiplier": 0.67,
+        "prompt_enhancements": [
+          "high quality",
+          "detailed",
+          "masterpiece"
+        ],
+        "denoising_strength": 0.75,
+        "expected_improvement": 0.13,
+        "validation_date": "2025-12-16"
+      },
+      "severity": "CRITICAL"
+    }
+  ],
+  "last_updated": "2025-12-16T02:55:58.014101",
+  "total_fixes_tracked": 1
+}

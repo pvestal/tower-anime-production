@@ -1,0 +1,253 @@
+{
+  "timestamp": "2025-12-16T02:58:51.295952",
+  "test_type": "autofix_parameter_optimization",
+  "total_tests": 8,
+  "successful_tests": 5,
+  "success_rate": 0.625,
+  "all_results": [
+    {
+      "test_name": "conservative_steps_slight_cfg_reduction",
+      "steps_multiplier": 1.5,
+      "cfg_multiplier": 0.9,
+      "baseline_score": 5.4605646070005385,
+      "improved_score": 6.869483740084173,
+      "improvement": 0.2580171162662147,
+      "baseline_params": {
+        "prompt": "cyberpunk character optimization test",
+        "type": "image",
+        "width": 512,
+        "height": 512,
+        "steps": 8,
+        "cfg": 12.0
+      },
+      "improved_params": {
+        "prompt": "cyberpunk character optimization test, high quality, detailed",
+        "type": "image",
+        "width": 512,
+        "height": 512,
+        "steps": 12,
+        "cfg": 10.8
+      },
+      "baseline_path": "/mnt/1TB-storage/ComfyUI/output/anime_74cce341-d4a6-4a1d-b557-876cd2bc806f_00001_.png",
+      "improved_path": "/mnt/1TB-storage/ComfyUI/output/anime_9c0dad1f-360a-462b-aedc-412b8d4a41ad_00001_.png",
+      "success": "True"
+    },
+    {
+      "test_name": "moderate_steps_moderate_cfg_reduction",
+      "steps_multiplier": 1.8,
+      "cfg_multiplier": 0.85,
+      "baseline_score": 5.566412449258394,
+      "improved_score": 6.433467852866912,
+      "improvement": 0.15576556920859047,
+      "baseline_params": {
+        "prompt": "cyberpunk character optimization test",
+        "type": "image",
+        "width": 512,
+        "height": 512,
+        "steps": 8,
+        "cfg": 12.0
+      },
+      "improved_params": {
+        "prompt": "cyberpunk character optimization test, high quality, detailed",
+        "type": "image",
+        "width": 512,
+        "height": 512,
+        "steps": 14,
+        "cfg": 10.2
+      },
+      "baseline_path": "/mnt/1TB-storage/ComfyUI/output/anime_952cc13b-6585-41da-ae8b-d9cd4b723c5a_00001_.png",
+      "improved_path": "/mnt/1TB-storage/ComfyUI/output/anime_20f53092-f794-4532-adca-dcac3d5d38a7_00001_.png",
+      "success": "True"
+    },
+    {
+      "test_name": "double_steps_significant_cfg_reduction",
+      "steps_multiplier": 2.0,
+      "cfg_multiplier": 0.8,
+      "baseline_score": 8.880032067315376,
+      "improved_score": 5.187705912679536,
+      "improvement": -0.4158009933574609,
+      "baseline_params": {
+        "prompt": "cyberpunk character optimization test",
+        "type": "image",
+        "width": 512,
+        "height": 512,
+        "steps": 8,
+        "cfg": 12.0
+      },
+      "improved_params": {
+        "prompt": "cyberpunk character optimization test, high quality, detailed",
+        "type": "image",
+        "width": 512,
+        "height": 512,
+        "steps": 16,
+        "cfg": 9.600000000000001
+      },
+      "baseline_path": "/mnt/1TB-storage/ComfyUI/output/anime_d6e84381-0369-4cf4-b0b5-71b566527c1e_00001_.png",
+      "improved_path": "/mnt/1TB-storage/ComfyUI/output/anime_0e3d4e20-a4b2-4d69-a97d-3aecaa669fa6_00001_.png",
+      "success": "False"
+    },
+    {
+      "test_name": "current_proven_approach",
+      "steps_multiplier": 2.5,
+      "cfg_multiplier": 0.67,
+      "baseline_score": 7.279434637585616,
+      "improved_score": 5.792925860588202,
+      "improvement": -0.20420662469062942,
+      "baseline_params": {
+        "prompt": "cyberpunk character optimization test",
+        "type": "image",
+        "width": 512,
+        "height": 512,
+        "steps": 8,
+        "cfg": 12.0
+      },
+      "improved_params": {
+        "prompt": "cyberpunk character optimization test, high quality, detailed",
+        "type": "image",
+        "width": 512,
+        "height": 512,
+        "steps": 20,
+        "cfg": 8.040000000000001
+      },
+      "baseline_path": "/mnt/1TB-storage/ComfyUI/output/anime_f6899dfd-cfa7-4b48-8fa3-31d8b6e85881_00001_.png",
+      "improved_path": "/mnt/1TB-storage/ComfyUI/output/anime_67877b05-50c5-452c-a18f-4bc914e53696_00001_.png",
+      "success": "False"
+    },
+    {
+      "test_name": "minimal_steps_strong_cfg_reduction",
+      "steps_multiplier": 1.2,
+      "cfg_multiplier": 0.75,
+      "baseline_score": 5.800929382234994,
+      "improved_score": 9.464538859434523,
+      "improvement": 0.6315556070065459,
+      "baseline_params": {
+        "prompt": "cyberpunk character optimization test",
+        "type": "image",
+        "width": 512,
+        "height": 512,
+        "steps": 8,
+        "cfg": 12.0
+      },
+      "improved_params": {
+        "prompt": "cyberpunk character optimization test, high quality, detailed",
+        "type": "image",
+        "width": 512,
+        "height": 512,
+        "steps": 9,
+        "cfg": 9.0
+      },
+      "baseline_path": "/mnt/1TB-storage/ComfyUI/output/anime_68f6cc36-b807-4993-bbd0-5513840dd280_00001_.png",
+      "improved_path": "/mnt/1TB-storage/ComfyUI/output/anime_872ad3b0-dc57-427e-acdb-67ba1aa6b02f_00001_.png",
+      "success": "True"
+    },
+    {
+      "test_name": "aggressive_steps_minimal_cfg_reduction",
+      "steps_multiplier": 3.0,
+      "cfg_multiplier": 0.9,
+      "baseline_score": 6.881686132761786,
+      "improved_score": 9.454752367256525,
+      "improvement": 0.37390055065793965,
+      "baseline_params": {
+        "prompt": "cyberpunk character optimization test",
+        "type": "image",
+        "width": 512,
+        "height": 512,
+        "steps": 8,
+        "cfg": 12.0
+      },
+      "improved_params": {
+        "prompt": "cyberpunk character optimization test, high quality, detailed",
+        "type": "image",
+        "width": 512,
+        "height": 512,
+        "steps": 24,
+        "cfg": 10.8
+      },
+      "baseline_path": "/mnt/1TB-storage/ComfyUI/output/anime_841c301e-d6a2-467a-ae2d-611558934127_00001_.png",
+      "improved_path": "/mnt/1TB-storage/ComfyUI/output/anime_a9eb6854-f5ed-4928-bb64-7bb026e094cb_00001_.png",
+      "success": "True"
+    },
+    {
+      "test_name": "conservative_steps_aggressive_cfg_reduction",
+      "steps_multiplier": 1.5,
+      "cfg_multiplier": 0.6,
+      "baseline_score": 5.261359531718393,
+      "improved_score": 10.588319420107137,
+      "improvement": 1.012468328057582,
+      "baseline_params": {
+        "prompt": "cyberpunk character optimization test",
+        "type": "image",
+        "width": 512,
+        "height": 512,
+        "steps": 8,
+        "cfg": 12.0
+      },
+      "improved_params": {
+        "prompt": "cyberpunk character optimization test, high quality, detailed",
+        "type": "image",
+        "width": 512,
+        "height": 512,
+        "steps": 12,
+        "cfg": 7.199999999999999
+      },
+      "baseline_path": "/mnt/1TB-storage/ComfyUI/output/anime_f538c84d-b320-4920-9292-b743cf808226_00001_.png",
+      "improved_path": "/mnt/1TB-storage/ComfyUI/output/anime_74963789-8ce0-4893-8d20-d731ae384f99_00001_.png",
+      "success": "True"
+    },
+    {
+      "test_name": "no_steps_extreme_cfg_reduction",
+      "steps_multiplier": 1.0,
+      "cfg_multiplier": 0.5,
+      "baseline_score": 9.952662744660202,
+      "improved_score": 8.629773032432944,
+      "improvement": -0.13291816935493114,
+      "baseline_params": {
+        "prompt": "cyberpunk character optimization test",
+        "type": "image",
+        "width": 512,
+        "height": 512,
+        "steps": 8,
+        "cfg": 12.0
+      },
+      "improved_params": {
+        "prompt": "cyberpunk character optimization test, high quality, detailed",
+        "type": "image",
+        "width": 512,
+        "height": 512,
+        "steps": 8,
+        "cfg": 6.0
+      },
+      "baseline_path": "/mnt/1TB-storage/ComfyUI/output/anime_c3467143-e69f-41fc-a0da-b577ac8d14b3_00001_.png",
+      "improved_path": "/mnt/1TB-storage/ComfyUI/output/anime_12aac528-f161-4bfa-93c7-c66c7b6b4ab5_00001_.png",
+      "success": "False"
+    }
+  ],
+  "best_parameters": {
+    "test_name": "conservative_steps_aggressive_cfg_reduction",
+    "steps_multiplier": 1.5,
+    "cfg_multiplier": 0.6,
+    "baseline_score": 5.261359531718393,
+    "improved_score": 10.588319420107137,
+    "improvement": 1.012468328057582,
+    "baseline_params": {
+      "prompt": "cyberpunk character optimization test",
+      "type": "image",
+      "width": 512,
+      "height": 512,
+      "steps": 8,
+      "cfg": 12.0
+    },
+    "improved_params": {
+      "prompt": "cyberpunk character optimization test, high quality, detailed",
+      "type": "image",
+      "width": 512,
+      "height": 512,
+      "steps": 12,
+      "cfg": 7.199999999999999
+    },
+    "baseline_path": "/mnt/1TB-storage/ComfyUI/output/anime_f538c84d-b320-4920-9292-b743cf808226_00001_.png",
+    "improved_path": "/mnt/1TB-storage/ComfyUI/output/anime_74963789-8ce0-4893-8d20-d731ae384f99_00001_.png",
+    "success": "True"
+  },
+  "methodology": "Real generation testing with quality score comparison"
+}

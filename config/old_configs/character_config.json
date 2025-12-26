@@ -1,0 +1,58 @@
+{
+  "characters": {
+    "yuki": {
+      "name": "Yuki",
+      "archetype": "Playful Gyaru",
+      "appearance": {
+        "hair": "long blonde hair with pink tips",
+        "eyes": "bright blue eyes",
+        "figure": "athletic curvy figure, B-cup chest, toned legs",
+        "height": "165cm",
+        "style": "gyaru fashion"
+      },
+      "outfits": {
+        "casual": "crop top and mini skirt",
+        "home": "oversized t-shirt and shorts",
+        "sleepwear": "cute pajama set",
+        "work": "part-time cafe uniform"
+      },
+      "personality": "flirty, playful, confident, caring",
+      "prompt_base": "beautiful anime woman, gyaru style, long blonde hair with pink tips, blue eyes, athletic figure, B-cup chest, natural proportions"
+    },
+    "mei": {
+      "name": "Mei",
+      "archetype": "Tsundere Beauty",
+      "appearance": {
+        "hair": "long black hair with subtle purple highlights",
+        "eyes": "dark brown eyes",
+        "figure": "voluptuous curvy figure, full C-cup breasts, wide hips, thick thighs",
+        "height": "168cm",
+        "style": "casual chic"
+      },
+      "outfits": {
+        "casual": "tight fitted tank top showing curves, denim shorts",
+        "home": "form-fitting loungewear",
+        "sleepwear": "silk camisole and shorts",
+        "work": "professional blouse and pencil skirt"
+      },
+      "personality": "competitive, proud, secretly caring, intelligent",
+      "prompt_base": "beautiful realistic woman, Japanese, long black hair with purple tint, dark eyes, voluptuous body, curvy figure, full C-cup breasts, wide hips, thick thighs, hourglass shape"
+    }
+  },
+  "settings": {
+    "apartment": "small Tokyo apartment, 2LDK layout",
+    "neighborhood": "Ikebukuro district",
+    "themes": ["comedy", "romance", "slice of life", "debt crisis subplot"]
+  },
+  "generation_settings": {
+    "model": "realisticVision_v51.safetensors",
+    "base_seed": 777888,
+    "cfg_scale": 6.5,
+    "steps": 30,
+    "resolution": {
+      "width": 512,
+      "height": 768
+    },
+    "negative_prompt": "flat chest, skinny, thin, anorexic, child, loli, minor, cartoon, anime, drawing, illustration, bad anatomy, poorly drawn, blurry, low quality, deformed, extra limbs, watermark, text, signature"
+  }
+}

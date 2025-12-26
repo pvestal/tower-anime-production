@@ -1,0 +1,412 @@
+name: Echo Brain Integration CI/CD
+
+on:
+  push:
+    branches: [ main, develop, feature/echo-integration ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # Run tests daily at 2 AM UTC
+    - cron: '0 2 * * *'
+
+env:
+  PYTHON_VERSION: '3.11'
+  NODE_VERSION: '18'
+
+jobs:
+  # Code Quality and Linting
+  code-quality:
+    runs-on: ubuntu-latest
+    name: Code Quality Check
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install flake8 black isort mypy pylint
+        pip install -r requirements.txt
+
+    - name: Run Black (code formatting)
+      run: black --check --diff .
+
+    - name: Run isort (import sorting)
+      run: isort --check-only --diff .
+
+    - name: Run flake8 (linting)
+      run: flake8 --max-line-length=100 --exclude=venv,__pycache__,.git
+
+    - name: Run mypy (type checking)
+      run: mypy --ignore-missing-imports worker/ api/ tests/
+
+    - name: Run pylint
+      run: pylint --disable=C0114,C0115,C0116 worker/ api/
+
+  # Security Scanning
+  security-scan:
+    runs-on: ubuntu-latest
+    name: Security Scan
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Run Bandit Security Scanner
+      uses: securecodewarrior/github-action-bandit@v1
+      with:
+        options: '-r worker/ api/ -f json -o bandit-report.json'
+
+    - name: Upload Bandit Report
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: bandit-security-report
+        path: bandit-report.json
+
+    - name: Run Safety Check
+      run: |
+        python -m pip install safety
+        safety check --json --output safety-report.json || true
+
+    - name: Upload Safety Report
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: safety-report
+        path: safety-report.json
+
+  # Unit Tests
+  unit-tests:
+    runs-on: ubuntu-latest
+    name: Unit Tests
+
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: test_anime_production
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y ffmpeg postgresql-client
+
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-asyncio pytest-cov httpx
+
+    - name: Setup test database
+      env:
+        PGHOST: localhost
+        PGPORT: 5432
+        PGUSER: test_user
+        PGPASSWORD: test_password
+        PGDATABASE: test_anime_production
+      run: |
+        # Create test schema
+        psql -c "CREATE TABLE IF NOT EXISTS test_anime_projects (id SERIAL PRIMARY KEY, name VARCHAR(255));"
+
+    - name: Run unit tests
+      env:
+        REDIS_URL: redis://localhost:6379/15
+        DATABASE_URL: postgresql://test_user:test_password@localhost:5432/test_anime_production
+        ECHO_BRAIN_URL: http://localhost:8309  # Will be mocked
+        COMFYUI_URL: http://localhost:8188     # Will be mocked
+      run: |
+        pytest tests/test_echo_integration.py -v --cov=worker --cov-report=xml --cov-report=html
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+
+    - name: Upload coverage reports
+      uses: actions/upload-artifact@v3
+      with:
+        name: coverage-reports
+        path: htmlcov/
+
+  # Integration Tests (with mock services)
+  integration-tests:
+    runs-on: ubuntu-latest
+    name: Integration Tests
+    needs: [unit-tests]
+
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-asyncio
+
+    - name: Start Mock Services
+      run: |
+        # Start mock Echo Brain service
+        python tests/mocks/mock_echo_brain.py &
+        # Start mock ComfyUI service
+        python tests/mocks/mock_comfyui.py &
+        sleep 5
+
+    - name: Run integration tests
+      env:
+        REDIS_URL: redis://localhost:6379/15
+        ECHO_BRAIN_URL: http://localhost:8309
+        COMFYUI_URL: http://localhost:8188
+      run: |
+        pytest tests/test_workflow_integration.py -v --tb=short
+
+    - name: Generate integration test report
+      if: always()
+      run: |
+        pytest tests/ --html=integration-report.html --self-contained-html
+
+    - name: Upload integration test report
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: integration-test-report
+        path: integration-report.html
+
+  # Performance Tests
+  performance-tests:
+    runs-on: ubuntu-latest
+    name: Performance Tests
+    needs: [integration-tests]
+    if: github.ref == 'refs/heads/main' || github.event_name == 'schedule'
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest-benchmark
+
+    - name: Run performance benchmarks
+      run: |
+        pytest tests/test_performance.py -v --benchmark-only --benchmark-json=benchmark.json
+
+    - name: Upload benchmark results
+      uses: actions/upload-artifact@v3
+      with:
+        name: performance-benchmarks
+        path: benchmark.json
+
+  # Docker Build and Test
+  docker-tests:
+    runs-on: ubuntu-latest
+    name: Docker Build Test
+    needs: [code-quality]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build worker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile.worker
+        push: false
+        tags: anime-worker:test
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: Test Docker containers
+      run: |
+        # Start services using docker-compose
+        docker-compose -f docker-compose.echo.yml up -d redis-anime
+        sleep 10
+
+        # Run worker container test
+        docker run --rm --network container:redis-anime anime-worker:test celery -A worker.celery_config inspect ping
+
+    - name: Cleanup Docker containers
+      if: always()
+      run: |
+        docker-compose -f docker-compose.echo.yml down -v
+
+  # Deployment (Production)
+  deploy-production:
+    runs-on: ubuntu-latest
+    name: Deploy to Production
+    needs: [unit-tests, integration-tests, docker-tests]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    environment: production
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Deploy to production server
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ secrets.PRODUCTION_HOST }}
+        username: ${{ secrets.PRODUCTION_USER }}
+        key: ${{ secrets.PRODUCTION_SSH_KEY }}
+        script: |
+          cd /opt/tower-anime-production
+          git pull origin main
+
+          # Update Python dependencies
+          ./venv/bin/pip install -r requirements.txt
+
+          # Restart services
+          sudo systemctl restart tower-anime-production
+
+          # Restart Celery workers
+          docker-compose -f docker-compose.echo.yml restart celery-worker celery-beat
+
+          # Health check
+          sleep 10
+          curl -f http://localhost:8328/health || exit 1
+
+          echo "Deployment completed successfully"
+
+    - name: Notify deployment
+      uses: 8398a7/action-slack@v3
+      if: always()
+      with:
+        status: ${{ job.status }}
+        webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+        text: "Anime Production deployment ${{ job.status }}"
+
+  # Deployment (Staging)
+  deploy-staging:
+    runs-on: ubuntu-latest
+    name: Deploy to Staging
+    needs: [unit-tests, integration-tests]
+    if: github.ref == 'refs/heads/develop'
+
+    environment: staging
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Deploy to staging server
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ secrets.STAGING_HOST }}
+        username: ${{ secrets.STAGING_USER }}
+        key: ${{ secrets.STAGING_SSH_KEY }}
+        script: |
+          cd /opt/tower-anime-production-staging
+          git pull origin develop
+          ./venv/bin/pip install -r requirements.txt
+          sudo systemctl restart tower-anime-production-staging
+          curl -f http://localhost:8338/health || exit 1
+
+  # Automated monitoring check
+  post-deployment-monitoring:
+    runs-on: ubuntu-latest
+    name: Post-Deployment Monitoring
+    needs: [deploy-production]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Wait for deployment stabilization
+      run: sleep 60
+
+    - name: Run health checks
+      run: |
+        # Test Echo Brain integration
+        curl -f http://tower.local/api/anime/health || exit 1
+
+        # Test queue system
+        curl -f http://tower.local/api/anime/queue || exit 1
+
+        # Test monitoring endpoints
+        curl -f http://tower.local/api/anime/metrics || exit 1
+
+    - name: Generate monitoring report
+      run: |
+        echo "Production deployment monitoring report" > monitoring-report.txt
+        echo "Timestamp: $(date)" >> monitoring-report.txt
+        curl -s http://tower.local/api/anime/health | jq . >> monitoring-report.txt
+
+    - name: Upload monitoring report
+      uses: actions/upload-artifact@v3
+      with:
+        name: monitoring-report
+        path: monitoring-report.txt
+
+# Workflow artifacts cleanup
+  cleanup:
+    runs-on: ubuntu-latest
+    name: Cleanup Artifacts
+    needs: [unit-tests, integration-tests, performance-tests, docker-tests]
+    if: always()
+
+    steps:
+    - name: Delete old artifacts
+      uses: geekyeggo/delete-artifact@v2
+      with:
+        name: |
+          coverage-reports
+          integration-test-report
+          performance-benchmarks
+        failOnError: false

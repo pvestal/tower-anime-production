@@ -1,0 +1,189 @@
+{
+  "timestamp": "2025-12-16T03:27:26.811931",
+  "sequence_type": "30_second_cyberpunk",
+  "validation_method": "ab_tested_parameters",
+  "proven_params": {
+    "sampling_steps_multiplier": 1.5,
+    "cfg_scale_multiplier": 0.6,
+    "prompt_enhancements": [
+      "high quality",
+      "detailed"
+    ]
+  },
+  "storyboard": [
+    {
+      "shot": 1,
+      "duration": 3.5,
+      "prompt": "establishing shot of neon-lit cyberpunk alley at night, rain reflecting lights",
+      "type": "establishing",
+      "camera": "wide shot"
+    },
+    {
+      "shot": 2,
+      "duration": 4.0,
+      "prompt": "cyberpunk character with neon jacket and glowing eyes, mysterious expression",
+      "type": "character_intro",
+      "camera": "medium shot"
+    },
+    {
+      "shot": 3,
+      "duration": 3.5,
+      "prompt": "character's hand reaching for glowing weapon, dramatic lighting",
+      "type": "action_detail",
+      "camera": "close-up"
+    },
+    {
+      "shot": 4,
+      "duration": 4.0,
+      "prompt": "cyberpunk street with approaching danger, shadows moving",
+      "type": "tension_build",
+      "camera": "wide shot"
+    },
+    {
+      "shot": 5,
+      "duration": 3.5,
+      "prompt": "character's face showing determination, neon reflections in eyes",
+      "type": "emotional_beat",
+      "camera": "close-up"
+    },
+    {
+      "shot": 6,
+      "duration": 4.0,
+      "prompt": "character drawing weapon with fluid motion, action pose",
+      "type": "action_peak",
+      "camera": "medium shot"
+    },
+    {
+      "shot": 7,
+      "duration": 3.5,
+      "prompt": "dramatic weapon charging with energy effects, intense lighting",
+      "type": "climax_detail",
+      "camera": "close-up"
+    },
+    {
+      "shot": 8,
+      "duration": 4.0,
+      "prompt": "character ready for battle in cyberpunk setting, confident stance",
+      "type": "resolution",
+      "camera": "medium shot"
+    }
+  ],
+  "successful_shots": [
+    {
+      "shot_number": 1,
+      "output_path": "/mnt/1TB-storage/ComfyUI/output/anime_3ce14cbb-9c0f-4863-a4a1-25c288614643_00001_.png",
+      "duration": 3.5,
+      "prompt": "establishing shot of neon-lit cyberpunk alley at night, rain reflecting lights",
+      "generation_params": {
+        "prompt": "establishing shot of neon-lit cyberpunk alley at night, rain reflecting lights, high quality, detailed",
+        "type": "image",
+        "width": 768,
+        "height": 512,
+        "steps": 12,
+        "cfg": 7.199999999999999
+      }
+    },
+    {
+      "shot_number": 2,
+      "output_path": "/mnt/1TB-storage/ComfyUI/output/anime_6ec14f1d-b7e3-4435-b729-3f56506d93c8_00001_.png",
+      "duration": 4.0,
+      "prompt": "cyberpunk character with neon jacket and glowing eyes, mysterious expression",
+      "generation_params": {
+        "prompt": "cyberpunk character with neon jacket and glowing eyes, mysterious expression, high quality, detailed",
+        "type": "image",
+        "width": 768,
+        "height": 512,
+        "steps": 12,
+        "cfg": 7.199999999999999
+      }
+    },
+    {
+      "shot_number": 3,
+      "output_path": "/mnt/1TB-storage/ComfyUI/output/anime_8211aba8-673e-4154-a539-814d4cbd088b_00001_.png",
+      "duration": 3.5,
+      "prompt": "character's hand reaching for glowing weapon, dramatic lighting",
+      "generation_params": {
+        "prompt": "character's hand reaching for glowing weapon, dramatic lighting, high quality, detailed",
+        "type": "image",
+        "width": 768,
+        "height": 512,
+        "steps": 12,
+        "cfg": 7.199999999999999
+      }
+    },
+    {
+      "shot_number": 4,
+      "output_path": "/mnt/1TB-storage/ComfyUI/output/anime_f19ccc29-7e33-47fb-9781-a2a2a4f1d17f_00001_.png",
+      "duration": 4.0,
+      "prompt": "cyberpunk street with approaching danger, shadows moving",
+      "generation_params": {
+        "prompt": "cyberpunk street with approaching danger, shadows moving, high quality, detailed",
+        "type": "image",
+        "width": 768,
+        "height": 512,
+        "steps": 12,
+        "cfg": 7.199999999999999
+      }
+    },
+    {
+      "shot_number": 5,
+      "output_path": "/mnt/1TB-storage/ComfyUI/output/anime_a2c7e313-758d-430c-a0ce-c413c0ad2050_00001_.png",
+      "duration": 3.5,
+      "prompt": "character's face showing determination, neon reflections in eyes",
+      "generation_params": {
+        "prompt": "character's face showing determination, neon reflections in eyes, high quality, detailed",
+        "type": "image",
+        "width": 768,
+        "height": 512,
+        "steps": 12,
+        "cfg": 7.199999999999999
+      }
+    },
+    {
+      "shot_number": 6,
+      "output_path": "/mnt/1TB-storage/ComfyUI/output/anime_94e490a6-0db9-4d80-8032-6bb91a9eb687_00001_.png",
+      "duration": 4.0,
+      "prompt": "character drawing weapon with fluid motion, action pose",
+      "generation_params": {
+        "prompt": "character drawing weapon with fluid motion, action pose, high quality, detailed",
+        "type": "image",
+        "width": 768,
+        "height": 512,
+        "steps": 12,
+        "cfg": 7.199999999999999
+      }
+    },
+    {
+      "shot_number": 7,
+      "output_path": "/mnt/1TB-storage/ComfyUI/output/anime_b9c1274b-83c9-484c-b1df-6cb84355d0ee_00001_.png",
+      "duration": 3.5,
+      "prompt": "dramatic weapon charging with energy effects, intense lighting",
+      "generation_params": {
+        "prompt": "dramatic weapon charging with energy effects, intense lighting, high quality, detailed",
+        "type": "image",
+        "width": 768,
+        "height": 512,
+        "steps": 12,
+        "cfg": 7.199999999999999
+      }
+    },
+    {
+      "shot_number": 8,
+      "output_path": "/mnt/1TB-storage/ComfyUI/output/anime_6cd8e08d-7b0c-4c81-8cbf-aa8a495c8fa4_00001_.png",
+      "duration": 4.0,
+      "prompt": "character ready for battle in cyberpunk setting, confident stance",
+      "generation_params": {
+        "prompt": "character ready for battle in cyberpunk setting, confident stance, high quality, detailed",
+        "type": "image",
+        "width": 768,
+        "height": 512,
+        "steps": 12,
+        "cfg": 7.199999999999999
+      }
+    }
+  ],
+  "total_shots": 8,
+  "successful_shot_count": 8,
+  "output_video": "/mnt/1TB-storage/ComfyUI/output/cyberpunk_sequence_30s_20251216_032726.mp4",
+  "total_duration": 30.0
+}

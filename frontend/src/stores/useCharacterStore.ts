@@ -1,0 +1,248 @@
+import { defineStore } from 'pinia'
+import { ref, computed } from 'vue'
+
+export interface Character {
+  id: number
+  generation_id: string
+  character_name: string
+  prompt: string
+  negative_prompt?: string
+  model_name?: string
+  content_type?: string
+  workflow_type?: string
+  metadata?: Record<string, any>
+  created_at: string
+  images?: string[]
+}
+
+export interface SearchResult {
+  id: number
+  score: number
+  character_name: string
+  prompt: string
+  job_id?: string
+  checkpoint?: string
+  created_at: string
+}
+
+export interface GenerationRequest {
+  character_name: string
+  prompt: string
+  negative_prompt?: string
+  content_type?: string
+  generation_type?: string
+  model_name?: string
+  seed?: number
+  num_images?: number
+  width?: number
+  height?: number
+  steps?: number
+  cfg_scale?: number
+}
+
+export const useCharacterStore = defineStore('characters', () => {
+  // State
+  const characters = ref<Character[]>([])
+  const currentCharacter = ref<Character | null>(null)
+  const searchResults = ref<SearchResult[]>([])
+  const isLoading = ref(false)
+  const error = ref<string | null>(null)
+  const generationQueue = ref<string[]>([])
+
+  // Domain-agnostic API base URL
+  const API_BASE = ''
+
+  // Computed
+  const sortedCharacters = computed(() => {
+    return [...characters.value].sort((a, b) => {
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    })
+  })
+
+  const recentCharacters = computed(() => {
+    return sortedCharacters.value.slice(0, 10)
+  })
+
+  // Actions
+  async function fetchCharacters() {
+    isLoading.value = true
+    error.value = null
+
+    try {
+      const response = await fetch(`${API_BASE}/api/anime/characters`)
+      if (!response.ok) throw new Error('Failed to fetch characters')
+
+      const data = await response.json()
+      characters.value = Array.isArray(data) ? data : (data.characters || [])
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : 'Unknown error'
+      console.error('Failed to fetch characters:', e)
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  async function generateCharacter(request: GenerationRequest) {
+    isLoading.value = true
+    error.value = null
+
+    try {
+      const response = await fetch(`${API_BASE}/api/anime/character/v2/generate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(request),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.detail || 'Generation failed')
+      }
+
+      const data = await response.json()
+
+      // Add to generation queue
+      if (data.generation_id) {
+        generationQueue.value.push(data.generation_id)
+      }
+
+      return data
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : 'Unknown error'
+      console.error('Failed to generate character:', e)
+      throw e
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  async function searchCharacters(query: string, limit: number = 10) {
+    isLoading.value = true
+    error.value = null
+
+    try {
+      const response = await fetch(
+        `${API_BASE}/api/v1/vector/search?q=${encodeURIComponent(query)}&limit=${limit}`
+      )
+
+      if (!response.ok) throw new Error('Search failed')
+
+      const data = await response.json()
+      searchResults.value = data.results || []
+
+      return searchResults.value
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : 'Unknown error'
+      console.error('Search failed:', e)
+      return []
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  async function findSimilarCharacters(characterId: number, limit: number = 10) {
+    isLoading.value = true
+    error.value = null
+
+    try {
+      const response = await fetch(
+        `${API_BASE}/api/v1/vector/similar/${characterId}?limit=${limit}`
+      )
+
+      if (!response.ok) throw new Error('Failed to find similar characters')
+
+      const data = await response.json()
+      searchResults.value = data.similar_characters || []
+
+      return searchResults.value
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : 'Unknown error'
+      console.error('Failed to find similar characters:', e)
+      return []
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  async function getJobStatus(jobId: string) {
+    try {
+      const response = await fetch(`${API_BASE}/api/v1/jobs/${jobId}`)
+      if (!response.ok) throw new Error('Failed to get job status')
+
+      return await response.json()
+    } catch (e) {
+      console.error('Failed to get job status:', e)
+      return null
+    }
+  }
+
+  async function indexCharacterToVector(character: Character) {
+    try {
+      const response = await fetch(`${API_BASE}/api/v1/vector/index`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          character_id: character.id,
+          character_name: character.character_name,
+          prompt: character.prompt,
+          metadata: {
+            generation_id: character.generation_id,
+            model_name: character.model_name,
+            content_type: character.content_type,
+            created_at: character.created_at,
+          },
+        }),
+      })
+
+      if (!response.ok) throw new Error('Failed to index character')
+
+      return await response.json()
+    } catch (e) {
+      console.error('Failed to index character:', e)
+      throw e
+    }
+  }
+
+  function setCurrentCharacter(character: Character | null) {
+    currentCharacter.value = character
+  }
+
+  function clearError() {
+    error.value = null
+  }
+
+  function removeFromQueue(jobId: string) {
+    const index = generationQueue.value.indexOf(jobId)
+    if (index > -1) {
+      generationQueue.value.splice(index, 1)
+    }
+  }
+
+  return {
+    // State
+    characters,
+    currentCharacter,
+    searchResults,
+    isLoading,
+    error,
+    generationQueue,
+
+    // Computed
+    sortedCharacters,
+    recentCharacters,
+
+    // Actions
+    fetchCharacters,
+    generateCharacter,
+    searchCharacters,
+    findSimilarCharacters,
+    getJobStatus,
+    indexCharacterToVector,
+    setCurrentCharacter,
+    clearError,
+    removeFromQueue,
+  }
+})

@@ -1,0 +1,36 @@
+[Unit]
+Description=Tower Anime Production Orchestration System
+After=network.target postgresql.service redis.service
+
+[Service]
+Type=simple
+User=patrick
+Group=patrick
+WorkingDirectory=/opt/tower-anime-production
+Environment=PATH=/opt/tower-anime-production/venv/bin
+Environment=POSTGRES_HOST=localhost
+Environment=POSTGRES_DB=tower_consolidated
+Environment=POSTGRES_USER=patrick
+Environment=POSTGRES_PASSWORD=tower_echo_brain_secret_key_2025
+Environment=REDIS_URL=redis://localhost:6379
+Environment=QDRANT_URL=http://localhost:6333
+Environment=COMFYUI_URL=http://localhost:8188
+Environment=PYTHONPATH=/opt/tower-anime-production
+ExecStart=/opt/tower-anime-production/venv/bin/uvicorn api.main:app --host 0.0.0.0 --port 8328 --workers 2
+Restart=always
+RestartSec=10
+
+# Resource limits
+LimitNOFILE=65535
+MemoryMax=8G
+
+# Security
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/tower-anime-production
+ReadWritePaths=/tmp
+ReadWritePaths=/var/log
+
+[Install]
+WantedBy=multi-user.target

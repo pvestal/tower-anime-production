@@ -1,0 +1,26 @@
+{
+  "walk_cycle_2d": {
+    "description": "2D Walk Cycle Animation with OpenPose ControlNet",
+    "frames": 12,
+    "fps": 24,
+    "controlnet_type": "openpose",
+    "pose_sequence": "walk_cycle_12f",
+    "workflow_file": "walk_cycle_2d.json"
+  },
+  "idle_breathing": {
+    "description": "Idle Breathing Animation with Depth ControlNet",
+    "frames": 8,
+    "fps": 12,
+    "controlnet_type": "depth",
+    "pose_sequence": "breathing_idle_8f",
+    "workflow_file": "idle_breathing.json"
+  },
+  "talking_visemes": {
+    "description": "Talking/Lip Sync Animation with Canny ControlNet",
+    "frames": 6,
+    "fps": 30,
+    "controlnet_type": "canny",
+    "pose_sequence": "mouth_shapes_6f",
+    "workflow_file": "talking_visemes.json"
+  }
+}

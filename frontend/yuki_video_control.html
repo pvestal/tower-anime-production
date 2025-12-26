@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Yuki Takahashi Video Generation</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .control-panel {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 25px;
+            max-width: 600px;
+            margin: 0 auto 20px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+
+        .title {
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+            text-align: center;
+            margin-bottom: 25px;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+
+        .form-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding: 10px 0;
+        }
+
+        .form-label {
+            font-weight: 600;
+            color: #444;
+            width: 120px;
+        }
+
+        .form-control {
+            flex: 1;
+            margin-left: 15px;
+        }
+
+        select, input[type="number"] {
+            padding: 8px 12px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 14px;
+            width: 100%;
+            transition: border-color 0.3s;
+        }
+
+        select:focus, input:focus {
+            border-color: #667eea;
+            outline: none;
+        }
+
+        .duration-buttons {
+            display: flex;
+            gap: 10px;
+        }
+
+        .duration-btn {
+            padding: 8px 16px;
+            border: 2px solid #667eea;
+            background: white;
+            color: #667eea;
+            border-radius: 25px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: 500;
+        }
+
+        .duration-btn.active, .duration-btn:hover {
+            background: #667eea;
+            color: white;
+        }
+
+        .generate-btn {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-top: 20px;
+            transition: transform 0.2s;
+        }
+
+        .generate-btn:hover {
+            transform: translateY(-2px);
+        }
+
+        .generate-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .progress-panel {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 25px;
+            max-width: 600px;
+            margin: 0 auto;
+            display: none;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: #f0f0f0;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 15px 0;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            width: 0%;
+            transition: width 0.5s ease;
+            border-radius: 10px;
+        }
+
+        .progress-text {
+            text-align: center;
+            font-weight: bold;
+            color: #333;
+            margin: 10px 0;
+        }
+
+        .frame-info {
+            display: flex;
+            justify-content: space-between;
+            font-size: 14px;
+            color: #666;
+            margin: 10px 0;
+        }
+
+        .control-buttons {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            margin-top: 20px;
+        }
+
+        .control-btn {
+            padding: 10px 20px;
+            border: 2px solid #ddd;
+            background: white;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .control-btn:hover {
+            border-color: #667eea;
+            color: #667eea;
+        }
+
+        .video-preview {
+            max-width: 100%;
+            border-radius: 12px;
+            margin: 20px 0;
+        }
+
+        .frame-preview {
+            text-align: center;
+            margin: 15px 0;
+        }
+
+        .frame-preview img {
+            max-width: 200px;
+            border-radius: 8px;
+            border: 2px solid #ddd;
+        }
+    </style>
+</head>
+<body>
+    <div class="control-panel">
+        <div class="title">🎬 Tokyo Debt Desire Video Generation</div>
+
+        <div class="form-row">
+            <div class="form-label">Character:</div>
+            <div class="form-control">
+                <select id="character">
+                    <option value="yuki_takahashi" selected>✓ Yuki Takahashi</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div class="form-label">Duration:</div>
+            <div class="form-control">
+                <div class="duration-buttons">
+                    <div class="duration-btn" data-duration="5">5s</div>
+                    <div class="duration-btn active" data-duration="10">10s</div>
+                    <div class="duration-btn" data-duration="15">15s</div>
+                    <div class="duration-btn" data-duration="30">30s</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div class="form-label">Scene:</div>
+            <div class="form-control">
+                <select id="scene">
+                    <option value="walking_street" selected>Walking Street</option>
+                    <option value="tokyo_rain">Tokyo Rain</option>
+                    <option value="neon_district">Neon District</option>
+                    <option value="train_station">Train Station</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div class="form-label">Quality:</div>
+            <div class="form-control">
+                <select id="quality">
+                    <option value="standard" selected>Standard</option>
+                    <option value="high">High</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div class="form-label">Seed:</div>
+            <div class="form-control">
+                <select id="seed-type" onchange="toggleSeedInput()">
+                    <option value="random">Random</option>
+                    <option value="fixed">Fixed: 999888</option>
+                </select>
+            </div>
+        </div>
+
+        <button class="generate-btn" onclick="generateVideo()">
+            🔄 Generate Video
+        </button>
+    </div>
+
+    <div class="progress-panel" id="progressPanel">
+        <div class="title">📹 Generation Progress</div>
+
+        <div class="progress-text" id="statusText">🟡 Processing... 45%</div>
+        <div class="progress-bar">
+            <div class="progress-fill" id="progressFill"></div>
+        </div>
+
+        <div class="frame-info">
+            <span>Frames: <span id="frameCount">12/16</span> generated</span>
+            <span>Current: <span id="currentFrame">frame_00012.png</span></span>
+        </div>
+
+        <div class="frame-info">
+            <span>Queue: Position <span id="queuePosition">1</span> of <span id="queueTotal">3</span></span>
+            <span>ETA: <span id="eta">2m 15s</span></span>
+        </div>
+
+        <div class="frame-preview" id="framePreview">
+            <img src="" alt="Current frame" id="previewImage" style="display:none;">
+        </div>
+
+        <div class="control-buttons">
+            <button class="control-btn" onclick="previewVideo()">▶️ Preview</button>
+            <button class="control-btn" onclick="pauseGeneration()">⏸️ Pause</button>
+            <button class="control-btn" onclick="cancelGeneration()">❌ Cancel</button>
+        </div>
+
+        <video class="video-preview" id="finalVideo" controls style="display:none;">
+            <source src="" type="video/mp4">
+        </video>
+    </div>
+
+    <script>
+        let currentJobId = null;
+        let websocket = null;
+        let selectedDuration = 10;
+
+        // Duration button handling
+        document.querySelectorAll('.duration-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                document.querySelectorAll('.duration-btn').forEach(b => b.classList.remove('active'));
+                this.classList.add('active');
+                selectedDuration = parseInt(this.dataset.duration);
+            });
+        });
+
+        function toggleSeedInput() {
+            // Could add custom seed input field here
+        }
+
+        async function generateVideo() {
+            const character = document.getElementById('character').value;
+            const scene = document.getElementById('scene').value;
+            const quality = document.getElementById('quality').value;
+            const seedType = document.getElementById('seed-type').value;
+
+            const requestData = {
+                character: character,
+                duration: selectedDuration,
+                scene: scene,
+                quality: quality,
+                seed: seedType === 'fixed' ? 999888 : null,
+                output_format: "mp4",
+                preview_frames: true,
+                callback_url: "http://localhost:8328/api/anime/video/callback"
+            };
+
+            console.log('🚀 Starting video generation:', requestData);
+
+            try {
+                // Show progress panel
+                document.querySelector('.control-panel').style.display = 'none';
+                document.getElementById('progressPanel').style.display = 'block';
+
+                // Start generation
+                const response = await fetch('http://localhost:8330/api/anime/video/test', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(requestData)
+                });
+
+                const result = await response.json();
+
+                if (result.job_id) {
+                    currentJobId = result.job_id;
+                    console.log('✅ Job started:', currentJobId);
+
+                    // Start WebSocket connection for real-time updates
+                    connectWebSocket(currentJobId);
+
+                    // Start polling for updates
+                    pollProgress(currentJobId);
+                } else {
+                    throw new Error('No job ID returned');
+                }
+
+            } catch (error) {
+                console.error('❌ Generation failed:', error);
+                alert('Video generation failed: ' + error.message);
+                resetToForm();
+            }
+        }
+
+        function connectWebSocket(jobId) {
+            const wsUrl = `ws://localhost:8330/api/anime/video/stream/${jobId}`;
+            websocket = new WebSocket(wsUrl);
+
+            websocket.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                console.log('📡 WebSocket update:', data);
+
+                if (data.type === 'frame_generated') {
+                    updateFramePreview(data.frame_number, data.preview_url);
+                    updateProgress(data.progress);
+                } else if (data.type === 'completion') {
+                    handleCompletion(data.video_url);
+                } else if (data.type === 'error') {
+                    handleError(data.error);
+                }
+            };
+
+            websocket.onerror = function(error) {
+                console.error('❌ WebSocket error:', error);
+            };
+        }
+
+        async function pollProgress(jobId) {
+            const interval = setInterval(async () => {
+                try {
+                    const response = await fetch(`http://localhost:8330/api/anime/video/status/${jobId}`);
+                    const status = await response.json();
+
+                    updateProgressDisplay(status);
+
+                    if (status.status === 'completed') {
+                        clearInterval(interval);
+                        showFinalVideo(status.output_path);
+                    } else if (status.status === 'failed') {
+                        clearInterval(interval);
+                        handleError(status.error_message);
+                    }
+                } catch (error) {
+                    console.error('Error polling status:', error);
+                }
+            }, 2000);
+        }
+
+        function updateProgressDisplay(status) {
+            const progressFill = document.getElementById('progressFill');
+            const statusText = document.getElementById('statusText');
+            const frameCount = document.getElementById('frameCount');
+
+            const progress = status.progress || 0;
+            progressFill.style.width = progress + '%';
+            statusText.textContent = `🟡 Processing... ${Math.round(progress)}%`;
+
+            if (status.frames_generated && status.total_frames) {
+                frameCount.textContent = `${status.frames_generated}/${status.total_frames}`;
+            }
+        }
+
+        function updateFramePreview(frameNumber, previewUrl) {
+            const previewImage = document.getElementById('previewImage');
+            const currentFrame = document.getElementById('currentFrame');
+
+            if (previewUrl) {
+                previewImage.src = previewUrl;
+                previewImage.style.display = 'block';
+            }
+
+            currentFrame.textContent = `frame_${frameNumber.toString().padStart(5, '0')}.png`;
+        }
+
+        function showFinalVideo(videoPath) {
+            const videoElement = document.getElementById('finalVideo');
+            videoElement.src = videoPath;
+            videoElement.style.display = 'block';
+
+            document.getElementById('statusText').textContent = '✅ Video Generation Complete!';
+            document.getElementById('progressFill').style.width = '100%';
+        }
+
+        function handleCompletion(videoUrl) {
+            console.log('🎉 Generation completed:', videoUrl);
+            showFinalVideo(videoUrl);
+        }
+
+        function handleError(error) {
+            console.error('❌ Generation error:', error);
+            alert('Generation failed: ' + error);
+            resetToForm();
+        }
+
+        function previewVideo() {
+            const videoElement = document.getElementById('finalVideo');
+            if (videoElement.src) {
+                videoElement.play();
+            }
+        }
+
+        function pauseGeneration() {
+            if (currentJobId) {
+                fetch(`http://localhost:8330/api/anime/video/pause/${currentJobId}`, { method: 'POST' })
+                    .then(response => response.json())
+                    .then(result => console.log('⏸️ Paused:', result));
+            }
+        }
+
+        function cancelGeneration() {
+            if (currentJobId) {
+                fetch(`http://localhost:8330/api/anime/video/cancel/${currentJobId}`, { method: 'DELETE' })
+                    .then(response => response.json())
+                    .then(result => {
+                        console.log('❌ Cancelled:', result);
+                        resetToForm();
+                    });
+            }
+        }
+
+        function resetToForm() {
+            document.getElementById('progressPanel').style.display = 'none';
+            document.querySelector('.control-panel').style.display = 'block';
+
+            if (websocket) {
+                websocket.close();
+                websocket = null;
+            }
+
+            currentJobId = null;
+        }
+    </script>
+</body>
+</html>

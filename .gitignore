@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+venv/
+env/
+.Python
+*.db
+
+# Logs
+*.log
+logs/
+
+# Node - NEVER COMMIT
+node_modules/
+dist/
+*.local
+
+# Environment
+.env
+.env.local
+.env.production
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary
+*.tmp
+*.temp
+*.backup
+*.old
+/tmp/
+
+# Output files (should be generated, not committed)
+/output/
+*.mp4
+*.webm
+*.png
+*.jpg
+*.jpeg
+*.gif
+
+# Test artifacts
+test_output/
+test_videos/

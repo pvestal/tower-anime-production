@@ -1,0 +1,122 @@
+{
+  "checkpoint_loader": {
+    "inputs": {
+      "ckpt_name": "{{model_name}}"
+    },
+    "class_type": "CheckpointLoaderSimple"
+  },
+  "animatediff_loader": {
+    "inputs": {
+      "model_name": "mm_sd_v15_v2.ckpt",
+      "beta_schedule": "autoselect",
+      "context_length": 16,
+      "context_stride": 1,
+      "context_overlap": 4,
+      "closed_loop": false,
+      "model": ["checkpoint_loader", 0]
+    },
+    "class_type": "AnimateDiffLoaderWithContext"
+  },
+  "scene1_positive": {
+    "inputs": {
+      "text": "{{scene1_prompt}}",
+      "clip": ["checkpoint_loader", 1]
+    },
+    "class_type": "CLIPTextEncode"
+  },
+  "scene1_negative": {
+    "inputs": {
+      "text": "{{negative_prompt}}",
+      "clip": ["checkpoint_loader", 1]
+    },
+    "class_type": "CLIPTextEncode"
+  },
+  "scene1_latent": {
+    "inputs": {
+      "width": {{width}},
+      "height": {{height}},
+      "batch_size": 16
+    },
+    "class_type": "EmptyLatentImage"
+  },
+  "scene1_sampler": {
+    "inputs": {
+      "seed": {{seed}},
+      "steps": 20,
+      "cfg": 7.5,
+      "sampler_name": "dpmpp_2m",
+      "scheduler": "karras",
+      "denoise": 1.0,
+      "model": ["animatediff_loader", 0],
+      "positive": ["scene1_positive", 0],
+      "negative": ["scene1_negative", 0],
+      "latent_image": ["scene1_latent", 0]
+    },
+    "class_type": "KSampler"
+  },
+  "scene2_positive": {
+    "inputs": {
+      "text": "{{scene2_prompt}}",
+      "clip": ["checkpoint_loader", 1]
+    },
+    "class_type": "CLIPTextEncode"
+  },
+  "scene2_negative": {
+    "inputs": {
+      "text": "{{negative_prompt}}",
+      "clip": ["checkpoint_loader", 1]
+    },
+    "class_type": "CLIPTextEncode"
+  },
+  "scene2_latent": {
+    "inputs": {
+      "width": {{width}},
+      "height": {{height}},
+      "batch_size": 16
+    },
+    "class_type": "EmptyLatentImage"
+  },
+  "scene2_sampler": {
+    "inputs": {
+      "seed": {{seed2}},
+      "steps": 20,
+      "cfg": 7.5,
+      "sampler_name": "dpmpp_2m",
+      "scheduler": "karras",
+      "denoise": 1.0,
+      "model": ["animatediff_loader", 0],
+      "positive": ["scene2_positive", 0],
+      "negative": ["scene2_negative", 0],
+      "latent_image": ["scene2_latent", 0]
+    },
+    "class_type": "KSampler"
+  },
+  "latent_blend": {
+    "inputs": {
+      "blend_factor": 0.5,
+      "blend_mode": "normal",
+      "samples1": ["scene1_sampler", 0],
+      "samples2": ["scene2_sampler", 0]
+    },
+    "class_type": "LatentBlend"
+  },
+  "vae_decode": {
+    "inputs": {
+      "samples": ["latent_blend", 0],
+      "vae": ["checkpoint_loader", 2]
+    },
+    "class_type": "VAEDecode"
+  },
+  "video_combine": {
+    "inputs": {
+      "frame_rate": {{fps}},
+      "loop_count": 0,
+      "filename_prefix": "{{output_prefix}}",
+      "format": "video/h264-mp4",
+      "pingpong": false,
+      "save_output": true,
+      "images": ["vae_decode", 0]
+    },
+    "class_type": "VHS_VideoCombine"
+  }
+}
