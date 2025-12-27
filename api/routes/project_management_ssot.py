@@ -18,7 +18,7 @@ import os
 router = APIRouter()
 
 # Database connection
-DATABASE_URL = "postgresql://patrick:tower_echo_brain_secret_key_2025@localhost/tower_consolidated"
+DATABASE_URL = "postgresql://patrick:tower_echo_brain_secret_key_2025@localhost/anime_production"
 
 class ProjectCreate(BaseModel):
     title: str
@@ -69,14 +69,12 @@ async def create_project(project: ProjectCreate):
         # 1. Create project in SSOT database
         project_id = await conn.fetchval(
             """
-            INSERT INTO projects (title, description, style_guide, target_episodes, metadata)
-            VALUES ($1, $2, $3, $4, $5)
+            INSERT INTO projects (name, description, metadata)
+            VALUES ($1, $2, $3)
             RETURNING id
             """,
             project.title,
             project.description,
-            json.dumps(project.style_guide),
-            project.target_episodes,
             json.dumps({"created_via": "api", "version": "1.0"})
         )
 
@@ -88,7 +86,7 @@ async def create_project(project: ProjectCreate):
                     INSERT INTO characters (project_id, name, description, design_prompt, traits, reference_seed)
                     VALUES ($1, $2, $3, $4, $5, $6)
                     """,
-                    project_id,
+                    int(project_id),
                     char_def.get("name", "unnamed"),
                     char_def.get("description"),
                     char_def.get("design_prompt"),
@@ -123,7 +121,7 @@ async def create_project(project: ProjectCreate):
                                     INSERT INTO episodes (project_id, episode_number, title, description, prompt, status)
                                     VALUES ($1, $2, $3, $4, $5, 'planned')
                                     """,
-                                    project_id,
+                                    int(project_id),
                                     i,
                                     f"Episode {i}",
                                     line.strip(),
@@ -159,7 +157,7 @@ async def create_episode(project_id: str, episode: EpisodeCreate):
         # Verify project exists
         project = await conn.fetchrow(
             "SELECT * FROM projects WHERE id = $1",
-            UUID(project_id)
+            int(project_id)
         )
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
@@ -176,7 +174,7 @@ async def create_episode(project_id: str, episode: EpisodeCreate):
             VALUES ($1, $2, $3, $4, $5, $6, 'ready')
             RETURNING id
             """,
-            UUID(project_id),
+            int(project_id),
             episode.episode_number,
             episode.title,
             episode.description,
@@ -215,7 +213,7 @@ async def generate_scene(
             WHERE e.id = $1 AND p.id = $2
             """,
             UUID(episode_id),
-            UUID(project_id)
+            int(project_id)
         )
 
         if not episode:
@@ -406,7 +404,7 @@ async def get_project_ssot(project_id: str):
         # Get project
         project = await conn.fetchrow(
             "SELECT * FROM projects WHERE id = $1",
-            UUID(project_id)
+            int(project_id)
         )
 
         if not project:
@@ -415,7 +413,7 @@ async def get_project_ssot(project_id: str):
         # Get episodes
         episodes = await conn.fetch(
             "SELECT * FROM episodes WHERE project_id = $1 ORDER BY episode_number",
-            UUID(project_id)
+            int(project_id)
         )
 
         # Get scenes for each episode
@@ -459,7 +457,7 @@ async def get_project_ssot(project_id: str):
         # Get characters
         characters = await conn.fetch(
             "SELECT * FROM characters WHERE project_id = $1",
-            UUID(project_id)
+            int(project_id)
         )
 
         # Calculate metrics
@@ -469,7 +467,7 @@ async def get_project_ssot(project_id: str):
             JOIN episodes e ON s.episode_id = e.id
             WHERE e.project_id = $1
             """,
-            UUID(project_id)
+            int(project_id)
         )
 
         completed_scenes = await conn.fetchval(
@@ -478,13 +476,13 @@ async def get_project_ssot(project_id: str):
             JOIN episodes e ON s.episode_id = e.id
             WHERE e.project_id = $1 AND s.status = 'completed'
             """,
-            UUID(project_id)
+            int(project_id)
         )
 
         return {
             "project": {
                 "id": str(project['id']),
-                "title": project['title'],
+                "title": project['name'],
                 "description": project['description'],
                 "status": project['status'],
                 "created_at": project['created_at'].isoformat() if project['created_at'] else None
@@ -774,7 +772,7 @@ async def import_specific_job():
             VALUES ($1, 1, 'Imported Episode', 'Cyberpunk goblin slayer in motion', 'completed')
             RETURNING id
             """,
-            project_id
+            int(project_id)
         )
 
         # Create scene with the completed output
