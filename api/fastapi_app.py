@@ -341,5 +341,6 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=8305,
         log_level="info",
-        access_log=True
+        access_log=True,
+        ws="none"  # Disable WebSocket support to avoid websockets.legacy error
     )
