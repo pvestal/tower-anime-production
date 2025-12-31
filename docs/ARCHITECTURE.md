@@ -175,3 +175,80 @@ Projects enforce style consistency:
 - **Cyberpunk Goblin Slayer**: Stylized anime (`counterfeit_v3`)
 
 Style rules are stored in the database and validated at runtime.
+
+## Episode Production (Long-form Video)
+
+### Architecture
+
+Episodes are structured as:
+```
+Episode
+├── Scene 1
+│   ├── Segment 1 (30s video)
+│   ├── Segment 2 (30s video)
+│   └── ... (stitched with cut/crossfade)
+├── Scene 2
+│   └── ...
+└── Final Output (stitched with transitions)
+```
+
+### API Endpoints
+
+```bash
+# Create full episode with scenes
+POST /api/anime/episodes
+{
+  "project_id": "tokyo-debt-desire",
+  "title": "Episode 1: The Beginning",
+  "scenes": [
+    {
+      "name": "Opening",
+      "description": "City at night",
+      "prompts": ["neon city skyline, rain, noir atmosphere"],
+      "segment_duration": 30
+    }
+  ]
+}
+
+# Quick episode from prompts
+POST /api/anime/episodes/quick
+{
+  "prompts": [
+    "anime girl walking through rain, city lights",
+    "close up of character looking at phone",
+    "wide shot of empty street"
+  ],
+  "segment_duration": 30
+}
+
+# Check episode status
+GET /api/anime/episodes/{id}/status
+```
+
+### Video Generation Pipeline
+
+1. **AnimateDiff**: Generates 5s of base frames (120 frames @ 24fps)
+2. **RIFE Interpolation**: 6x frame interpolation → 30s video
+3. **FFmpeg Stitching**: Combines segments with transitions
+4. **Quality Check**: Temporal coherence, motion quality
+
+### Configuration
+
+```python
+EpisodeConfig(
+    segment_duration=30,     # seconds per segment
+    fps=24,                  # output frame rate
+    width=1024,              # video width
+    height=576,              # video height
+    use_interpolation=True,  # RIFE 6x interpolation
+    parallel_segments=2      # concurrent generations
+)
+```
+
+### Required ComfyUI Models
+
+For video generation, ensure these are installed:
+- `v3_sd15_mm.ckpt` (AnimateDiff motion module)
+- `rife4.6.pkl` (RIFE VFI model)
+- `clip_l.safetensors` (CLIP text encoder)
+- `vae-ft-mse-840000-ema-pruned.safetensors` (VAE)

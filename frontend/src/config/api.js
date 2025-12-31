@@ -100,7 +100,12 @@ export const API = {
   // === Git Operations ===
   GIT_STATUS: '/api/anime/git/status',
   GIT_COMMIT: '/api/anime/git/commit',
-  GIT_BRANCH: '/api/anime/git/branch'
+  GIT_BRANCH: '/api/anime/git/branch',
+
+  // === Episode Production (Long-form Video) ===
+  EPISODES: '/api/anime/episodes',
+  EPISODES_QUICK: '/api/anime/episodes/quick',
+  EPISODE_STATUS: (id) => `/api/anime/episodes/${id}/status`
 }
 
 // WebSocket Configuration

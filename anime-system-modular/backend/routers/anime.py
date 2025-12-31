@@ -654,3 +654,161 @@ async def _process_echo_task(task, job_id, db, char_service, comfyui):
     """Background task to process Echo Brain dispatch"""
     # Implementation depends on task type
     pass
+
+
+# === Episode Production Endpoints ===
+
+from ..services.episode_producer import (
+    EpisodeProducer, Episode, Scene, VideoSegment,
+    EpisodeConfig, create_episode_from_script, quick_episode
+)
+from pydantic import BaseModel
+
+
+class SceneInput(BaseModel):
+    name: str
+    description: str
+    prompts: List[str]
+    segment_duration: int = 30
+
+
+class EpisodeCreateRequest(BaseModel):
+    project_id: str
+    title: str
+    scenes: List[SceneInput]
+
+
+class EpisodeResponse(BaseModel):
+    episode_id: str
+    status: str
+    message: str
+    total_scenes: int
+    total_segments: int
+    estimated_duration_seconds: int
+
+
+class QuickEpisodeRequest(BaseModel):
+    project_id: str = "default"
+    title: str = "Quick Episode"
+    prompts: List[str]
+    segment_duration: int = 30
+
+
+@router.post("/episodes", response_model=EpisodeResponse)
+async def create_episode(
+    request: EpisodeCreateRequest,
+    background_tasks: BackgroundTasks
+):
+    """
+    Create and start producing a full episode.
+
+    An episode consists of multiple scenes, each with multiple video segments.
+    Segments are generated in parallel batches and stitched together.
+    """
+    scene_descriptions = [
+        {
+            "name": scene.name,
+            "description": scene.description,
+            "prompts": scene.prompts,
+            "segment_duration": scene.segment_duration
+        }
+        for scene in request.scenes
+    ]
+
+    episode = create_episode_from_script(
+        project_id=request.project_id,
+        title=request.title,
+        scene_descriptions=scene_descriptions
+    )
+
+    # Calculate totals
+    total_segments = sum(len(scene.segments) for scene in episode.scenes)
+    estimated_duration = sum(
+        seg.duration for scene in episode.scenes for seg in scene.segments
+    )
+
+    # Start production in background
+    background_tasks.add_task(_produce_episode_background, episode)
+
+    return EpisodeResponse(
+        episode_id=episode.id,
+        status="started",
+        message=f"Episode '{request.title}' production started",
+        total_scenes=len(episode.scenes),
+        total_segments=total_segments,
+        estimated_duration_seconds=estimated_duration
+    )
+
+
+@router.post("/episodes/quick", response_model=EpisodeResponse)
+async def create_quick_episode(
+    request: QuickEpisodeRequest,
+    background_tasks: BackgroundTasks
+):
+    """
+    Quick episode generation from a list of prompts.
+
+    Each prompt becomes one 30-second segment.
+    Great for rapid prototyping or short-form content.
+    """
+    scene_descriptions = [
+        {
+            "name": f"Scene {i+1}",
+            "prompts": [prompt],
+            "segment_duration": request.segment_duration
+        }
+        for i, prompt in enumerate(request.prompts)
+    ]
+
+    episode = create_episode_from_script(
+        project_id=request.project_id,
+        title=request.title,
+        scene_descriptions=scene_descriptions
+    )
+
+    total_segments = len(request.prompts)
+    estimated_duration = total_segments * request.segment_duration
+
+    background_tasks.add_task(_produce_episode_background, episode)
+
+    return EpisodeResponse(
+        episode_id=episode.id,
+        status="started",
+        message=f"Quick episode with {total_segments} segments started",
+        total_scenes=total_segments,
+        total_segments=total_segments,
+        estimated_duration_seconds=estimated_duration
+    )
+
+
+@router.get("/episodes/{episode_id}/status")
+async def get_episode_status(episode_id: str):
+    """Get the production status of an episode."""
+    # TODO: Implement episode status tracking
+    return {
+        "episode_id": episode_id,
+        "status": "processing",
+        "message": "Episode production in progress"
+    }
+
+
+async def _produce_episode_background(episode: Episode):
+    """Background task to produce an episode."""
+    try:
+        producer = EpisodeProducer()
+        config = EpisodeConfig(
+            segment_duration=30,
+            fps=24,
+            use_interpolation=True,
+            parallel_segments=2
+        )
+
+        result = await producer.produce_episode(episode, config)
+
+        if result["success"]:
+            logger.info(f"Episode {episode.id} completed: {result['output_path']}")
+        else:
+            logger.error(f"Episode {episode.id} failed: {result.get('error')}")
+
+    except Exception as e:
+        logger.error(f"Episode production error: {e}")
