@@ -1479,8 +1479,7 @@ async def generate_anime_video_fast(
         frames_per_segment = 24  # 1 second at 24fps
 
         logger.info(
-            f"Starting fast generation: {
-                request.duration}s video with {total_segments} segments"
+            f"Starting fast generation: {request.duration}s video with {total_segments} segments"
         )
 
         # Create main job record
@@ -1503,10 +1502,7 @@ async def generate_anime_video_fast(
         async with aiohttp.ClientSession() as session:
             for segment_num in range(total_segments):
                 # Create segment-specific prompt
-                segment_prompt = f"Segment {
-                    segment_num +
-                    1} of {total_segments}: {
-                    request.prompt}"
+                segment_prompt = f"Segment {segment_num + 1} of {total_segments}: {request.prompt}"
                 if request.character:
                     segment_prompt += f" featuring {request.character}"
 
@@ -1542,25 +1538,14 @@ async def generate_anime_video_fast(
                                 }
                             )
                             logger.info(
-                                f"Queued segment {
-                                    segment_num +
-                                    1}: task_id {
-                                    task_result['task_id']}"
+                                f"Queued segment {segment_num + 1}: task_id {task_result['task_id']}"
                             )
                         else:
                             logger.error(
-                                f"Failed to queue segment {
-                                    segment_num +
-                                    1}: {
-                                    response.status}"
+                                f"Failed to queue segment {segment_num + 1}: {response.status}"
                             )
                 except Exception as e:
-                    logger.error(
-                        f"Error queuing segment {
-                            segment_num +
-                            1}: {
-                            str(e)}"
-                    )
+                    logger.error(f"Error queuing segment {segment_num + 1}: {str(e)}")
 
         # Update main job with segment tracking data
         main_job.status = "segments_queued"
@@ -1596,8 +1581,7 @@ async def generate_anime_video_fast(
             db.commit()
         raise HTTPException(
             status_code=500,
-            detail=f"Fast generation failed: {
-                str(e)}",
+            detail=f"Fast generation failed: {str(e)}",
         )
 
 
@@ -1838,8 +1822,7 @@ async def generate_video_for_project(
         db.commit()
         raise HTTPException(
             status_code=500,
-            detail=f"Generation failed: {
-                str(e)}",
+            detail=f"Generation failed: {str(e)}",
         )
 
 
@@ -2250,8 +2233,7 @@ async def merge_video_segments(
 
         if result.returncode == 0:
             logger.info(
-                f"Successfully merged {
-                    len(segment_files)} segments into {final_output}"
+                f"Successfully merged {len(segment_files)} segments into {final_output}"
             )
             return {
                 "success": True,
@@ -2594,9 +2576,7 @@ async def generate_professional_anime(
                 # prompt
                 enhanced_prompt = char_data["prompt"]
                 if request.prompt and request.prompt.strip():
-                    enhanced_prompt = f"{
-                        char_data['prompt']}, {
-                        request.prompt}"
+                    enhanced_prompt = f"{char_data['prompt']}, {request.prompt}"
             if char_data and "negative_prompt" in char_data:
                 negative_prompt += ", " + char_data["negative_prompt"]
             print(f"Character enhancement successful for {request.character}")
@@ -3555,8 +3535,7 @@ async def get_project_branches(project_id: int):
         logger.error(f"Get branches failed: {e}")
         raise HTTPException(
             status_code=500,
-            detail=f"Get branches failed: {
-                str(e)}",
+            detail=f"Get branches failed: {str(e)}",
         )
 
 
@@ -3644,8 +3623,7 @@ async def get_git_status(project_id: int):
         logger.error(f"Git status check failed: {e}")
         raise HTTPException(
             status_code=500,
-            detail=f"Git status failed: {
-                str(e)}",
+            detail=f"Git status failed: {str(e)}",
         )
 
 
@@ -3811,8 +3789,7 @@ async def update_configuration(config: dict):
 
         if os.path.exists(workflow_path):
             # Backup original
-            backup_path = f"{workflow_path}.backup_{
-                datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            backup_path = f"{workflow_path}.backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             shutil.copy2(workflow_path, backup_path)
             result["backup_created"] = backup_path
 
@@ -3862,9 +3839,7 @@ async def update_configuration(config: dict):
                             "batch_size"
                         ]
                         result["resolution_updated"] = (
-                            f"{
-                                preset_settings['width']}x{
-                                preset_settings['height']}"
+                            f"{preset_settings['width']}x{preset_settings['height']}"
                         )
 
                     result["quality_changed"] = preset_name
