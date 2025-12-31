@@ -9,21 +9,21 @@
 const isDevelopment = import.meta.env.DEV
 const isProduction = import.meta.env.PROD
 
-// Base URLs - Update these for your environment
+// Base URLs - Use relative paths to avoid mixed content errors
 const API_HOSTS = {
-  // Primary anime production API
-  anime: isDevelopment ? '' : 'http://192.168.50.135:8328',
+  // Primary anime production API - proxied through nginx
+  anime: '',  // Always use relative paths
 
   // WebSocket for real-time job updates
   websocket: isDevelopment
     ? 'ws://localhost:8328/ws'
-    : 'ws://192.168.50.135:8328/ws',
+    : 'wss://vestal-garcia.duckdns.org/api/anime/ws',
 
-  // Echo Brain AI orchestration
-  echo: 'http://192.168.50.135:8309',
+  // Echo Brain AI orchestration - proxied through nginx
+  echo: '',  // Use relative path /api/echo
 
-  // ComfyUI for direct status checks
-  comfyui: 'http://192.168.50.135:8188'
+  // ComfyUI for direct status checks - proxied through nginx
+  comfyui: ''  // Use relative path /api/comfyui
 }
 
 /**
@@ -118,16 +118,16 @@ export const WS = {
 
 // Echo Brain Configuration
 export const ECHO = {
-  BASE: API_HOSTS.echo,
-  HEALTH: `${API_HOSTS.echo}/api/echo/health`,
-  QUERY: `${API_HOSTS.echo}/api/echo/query`
+  BASE: '/api/echo',
+  HEALTH: '/api/echo/health',
+  QUERY: '/api/echo/query'
 }
 
 // ComfyUI Configuration
 export const COMFYUI = {
-  BASE: API_HOSTS.comfyui,
-  HEALTH: `${API_HOSTS.comfyui}/system_stats`,
-  QUEUE: `${API_HOSTS.comfyui}/queue`
+  BASE: '/api/comfyui',
+  HEALTH: '/api/comfyui/system_stats',
+  QUEUE: '/api/comfyui/queue'
 }
 
 /**
