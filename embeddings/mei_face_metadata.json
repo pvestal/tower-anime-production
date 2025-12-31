@@ -1,0 +1,15 @@
+{
+  "source": "/mnt/1TB-storage/ComfyUI/output/Mei_Tokyo_Debt_SVD_smooth_00001.png",
+  "face_bbox": [
+    128,
+    66,
+    212,
+    212
+  ],
+  "face_area": 44944,
+  "embedding_size": 135,
+  "image_size": [
+    512,
+    768
+  ]
+}

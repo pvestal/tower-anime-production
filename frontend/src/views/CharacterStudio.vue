@@ -501,6 +501,7 @@ const consistencyTestResults = ref([]);
 const videoProgress = ref(0);
 const videoStatus = ref("");
 const currentVideo = ref(null);
+const characters = ref([]);
 
 // Character data
 const character = ref({

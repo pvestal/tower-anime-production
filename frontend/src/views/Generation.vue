@@ -235,22 +235,26 @@
         ></textarea>
       </div>
 
-      <div class="form-group" v-if="systemLimits">
+      <div v-if="systemLimits" class="form-group">
         <label>Frames ({{ animationForm.frames }})</label>
         <input
-          type="range"
           v-model.number="animationForm.frames"
+          type="range"
           :min="systemLimits.frame_limits.svd.min"
           :max="systemLimits.frame_limits.svd.max"
           :step="1"
         />
         <div class="frame-info">
           <span>Duration: {{ (animationForm.frames / 8).toFixed(2) }}s</span>
-          <span class="vram-warning" v-if="systemLimits.frame_limits.svd.vram_mb[animationForm.frames]">
-            VRAM: {{ systemLimits.frame_limits.svd.vram_mb[animationForm.frames] }}MB
+          <span
+            v-if="systemLimits.frame_limits.svd.vram_mb[animationForm.frames]"
+            class="vram-warning"
+          >
+            VRAM:
+            {{ systemLimits.frame_limits.svd.vram_mb[animationForm.frames] }}MB
           </span>
         </div>
-        <div class="limit-warning" v-if="animationForm.frames > 25">
+        <div v-if="animationForm.frames > 25" class="limit-warning">
           ⚠️ Warning: Untested beyond 25 frames. May fail.
         </div>
       </div>
@@ -316,40 +320,57 @@
       <div class="audit-controls">
         <h3>Generation Controls</h3>
         <label>
-          <input type="checkbox" v-model="auditControls.forceSVD" @change="updateAuditControls">
+          <input
+            v-model="auditControls.forceSVD"
+            type="checkbox"
+            @change="updateAuditControls"
+          />
           Force SVD for Video (No Flashing Frames)
         </label>
-        <button @click="forceSVD" class="btn-danger">FORCE SVD NOW</button>
+        <button class="btn-danger" @click="forceSVD">FORCE SVD NOW</button>
       </div>
 
-      <div class="audit-entries" v-if="auditEntries.length > 0">
+      <div v-if="auditEntries.length > 0" class="audit-entries">
         <h3>Recent Generations</h3>
-        <div class="audit-entry" v-for="entry in auditEntries" :key="entry.job_id">
+        <div
+          v-for="entry in auditEntries"
+          :key="entry.job_id"
+          class="audit-entry"
+        >
           <div class="entry-header">
             <span class="job-id">{{ entry.job_id }}</span>
-            <span class="timestamp">{{ new Date(entry.timestamp).toLocaleString() }}</span>
+            <span class="timestamp">{{
+              new Date(entry.timestamp).toLocaleString()
+            }}</span>
           </div>
           <div class="entry-details">
             <div class="prompt">{{ entry.prompt }}</div>
             <div class="model-info">
               <span class="label">Echo:</span> {{ entry.echo_recommendation }}
-              <span class="label">Used:</span> {{ entry.actual_model_used || 'Unknown' }}
-              <span v-if="entry.is_coherent" class="coherent-badge">✅ Coherent</span>
+              <span class="label">Used:</span>
+              {{ entry.actual_model_used || "Unknown" }}
+              <span v-if="entry.is_coherent" class="coherent-badge"
+                >✅ Coherent</span
+              >
               <span v-else class="incoherent-badge">⚡ Flashing</span>
             </div>
           </div>
           <div class="entry-actions">
             <button
               v-if="entry.verification_status === 'FAIL' || !entry.is_coherent"
-              @click="rerunWithFixes(entry)"
               class="btn-fix"
+              @click="rerunWithFixes(entry)"
             >
               🔄 Re-run with SVD
             </button>
             <button
-              v-if="entry.echo_recommendation && entry.echo_recommendation.split('|')[0] !== entry.actual_model_used"
-              @click="trainEcho(entry)"
+              v-if="
+                entry.echo_recommendation &&
+                entry.echo_recommendation.split('|')[0] !==
+                  entry.actual_model_used
+              "
               class="btn-train"
+              @click="trainEcho(entry)"
             >
               📚 Train Echo
             </button>
@@ -357,20 +378,23 @@
         </div>
       </div>
 
-      <div class="audit-stats" v-if="auditTruth">
+      <div v-if="auditTruth" class="audit-stats">
         <h3>The Truth</h3>
         <div class="stats-grid">
           <div class="stat">
             <span>Total:</span> {{ auditTruth.total_generations }}
           </div>
           <div class="stat">
-            <span>Verified:</span> {{ auditTruth.verified_generations }} ({{ auditTruth.verification_coverage }})
+            <span>Verified:</span> {{ auditTruth.verified_generations }} ({{
+              auditTruth.verification_coverage
+            }})
           </div>
           <div class="stat success">
             <span>SVD Coherent:</span> {{ auditTruth.svd_coherent_videos }}
           </div>
           <div class="stat warning">
-            <span>AnimateDiff Flashing:</span> {{ auditTruth.animatediff_flashing_videos }}
+            <span>AnimateDiff Flashing:</span>
+            {{ auditTruth.animatediff_flashing_videos }}
           </div>
         </div>
       </div>
@@ -391,7 +415,9 @@
             <tr v-for="entry in auditEntries" :key="entry.job_id">
               <td>{{ entry.job_id }}</td>
               <td>{{ entry.user_prompt?.substring(0, 50) }}...</td>
-              <td>{{ entry.actual_model_used || entry.comfyui_workflow_used }}</td>
+              <td>
+                {{ entry.actual_model_used || entry.comfyui_workflow_used }}
+              </td>
               <td>
                 <span v-if="entry.is_coherent" class="success">✅</span>
                 <span v-else class="error">❌</span>
@@ -475,7 +501,7 @@ const systemLimits = ref(null);
 const auditEntries = ref([]);
 const auditTruth = ref(null);
 const auditControls = reactive({
-  forceSVD: true
+  forceSVD: true,
 });
 
 const tabs = [
@@ -524,7 +550,7 @@ const animationForm = reactive({
   reference_image: null,
   prompt: "",
   negative_prompt: "",
-  frames: 16,  // Default to optimal based on limits
+  frames: 16, // Default to optimal based on limits
 });
 
 const batchForm = reactive({
@@ -762,7 +788,9 @@ const loadOptimalSettings = async () => {
 // Audit system functions
 async function loadAuditEntries() {
   try {
-    const response = await fetch("http://localhost:8328/api/anime/audit/entries?limit=20");
+    const response = await fetch(
+      "http://localhost:8328/api/anime/audit/entries?limit=20",
+    );
     auditEntries.value = await response.json();
   } catch (error) {
     console.error("Failed to load audit entries:", error);
@@ -781,9 +809,12 @@ async function loadAuditTruth() {
 
 async function forceSVD() {
   try {
-    const response = await fetch("http://localhost:8328/api/anime/audit/force-svd", {
-      method: "POST"
-    });
+    const response = await fetch(
+      "http://localhost:8328/api/anime/audit/force-svd",
+      {
+        method: "POST",
+      },
+    );
     const result = await response.json();
     alert(result.message);
     loadAuditTruth();
@@ -794,13 +825,16 @@ async function forceSVD() {
 
 async function updateAuditControls() {
   try {
-    const response = await fetch("http://localhost:8328/api/anime/audit/controls", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        force_svd_for_video: auditControls.forceSVD
-      })
-    });
+    const response = await fetch(
+      "http://localhost:8328/api/anime/audit/controls",
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          force_svd_for_video: auditControls.forceSVD,
+        }),
+      },
+    );
   } catch (error) {
     console.error("Failed to update controls:", error);
   }
@@ -815,15 +849,18 @@ async function rerunWithFixes(entry) {
       character_identity: entry.prompt.split(" - ")[0] || "character",
       action_sequence: entry.prompt.split(" - ")[1] || entry.prompt,
       frames: entry.frames || 25,
-      force_svd: true,  // Force SVD for coherent video
-      parent_job_id: entry.job_id  // Link to original
+      force_svd: true, // Force SVD for coherent video
+      parent_job_id: entry.job_id, // Link to original
     };
 
-    const response = await fetch("http://localhost:8328/api/anime/coherent/generate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(fixedRequest)
-    });
+    const response = await fetch(
+      "http://localhost:8328/api/anime/coherent/generate",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(fixedRequest),
+      },
+    );
 
     const result = await response.json();
     alert(`Re-run started with SVD: Job ${result.job_id}`);
@@ -840,24 +877,27 @@ async function rerunWithFixes(entry) {
 
 async function trainEcho(entry) {
   try {
-    const echoRec = entry.echo_recommendation ? entry.echo_recommendation.split("|")[0] : "unknown";
+    const echoRec = entry.echo_recommendation
+      ? entry.echo_recommendation.split("|")[0]
+      : "unknown";
     const actual = entry.actual_model_used || "svd";
 
     const trainingData = {
       prompt: entry.prompt,
       echo_recommended: echoRec,
       correct_model: actual,
-      reason: actual === "svd"
-        ? "SVD produces coherent video, AnimateDiff creates flashing frames"
-        : "Model performed better in this context",
+      reason:
+        actual === "svd"
+          ? "SVD produces coherent video, AnimateDiff creates flashing frames"
+          : "Model performed better in this context",
       frames: entry.frames,
-      success: entry.verification_status === "PASS"
+      success: entry.verification_status === "PASS",
     };
 
     const response = await fetch("http://localhost:8328/api/anime/echo/train", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(trainingData)
+      body: JSON.stringify(trainingData),
     });
 
     const result = await response.json();
@@ -879,7 +919,9 @@ watch(activeTab, (newTab) => {
 // Load system limits
 async function loadSystemLimits() {
   try {
-    const response = await fetch("http://localhost:8328/api/anime/system/limits");
+    const response = await fetch(
+      "http://localhost:8328/api/anime/system/limits",
+    );
     systemLimits.value = await response.json();
 
     // Set default frames to optimal
@@ -1032,8 +1074,12 @@ h1 {
   border-radius: 4px;
 }
 
-.stat.success { color: #4caf50; }
-.stat.warning { color: #ff9800; }
+.stat.success {
+  color: #4caf50;
+}
+.stat.warning {
+  color: #ff9800;
+}
 
 .audit-table {
   background: #2a2a2a;

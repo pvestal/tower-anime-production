@@ -30,7 +30,7 @@ class AnimeWorker:
         self.redis_client = redis.Redis(
             host="localhost", port=6379, db=1, decode_responses=True
         )
-        self.comfyui_url = "http://192.168.50.135:8188"
+        self.comfyui_url = "http://localhost:8188"
         self.websocket_redis = redis.Redis(host="localhost", port=6379, db=1)
         self.running = True
 
@@ -115,28 +115,43 @@ class AnimeWorker:
 
     async def build_comfyui_workflow(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Build a ComfyUI workflow from parameters"""
-        # Basic anime generation workflow
+
+        # Determine if this is a video request
+        is_video = params.get("type") == "video" or params.get("duration", 0) > 0
+        batch_size = 24 if is_video else 1  # 1 second of video or single image
+
+        # Build workflow with correct models
         workflow = {
+            "1": {
+                "inputs": {
+                    "ckpt_name": params.get("model", "AOM3A1B.safetensors")
+                },
+                "class_type": "CheckpointLoaderSimple",
+            },
+            "2": {
+                "inputs": {
+                    "lora_name": params.get("lora", "mei_working_v1.safetensors"),
+                    "strength_model": params.get("lora_strength", 0.8),
+                    "strength_clip": params.get("lora_strength", 0.8),
+                    "model": ["1", 0],
+                    "clip": ["1", 1]
+                },
+                "class_type": "LoraLoader",
+            },
             "3": {
                 "inputs": {
-                    "seed": params.get("seed", 42),
+                    "seed": params.get("seed", int(time.time())),
                     "steps": params.get("steps", 20),
                     "cfg": params.get("cfg", 7.0),
                     "sampler_name": "euler",
                     "scheduler": "normal",
                     "denoise": 1.0,
-                    "model": ["4", 0],
+                    "model": ["2", 0],
                     "positive": ["6", 0],
                     "negative": ["7", 0],
                     "latent_image": ["5", 0],
                 },
                 "class_type": "KSampler",
-            },
-            "4": {
-                "inputs": {
-                    "ckpt_name": params.get("model", "Counterfeit-V2.5.safetensors")
-                },
-                "class_type": "CheckpointLoaderSimple",
             },
             "5": {
                 "inputs": {

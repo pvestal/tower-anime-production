@@ -1,0 +1,78 @@
+{
+  "description": "Tokyo Debt Desire - Base Image Generation (Photorealistic)",
+  "version": "1.0",
+  "parameters": {
+    "seed": "{{seed}}",
+    "pose_modifier": "{{pose_modifier}}",
+    "output_prefix": "{{output_prefix}}"
+  },
+  "workflow": {
+    "1": {
+      "class_type": "CheckpointLoaderSimple",
+      "inputs": {
+        "ckpt_name": "realisticVision_v51.safetensors"
+      }
+    },
+    "2": {
+      "class_type": "LoraLoader",
+      "inputs": {
+        "lora_name": "mei_working_v1.safetensors",
+        "strength_model": 1.0,
+        "strength_clip": 1.0,
+        "model": ["1", 0],
+        "clip": ["1", 1]
+      }
+    },
+    "3": {
+      "class_type": "CLIPTextEncode",
+      "inputs": {
+        "text": "photorealistic, realistic, professional photograph, 1girl, Mei Kobayashi, C-cup breasts, curvy body, detailed skin, natural lighting, {{pose_modifier}}",
+        "clip": ["2", 1]
+      }
+    },
+    "4": {
+      "class_type": "CLIPTextEncode",
+      "inputs": {
+        "text": "anime, cartoon, drawn, illustrated, painting, unrealistic, bad anatomy, deformed, blurry, small breasts, flat chest",
+        "clip": ["2", 1]
+      }
+    },
+    "5": {
+      "class_type": "EmptyLatentImage",
+      "inputs": {
+        "width": 512,
+        "height": 768,
+        "batch_size": 1
+      }
+    },
+    "6": {
+      "class_type": "KSampler",
+      "inputs": {
+        "seed": "{{seed}}",
+        "steps": 25,
+        "cfg": 7.0,
+        "sampler_name": "dpmpp_2m",
+        "scheduler": "karras",
+        "denoise": 1.0,
+        "model": ["2", 0],
+        "positive": ["3", 0],
+        "negative": ["4", 0],
+        "latent_image": ["5", 0]
+      }
+    },
+    "7": {
+      "class_type": "VAEDecode",
+      "inputs": {
+        "samples": ["6", 0],
+        "vae": ["1", 2]
+      }
+    },
+    "8": {
+      "class_type": "SaveImage",
+      "inputs": {
+        "images": ["7", 0],
+        "filename_prefix": "{{output_prefix}}"
+      }
+    }
+  }
+}

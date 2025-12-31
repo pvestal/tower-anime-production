@@ -7,6 +7,8 @@ import App from "./App.vue";
 import Dashboard from "./views/Dashboard.vue";
 import Characters from "./views/Characters.vue";
 import CharacterStudio from "./views/CharacterStudio.vue";
+import DirectorStudio from "./views/DirectorStudio.vue";
+import SceneDirector from "./views/SceneDirector.vue";
 import Generation from "./views/Generation.vue";
 import Gallery from "./views/Gallery.vue";
 import Projects from "./views/Projects.vue";
@@ -17,6 +19,8 @@ const routes = [
   { path: "/projects", name: "projects", component: Projects },
   { path: "/characters", name: "characters", component: Characters },
   { path: "/studio", name: "studio", component: CharacterStudio },
+  { path: "/director", name: "director", component: DirectorStudio },
+  { path: "/scene", name: "scene-director", component: SceneDirector },
   { path: "/generate", name: "generate", component: Generation },
   { path: "/gallery/:character?", name: "gallery", component: Gallery },
   { path: "/chat", name: "chat", component: Chat },

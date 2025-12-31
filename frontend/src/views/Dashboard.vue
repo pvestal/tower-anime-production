@@ -48,6 +48,7 @@ import api from "@/api/animeApi";
 const store = useCharacterStore();
 const recentJobs = ref([]);
 const queueStats = ref({ pending: 0, processing: 0 });
+const recentImages = ref([]);
 
 const formatDate = (dateStr) => {
   return new Date(dateStr).toLocaleDateString();

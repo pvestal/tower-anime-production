@@ -1,0 +1,12 @@
+{
+  "generated": "2025-12-31T00:38:33.759773",
+  "statistics": {
+    "total_tests": 7,
+    "passed": 4,
+    "failed": 3,
+    "average_similarity": 0.6741042111768109,
+    "max_score": 0.824959047271795,
+    "min_score": 0.48031866550445557
+  },
+  "recommendation": "NEEDS_IMPROVEMENT"
+}

@@ -292,10 +292,10 @@ async function handleGenerate(args) {
       body: JSON.stringify({
         prompt: requestBody.prompt,
         type: "image",
-        steps: 20,  // Increased for better quality
+        steps: 20, // Increased for better quality
         width: 512,
-        height: 768,  // Better portrait aspect ratio
-        cfg_scale: 7.5  // Added CFG scale for better adherence
+        height: 768, // Better portrait aspect ratio
+        cfg_scale: 7.5, // Added CFG scale for better adherence
       }),
     });
 
@@ -307,15 +307,9 @@ async function handleGenerate(args) {
         "success",
         `Generation started with job ID: ${result.job_id}`,
       );
-      addConsoleLine(
-        "info",
-        `Echo recommended: ${result.echo_recommendation}`,
-      );
+      addConsoleLine("info", `Echo recommended: ${result.echo_recommendation}`);
       addConsoleLine("info", `Status: ${result.status}`);
-      addConsoleLine(
-        "info",
-        `Message: ${result.message}`,
-      );
+      addConsoleLine("info", `Message: ${result.message}`);
 
       // Start polling for job completion
       pollJobStatus(result.job_id);
@@ -438,7 +432,10 @@ async function pollJobStatus(jobId) {
       if (attempts < maxAttempts) {
         setTimeout(checkStatus, 2000);
       } else {
-        addConsoleLine("warning", "Generation timeout - may still be processing");
+        addConsoleLine(
+          "warning",
+          "Generation timeout - may still be processing",
+        );
       }
     } catch (error) {
       addConsoleLine("error", `Status check failed: ${error.message}`);

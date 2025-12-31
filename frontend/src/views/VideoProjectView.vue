@@ -316,6 +316,14 @@ const removeScene = (index) => {
   });
 };
 
+const buildPromptForScene = (scene) => {
+  const parts = [];
+  if (scene.character_prompt) parts.push(scene.character_prompt);
+  if (scene.action_prompt) parts.push(scene.action_prompt);
+  if (scene.location_prompt) parts.push(scene.location_prompt);
+  return parts.join(" ");
+};
+
 const saveProjectAsStory = async () => {
   // Save current project as a story
   try {

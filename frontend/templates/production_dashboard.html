@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Anime Production Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Courier New', monospace;
+            background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 100%);
+            color: #e0e0e0;
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        h1 {
+            text-align: center;
+            color: #ff6b6b;
+            margin-bottom: 30px;
+            text-shadow: 0 0 10px rgba(255, 107, 107, 0.5);
+        }
+
+        .stats {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 30px;
+            display: flex;
+            justify-content: space-around;
+            flex-wrap: wrap;
+        }
+
+        .stat-item {
+            text-align: center;
+            padding: 10px;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            color: #4ecdc4;
+            font-weight: bold;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: #888;
+            margin-top: 5px;
+        }
+
+        .project {
+            border: 2px solid;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 30px;
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .tokyo {
+            border-color: #3498db;
+            box-shadow: 0 0 20px rgba(52, 152, 219, 0.2);
+        }
+
+        .cyberpunk {
+            border-color: #2ecc71;
+            box-shadow: 0 0 20px rgba(46, 204, 113, 0.2);
+            opacity: 0.5;
+        }
+
+        h2 {
+            color: inherit;
+            margin-bottom: 15px;
+        }
+
+        .tokyo h2 { color: #3498db; }
+        .cyberpunk h2 { color: #2ecc71; }
+
+        .pose-buttons {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin: 15px 0;
+        }
+
+        .pose-btn {
+            padding: 12px 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+
+        .pose-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .pose-btn:active {
+            transform: translateY(0);
+        }
+
+        .pose-btn:disabled {
+            background: #444;
+            cursor: not-allowed;
+            opacity: 0.5;
+        }
+
+        .outputs-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .output-card {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            overflow: hidden;
+            transition: transform 0.3s;
+        }
+
+        .output-card:hover {
+            transform: scale(1.05);
+            border-color: #3498db;
+        }
+
+        .output-preview {
+            width: 100%;
+            height: 150px;
+            object-fit: cover;
+            background: #222;
+        }
+
+        .output-info {
+            padding: 10px;
+            font-size: 11px;
+        }
+
+        .output-filename {
+            color: #4ecdc4;
+            word-break: break-all;
+            margin-bottom: 5px;
+        }
+
+        .output-meta {
+            color: #666;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 5px;
+            animation: pulse 2s infinite;
+        }
+
+        .status-running { background: #2ecc71; }
+        .status-offline { background: #e74c3c; }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+
+        .message {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 15px 20px;
+            background: #2ecc71;
+            color: white;
+            border-radius: 5px;
+            display: none;
+            z-index: 1000;
+            animation: slideIn 0.3s;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+    </style>
+</head>
+<body>
+    <h1>🎬 Anime Production Dashboard</h1>
+
+    <div class="stats" id="stats">
+        <div class="stat-item">
+            <div class="stat-value" id="stat-total">-</div>
+            <div class="stat-label">Total Outputs</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-value" id="stat-tokyo">-</div>
+            <div class="stat-label">Tokyo Project</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-value">
+                <span class="status-indicator status-offline" id="comfyui-status"></span>
+                <span id="comfyui-text">Checking...</span>
+            </div>
+            <div class="stat-label">ComfyUI Status</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-value" id="stat-time">-</div>
+            <div class="stat-label">Last Update</div>
+        </div>
+    </div>
+
+    <div class="project tokyo">
+        <h2>📍 Tokyo Debt Desire</h2>
+        <p><strong>Canonical:</strong> Mei_Tokyo_Debt_SVD_smooth_00001.png</p>
+        <p><strong>Description:</strong> Tokyo urban professional theme</p>
+
+        <h3 style="margin-top: 20px;">Generate Pose Variation:</h3>
+        <div class="pose-buttons">
+            <button class="pose-btn" onclick="generatePose('tokyo_debt_desire', 'standing')">
+                🧍 Standing
+            </button>
+            <button class="pose-btn" onclick="generatePose('tokyo_debt_desire', 'frontal')">
+                📸 Frontal
+            </button>
+            <button class="pose-btn" onclick="generatePose('tokyo_debt_desire', 'professional')">
+                💼 Professional
+            </button>
+            <button class="pose-btn" onclick="generatePose('tokyo_debt_desire', 'professional_alt')">
+                👔 Alt Professional
+            </button>
+        </div>
+
+        <h3>Recent Outputs:</h3>
+        <div class="outputs-grid" id="tokyo-outputs">
+            <div class="loading">Loading outputs...</div>
+        </div>
+    </div>
+
+    <div class="project cyberpunk">
+        <h2>🌃 Cyberpunk Mei (Coming Soon)</h2>
+        <p><strong>Status:</strong> Awaiting canonical image creation</p>
+        <p><strong>Description:</strong> Cyberpunk neon theme</p>
+
+        <h3 style="margin-top: 20px;">Planned Poses:</h3>
+        <div class="pose-buttons">
+            <button class="pose-btn" disabled>⚡ Action</button>
+            <button class="pose-btn" disabled>💻 Hacker</button>
+            <button class="pose-btn" disabled>🌟 Neon</button>
+            <button class="pose-btn" disabled>🏙️ Street</button>
+        </div>
+    </div>
+
+    <div class="message" id="message"></div>
+
+    <script>
+        async function generatePose(project, pose) {
+            const btn = event.target;
+            btn.disabled = true;
+
+            try {
+                const response = await fetch('/api/production/generate', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        project: project,
+                        pose: pose
+                    })
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showMessage(`✅ Started job: ${result.job_id} - ${result.message}`, 'success');
+                    // Refresh outputs in 5 seconds
+                    setTimeout(loadOutputs, 5000);
+                } else {
+                    showMessage(`❌ Error: ${result.error}`, 'error');
+                }
+            } catch (error) {
+                showMessage(`❌ Failed to generate: ${error.message}`, 'error');
+            } finally {
+                setTimeout(() => { btn.disabled = false; }, 3000);
+            }
+        }
+
+        function showMessage(text, type = 'success') {
+            const msg = document.getElementById('message');
+            msg.textContent = text;
+            msg.style.background = type === 'success' ? '#2ecc71' : '#e74c3c';
+            msg.style.display = 'block';
+
+            setTimeout(() => {
+                msg.style.display = 'none';
+            }, 5000);
+        }
+
+        async function loadStatus() {
+            try {
+                const response = await fetch('/api/production/status');
+                const data = await response.json();
+
+                // Update statistics
+                document.getElementById('stat-total').textContent = data.statistics.total_outputs || '0';
+                document.getElementById('stat-tokyo').textContent = data.statistics.tokyo_outputs || '0';
+
+                // Update ComfyUI status
+                const statusIndicator = document.getElementById('comfyui-status');
+                const statusText = document.getElementById('comfyui-text');
+
+                if (data.comfyui_status === 'running') {
+                    statusIndicator.className = 'status-indicator status-running';
+                    statusText.textContent = 'Running';
+                } else {
+                    statusIndicator.className = 'status-indicator status-offline';
+                    statusText.textContent = 'Offline';
+                }
+
+                // Update time
+                const now = new Date();
+                document.getElementById('stat-time').textContent = now.toLocaleTimeString();
+
+            } catch (error) {
+                console.error('Failed to load status:', error);
+            }
+        }
+
+        async function loadOutputs() {
+            try {
+                const response = await fetch('/api/production/outputs');
+                const outputs = await response.json();
+
+                const container = document.getElementById('tokyo-outputs');
+
+                if (outputs.length === 0) {
+                    container.innerHTML = '<div class="loading">No outputs yet</div>';
+                    return;
+                }
+
+                // Filter Tokyo outputs
+                const tokyoOutputs = outputs.filter(o => o.project === 'tokyo' || o.filename.includes('Tokyo'));
+
+                container.innerHTML = tokyoOutputs.slice(0, 8).map(output => `
+                    <div class="output-card">
+                        ${output.type === 'image' ?
+                            `<img src="/static/outputs/${output.filename}" alt="${output.filename}" class="output-preview" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 200 150%27%3E%3Crect fill=%27%23222%27 width=%27200%27 height=%27150%27/%3E%3Ctext fill=%27%23666%27 x=%2750%25%27 y=%2750%25%27 text-anchor=%27middle%27 dy=%27.3em%27%3EImage%3C/text%3E%3C/svg%3E';">` :
+                            `<div class="output-preview" style="display:flex;align-items:center;justify-content:center;color:#666;">
+                                <div>📹 Video<br>${output.size}</div>
+                            </div>`
+                        }
+                        <div class="output-info">
+                            <div class="output-filename">${output.filename}</div>
+                            <div class="output-meta">${output.size} • ${output.time}</div>
+                        </div>
+                    </div>
+                `).join('');
+
+            } catch (error) {
+                console.error('Failed to load outputs:', error);
+            }
+        }
+
+        // Initial load
+        loadStatus();
+        loadOutputs();
+
+        // Auto refresh every 30 seconds
+        setInterval(loadStatus, 30000);
+        setInterval(loadOutputs, 30000);
+    </script>
+</body>
+</html>

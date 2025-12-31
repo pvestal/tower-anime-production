@@ -246,6 +246,7 @@ const emit = defineEmits([
   "copy",
   "approve-generation",
   "regenerate",
+  "apply-suggestion",
 ]);
 
 // State

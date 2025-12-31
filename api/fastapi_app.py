@@ -6,6 +6,7 @@ Phase 2: Minimal working implementation
 
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 from datetime import datetime
 import asyncpg
@@ -26,6 +27,11 @@ sys.path.append('/opt/tower-anime-production/middleware')
 # Import SSOT middleware
 from ssot_fastapi import SSOTFastAPIMiddleware
 
+# Import routers
+from routes.status_endpoint import router as status_router
+from routes.generate_production import router as production_router
+from routes.generate_video import router as video_router
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -44,6 +50,11 @@ app = FastAPI(
     version="2.0.0",
     lifespan=lifespan
 )
+
+# Include routers
+app.include_router(status_router)
+app.include_router(production_router)
+app.include_router(video_router)
 
 # Add CORS middleware
 app.add_middleware(
@@ -103,32 +114,11 @@ async def health_check():
     }
 
 
-@app.post("/api/anime/generate")
-async def generate_anime(request: Request):
-    """Main generation endpoint - automatically tracked by SSOT"""
-    try:
-        data = await request.json()
+# Generation endpoint is now in generate_production router
 
-        # Access SSOT tracking ID from request state
-        ssot_id = getattr(request.state, 'ssot_request_id', None)
 
-        # Simulate generation logic
-        result = {
-            "success": True,
-            "message": "Generation request received and tracked",
-            "ssot_tracking_id": ssot_id,
-            "prompt": data.get('prompt', 'No prompt provided'),
-            "timestamp": datetime.utcnow().isoformat()
-        }
-
-        # Log for verification
-        logger.info(f"Generation request tracked: {ssot_id}")
-
-        return result
-
-    except Exception as e:
-        logger.error(f"Generation failed: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+# Mount static files directory
+app.mount("/static", StaticFiles(directory="/opt/tower-anime-production/static"), name="static")
 
 
 @app.post("/api/anime/generate/image")
@@ -165,6 +155,171 @@ async def generate_video(request: Request):
         }
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+# ==================== Frontend Required Endpoints ====================
+
+@app.get("/api/anime/characters")
+async def get_characters():
+    """Get available characters"""
+    return [
+        {"id": "mei", "name": "Mei", "description": "Main character"},
+        {"id": "zara", "name": "Zara", "description": "Supporting character"}
+    ]
+
+@app.get("/api/anime/styles")
+async def get_styles():
+    """Get available styles"""
+    return [
+        {"id": "anime", "name": "Anime", "description": "Standard anime style"},
+        {"id": "realistic", "name": "Realistic", "description": "Photorealistic style"}
+    ]
+
+@app.get("/api/anime/models")
+async def get_models():
+    """Get available models"""
+    return [
+        {"id": "svd", "name": "SVD", "type": "video"},
+        {"id": "img2img", "name": "Image to Image", "type": "image"}
+    ]
+
+@app.get("/api/anime/queue")
+async def get_queue():
+    """Get job queue"""
+    return {
+        "running": [],
+        "pending": [],
+        "completed": []
+    }
+
+@app.get("/api/anime/jobs")
+async def get_jobs():
+    """Get recent jobs"""
+    return []
+
+@app.get("/api/anime/projects")
+async def get_projects():
+    """Get projects"""
+    return [
+        {
+            "id": "tokyo_debt_desire",
+            "name": "Tokyo Debt Desire",
+            "description": "Urban professional theme",
+            "character": "Mei"
+        }
+    ]
+
+@app.get("/api/anime/projects/")
+async def get_projects_alt():
+    """Get projects (alternate route)"""
+    return await get_projects()
+
+@app.get("/api/anime/generations")
+async def get_generations():
+    """Get generation history"""
+    from pathlib import Path
+    output_dir = Path("/mnt/1TB-storage/ComfyUI/output")
+    files = list(output_dir.glob("MEI_*"))[:10]
+
+    return [
+        {
+            "id": f.stem,
+            "filename": f.name,
+            "created_at": datetime.fromtimestamp(f.stat().st_mtime).isoformat(),
+            "type": "video" if f.suffix == ".mp4" else "image"
+        }
+        for f in files
+    ]
+
+@app.get("/api/anime/system/limits")
+async def get_system_limits():
+    """Get system limits"""
+    return {
+        "max_frames": 25,
+        "max_resolution": 1024,
+        "gpu_memory": 12288,
+        "models_available": ["svd", "img2img"]
+    }
+
+@app.get("/api/anime/batch/optimal-settings/sfw")
+async def get_optimal_settings():
+    """Get optimal generation settings"""
+    return {
+        "resolution": "512x768",
+        "steps": 20,
+        "cfg_scale": 7.0,
+        "sampler": "euler"
+    }
+
+@app.get("/api/anime/{character}/profile")
+async def get_character_profile(character: str):
+    """Get character profile"""
+    if character == "zara":
+        return {
+            "name": "Zara",
+            "description": "Supporting character",
+            "traits": ["intelligent", "mysterious"]
+        }
+    return {"detail": "Character not found"}
+
+# ==================== Production Pipeline Endpoints ====================
+
+@app.post("/api/production/tokyo/generate")
+async def generate_tokyo_pose(request: Request):
+    """Generate Tokyo Debt Desire pose variation"""
+    try:
+        data = await request.json()
+        pose = data.get('pose', 'frontal')
+
+        import subprocess
+        import uuid
+
+        job_id = f"TOKYO-{uuid.uuid4().hex[:6].upper()}"
+
+        # Run production pipeline
+        cmd = [
+            'python3',
+            '/opt/tower-anime-production/workflows/production_pipeline_v2.py',
+            '--pose', pose,
+            '--job-id', job_id
+        ]
+
+        subprocess.Popen(cmd, cwd='/opt/tower-anime-production')
+
+        return {
+            "success": True,
+            "job_id": job_id,
+            "project": "tokyo_debt_desire",
+            "pose": pose,
+            "message": f"Generating {pose} pose for Tokyo project"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/production/status")
+async def get_production_status():
+    """Get production pipeline status"""
+    from pathlib import Path
+
+    output_dir = Path("/mnt/1TB-storage/ComfyUI/output")
+    tokyo_outputs = list(output_dir.glob("MEI_Tokyo_*"))
+    all_outputs = list(output_dir.glob("MEI_*"))
+
+    return {
+        "projects": {
+            "tokyo_debt_desire": {
+                "canonical": "/mnt/1TB-storage/ComfyUI/input/Mei_Tokyo_Debt_SVD_smooth_00001.png",
+                "poses_generated": ["standing", "frontal", "professional", "professional_alt"],
+                "output_count": len(tokyo_outputs)
+            }
+        },
+        "statistics": {
+            "total_outputs": len(all_outputs),
+            "tokyo_outputs": len(tokyo_outputs),
+            "last_updated": datetime.utcnow().isoformat()
+        }
+    }
 
 
 # ==================== SSOT Monitoring Endpoints ====================

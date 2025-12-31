@@ -1,0 +1,72 @@
+{
+  "description": "SVD Video Generation from Tokyo Debt Base Image",
+  "version": "1.0",
+  "parameters": {
+    "source_image": "{{source_image}}",
+    "seed": "{{seed}}",
+    "output_prefix": "{{output_prefix}}"
+  },
+  "workflow": {
+    "1": {
+      "class_type": "ImageOnlyCheckpointLoader",
+      "inputs": {
+        "ckpt_name": "svd_xt.safetensors"
+      }
+    },
+    "2": {
+      "class_type": "LoadImage",
+      "inputs": {
+        "image": "{{source_image}}"
+      }
+    },
+    "3": {
+      "class_type": "SVD_img2vid_Conditioning",
+      "inputs": {
+        "width": 512,
+        "height": 768,
+        "video_frames": 25,
+        "motion_bucket_id": 127,
+        "fps": 8,
+        "augmentation_level": 0.0,
+        "clip_vision": ["1", 1],
+        "init_image": ["2", 0],
+        "vae": ["1", 2]
+      }
+    },
+    "4": {
+      "class_type": "KSampler",
+      "inputs": {
+        "seed": "{{seed}}",
+        "steps": 20,
+        "cfg": 2.5,
+        "sampler_name": "euler",
+        "scheduler": "karras",
+        "denoise": 1.0,
+        "model": ["1", 0],
+        "positive": ["3", 0],
+        "negative": ["3", 1],
+        "latent_image": ["3", 2]
+      }
+    },
+    "5": {
+      "class_type": "VAEDecode",
+      "inputs": {
+        "samples": ["4", 0],
+        "vae": ["1", 2]
+      }
+    },
+    "6": {
+      "class_type": "VHS_VideoCombine",
+      "inputs": {
+        "images": ["5", 0],
+        "frame_rate": 8,
+        "loop_count": 0,
+        "filename_prefix": "{{output_prefix}}",
+        "format": "video/h264-mp4",
+        "save_output": true,
+        "pingpong": false,
+        "save_image": true
+      }
+    }
+  }
+}

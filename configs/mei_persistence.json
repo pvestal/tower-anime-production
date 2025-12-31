@@ -1,0 +1,35 @@
+{
+  "mei_configs": {
+    "realistic": {
+      "checkpoint": "realisticVision_v51.safetensors",
+      "lora": "mei_real_v3-000001.safetensors",
+      "lora_strength": 0.9,
+      "seed": 1766770469,
+      "width": 512,
+      "height": 768,
+      "steps": 25,
+      "cfg": 7,
+      "sampler": "euler_ancestral",
+      "positive_prompt": "mei, realistic, photograph, detailed skin",
+      "negative_prompt": "anime, cartoon, drawing"
+    },
+    "anime": {
+      "checkpoint": "AOM3A1B.safetensors",
+      "lora": "mei_body-000005.safetensors",
+      "lora_strength": 0.8,
+      "seed": 42,
+      "width": 768,
+      "height": 1024,
+      "steps": 25,
+      "cfg": 7.5,
+      "sampler": "euler_ancestral",
+      "positive_prompt": "mei, anime style, detailed",
+      "negative_prompt": "ugly, blurry, bad anatomy"
+    }
+  },
+  "body_type": "unknown_needs_calibration",
+  "lora_training": {
+    "status": "unverified",
+    "note": "Need to check actual training logs"
+  }
+}
