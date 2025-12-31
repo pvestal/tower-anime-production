@@ -1,12 +1,8 @@
 /**
- * Centralized API Configuration
+ * Tower Anime Production System - API Configuration
  *
- * This file serves as the Single Source of Truth (SSOT) for all API endpoints
- * across the frontend application.
- *
- * IMPORTANT: Update these values based on your deployment environment:
- * - Development: Uses Vite proxy (relative paths)
- * - Production: Uses absolute URLs
+ * Single Source of Truth (SSOT) for all API endpoints
+ * Aligned with anime-system-modular architecture
  */
 
 // Detect environment
@@ -16,67 +12,92 @@ const isProduction = import.meta.env.PROD
 // Base URLs - Update these for your environment
 const API_HOSTS = {
   // Primary anime production API
-  anime: isDevelopment ? '' : 'http://192.168.50.135:8305',
+  anime: isDevelopment ? '' : 'http://192.168.50.135:8328',
 
-  // WebSocket for real-time updates
-  websocket: isDevelopment ? 'ws://localhost:8765' : 'wss://192.168.50.135/api/ws',
+  // WebSocket for real-time job updates
+  websocket: isDevelopment
+    ? 'ws://localhost:8328/ws'
+    : 'ws://192.168.50.135:8328/ws',
 
-  // Echo Brain AI service
-  echo: 'http://localhost:8309',
+  // Echo Brain AI orchestration
+  echo: 'http://192.168.50.135:8309',
 
   // ComfyUI for direct status checks
-  comfyui: 'http://127.0.0.1:8188',
-
-  // Music service
-  music: 'http://127.0.0.1:8308',
-  musicSearch: 'http://127.0.0.1:8315'
+  comfyui: 'http://192.168.50.135:8188'
 }
 
-// API Endpoints
+/**
+ * API Endpoints - Modular Architecture
+ *
+ * Organized by domain:
+ * - Health & Status
+ * - Generation (still, loop, video)
+ * - Characters (consistency, attributes, variations)
+ * - Quality (metrics, phase gates)
+ * - Story Bible
+ * - Jobs & Progress
+ * - Echo Brain Integration
+ */
 export const API = {
   // Base URL (empty for Vite proxy in development)
   BASE: API_HOSTS.anime,
 
-  // Anime Generation
+  // === Health & Status ===
+  HEALTH: '/api/health',
+  ANIME_HEALTH: '/api/anime/health',
+
+  // === Generation Endpoints ===
   GENERATE: '/api/anime/generate',
   GENERATE_FAST: '/api/anime/generate-fast',
-  GENERATE_IMAGE: '/api/anime/generate/image',
-  GENERATE_VIDEO: '/api/anime/generate/video',
+  REPRODUCE: (jobId) => `/api/anime/jobs/${jobId}/reproduce`,
 
-  // Job Management
-  JOBS: '/api/anime/jobs',
-  JOB_STATUS: (jobId) => `/api/anime/jobs/${jobId}/status`,
-  JOB_PROGRESS: (jobId) => `/api/anime/jobs/${jobId}/progress`,
-  GENERATION_STATUS: (requestId) => `/api/anime/generation/${requestId}/status`,
-
-  // Project Management
+  // === Project Management ===
   PROJECTS: '/api/anime/projects',
   PROJECT: (id) => `/api/anime/projects/${id}`,
-  PROJECT_BIBLE: (id) => `/api/anime/projects/${id}/bible`,
-  PROJECT_CHARACTERS: (id) => `/api/anime/projects/${id}/characters`,
-  PROJECT_SCENES: (id) => `/api/anime/projects/${id}/scenes`,
-
-  // Project History & Generation
   PROJECT_HISTORY: (id) => `/api/anime/projects/${id}/history`,
   PROJECT_GENERATE: (id) => `/api/anime/projects/${id}/generate`,
 
-  // Generation Settings
+  // === Story Bible ===
+  STORY_BIBLE: (projectId) => `/api/anime/projects/${projectId}/story-bible`,
+
+  // === Character Consistency ===
+  CHARACTERS: '/api/anime/characters',
+  CHARACTER: (id) => `/api/anime/characters/${id}`,
+  CHARACTER_EMBEDDING: (id) => `/api/anime/characters/${id}/embedding`,
+  CHARACTER_CONSISTENCY: (id) => `/api/anime/characters/${id}/consistency`,
+  CHARACTER_CONSISTENCY_CHECK: (id) => `/api/anime/characters/${id}/consistency-check`,
+  CHARACTER_ATTRIBUTES: (id) => `/api/anime/characters/${id}/attributes`,
+  CHARACTER_VARIATIONS: (id) => `/api/anime/characters/${id}/variations`,
+  CHARACTER_PROMPT: (id) => `/api/anime/characters/${id}/prompt`,
+
+  // === Quality Metrics ===
+  QUALITY_EVALUATE: '/api/anime/quality/evaluate',
+  QUALITY_PHASE_GATE: (phase) => `/api/anime/quality/phase-gate/${phase}`,
+  QUALITY_STANDARDS: '/api/anime/quality/standards',
+
+  // === Job Management ===
+  JOBS: '/api/anime/jobs',
+  JOB: (id) => `/api/anime/jobs/${id}`,
+  JOB_STATUS: (id) => `/api/anime/jobs/${id}/status`,
+  JOB_PROGRESS: (id) => `/api/anime/jobs/${id}/progress`,
+  JOB_PARAMS: (id) => `/api/anime/jobs/${id}/params`,
+  JOB_QUALITY: (id) => `/api/anime/jobs/${id}/quality`,
+
+  // === Generation Settings ===
   QUALITY_PRESETS: '/api/anime/quality-presets',
   MODELS: '/api/anime/models',
   VRAM_STATUS: '/api/anime/vram-status',
 
-  // File Management
+  // === File Management ===
   FILES: '/api/anime/files',
   GENERATIONS: '/api/anime/generations',
+  IMAGES: '/api/anime/images',
 
-  // Health Checks
-  HEALTH: '/api/anime/health',
+  // === Echo Brain Integration ===
+  ECHO_TASKS: '/api/anime/echo/tasks',
+  ECHO_WEBHOOK: '/api/anime/echo/webhook',
 
-  // Quality Assessment
-  QUALITY_ASSESS: '/api/anime/quality/assess',
-  QUALITY_STANDARDS: '/api/anime/quality/standards',
-
-  // Git Operations
+  // === Git Operations ===
   GIT_STATUS: '/api/anime/git/status',
   GIT_COMMIT: '/api/anime/git/commit',
   GIT_BRANCH: '/api/anime/git/branch'
@@ -84,7 +105,8 @@ export const API = {
 
 // WebSocket Configuration
 export const WS = {
-  URL: API_HOSTS.websocket,
+  BASE: API_HOSTS.websocket,
+  JOB: (jobId) => `${API_HOSTS.websocket}/jobs/${jobId}`,
   RECONNECT_INTERVAL: 5000,
   MAX_RECONNECT_ATTEMPTS: 10
 }
@@ -103,7 +125,11 @@ export const COMFYUI = {
   QUEUE: `${API_HOSTS.comfyui}/queue`
 }
 
-// Helper function to build full URL
+/**
+ * Build full URL from endpoint
+ * In development, uses Vite proxy (relative paths)
+ * In production, uses absolute URLs
+ */
 export function buildUrl(endpoint) {
   if (endpoint.startsWith('http://') || endpoint.startsWith('https://')) {
     return endpoint
@@ -115,7 +141,8 @@ export function buildUrl(endpoint) {
 export const ENV = {
   isDevelopment,
   isProduction,
-  hosts: API_HOSTS
+  hosts: API_HOSTS,
+  version: '2.0.0'
 }
 
 export default API
