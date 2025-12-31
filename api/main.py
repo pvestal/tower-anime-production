@@ -4419,6 +4419,224 @@ async def get_quality_system_status():
         return {"quality_control": "error", "error": str(e)}
 
 
+# === Episode Production Endpoints ===
+
+class SceneInput(BaseModel):
+    name: str
+    description: str = ""
+    prompts: List[str]
+    segment_duration: int = 30
+
+
+class EpisodeCreateRequest(BaseModel):
+    project_id: str = "default"
+    title: str
+    scenes: List[SceneInput]
+
+
+class QuickEpisodeRequest(BaseModel):
+    project_id: str = "default"
+    title: str = "Quick Episode"
+    prompts: List[str]
+    segment_duration: int = 30
+
+
+class EpisodeResponse(BaseModel):
+    episode_id: str
+    status: str
+    message: str
+    total_scenes: int
+    total_segments: int
+    estimated_duration_seconds: int
+
+
+# In-memory episode tracking
+_episode_jobs = {}
+
+
+@app.post("/api/anime/episodes", response_model=EpisodeResponse)
+async def create_episode(request: EpisodeCreateRequest):
+    """Create and produce a full episode with multiple scenes."""
+    import asyncio
+
+    episode_id = str(uuid.uuid4())
+    total_segments = sum(len(scene.prompts) for scene in request.scenes)
+    estimated_duration = sum(
+        len(scene.prompts) * scene.segment_duration for scene in request.scenes
+    )
+
+    _episode_jobs[episode_id] = {
+        "status": "started",
+        "title": request.title,
+        "scenes": [s.dict() for s in request.scenes],
+        "project_id": request.project_id
+    }
+
+    # Start background production
+    asyncio.create_task(_produce_episode(episode_id, request))
+
+    return EpisodeResponse(
+        episode_id=episode_id,
+        status="started",
+        message=f"Episode '{request.title}' production started",
+        total_scenes=len(request.scenes),
+        total_segments=total_segments,
+        estimated_duration_seconds=estimated_duration
+    )
+
+
+@app.post("/api/anime/episodes/quick", response_model=EpisodeResponse)
+async def create_quick_episode(request: QuickEpisodeRequest):
+    """Quick episode from a list of prompts - each becomes a segment."""
+    import asyncio
+
+    episode_id = str(uuid.uuid4())
+    total_segments = len(request.prompts)
+    estimated_duration = total_segments * request.segment_duration
+
+    _episode_jobs[episode_id] = {
+        "status": "started",
+        "title": request.title,
+        "prompts": request.prompts,
+        "segment_duration": request.segment_duration,
+        "project_id": request.project_id
+    }
+
+    asyncio.create_task(_produce_quick_episode(episode_id, request))
+
+    return EpisodeResponse(
+        episode_id=episode_id,
+        status="started",
+        message=f"Quick episode with {total_segments} segments started",
+        total_scenes=total_segments,
+        total_segments=total_segments,
+        estimated_duration_seconds=estimated_duration
+    )
+
+
+@app.get("/api/anime/episodes/{episode_id}/status")
+async def get_episode_status(episode_id: str):
+    """Get episode production status."""
+    if episode_id in _episode_jobs:
+        job = _episode_jobs[episode_id]
+        return {
+            "episode_id": episode_id,
+            "status": job.get("status", "unknown"),
+            "title": job.get("title"),
+            "output_path": job.get("output_path"),
+            "error": job.get("error"),
+            "progress": job.get("progress", 0)
+        }
+    raise HTTPException(status_code=404, detail="Episode not found")
+
+
+async def _produce_episode(episode_id: str, request: EpisodeCreateRequest):
+    """Background: produce full episode."""
+    try:
+        _episode_jobs[episode_id]["status"] = "processing"
+        segment_outputs = []
+
+        for scene_idx, scene in enumerate(request.scenes):
+            for prompt_idx, prompt in enumerate(scene.prompts):
+                _episode_jobs[episode_id]["progress"] = (
+                    (scene_idx * len(scene.prompts) + prompt_idx) /
+                    sum(len(s.prompts) for s in request.scenes) * 100
+                )
+
+                # Generate segment via existing endpoint
+                try:
+                    result = await generate_with_fixed_workflow(
+                        prompt=prompt,
+                        character=None,
+                        style="anime",
+                        duration=scene.segment_duration
+                    )
+                    if result.get("output_path"):
+                        segment_outputs.append(result["output_path"])
+                except Exception as e:
+                    logger.error(f"Segment generation failed: {e}")
+
+        # Stitch segments together
+        if segment_outputs:
+            final_output = await _stitch_video_segments(segment_outputs, episode_id)
+            _episode_jobs[episode_id]["status"] = "completed"
+            _episode_jobs[episode_id]["output_path"] = final_output
+        else:
+            _episode_jobs[episode_id]["status"] = "failed"
+            _episode_jobs[episode_id]["error"] = "No segments generated"
+
+    except Exception as e:
+        _episode_jobs[episode_id]["status"] = "failed"
+        _episode_jobs[episode_id]["error"] = str(e)
+        logger.error(f"Episode {episode_id} failed: {e}")
+
+
+async def _produce_quick_episode(episode_id: str, request: QuickEpisodeRequest):
+    """Background: produce quick episode from prompts."""
+    try:
+        _episode_jobs[episode_id]["status"] = "processing"
+        segment_outputs = []
+
+        for idx, prompt in enumerate(request.prompts):
+            _episode_jobs[episode_id]["progress"] = (idx / len(request.prompts)) * 100
+
+            try:
+                result = await generate_with_fixed_workflow(
+                    prompt=prompt,
+                    character=None,
+                    style="anime",
+                    duration=request.segment_duration
+                )
+                if result.get("output_path"):
+                    segment_outputs.append(result["output_path"])
+            except Exception as e:
+                logger.error(f"Segment {idx} failed: {e}")
+
+        if segment_outputs:
+            final_output = await _stitch_video_segments(segment_outputs, episode_id)
+            _episode_jobs[episode_id]["status"] = "completed"
+            _episode_jobs[episode_id]["output_path"] = final_output
+        else:
+            _episode_jobs[episode_id]["status"] = "failed"
+            _episode_jobs[episode_id]["error"] = "No segments generated"
+
+    except Exception as e:
+        _episode_jobs[episode_id]["status"] = "failed"
+        _episode_jobs[episode_id]["error"] = str(e)
+        logger.error(f"Quick episode {episode_id} failed: {e}")
+
+
+async def _stitch_video_segments(segment_paths: List[str], episode_id: str) -> str:
+    """Stitch video segments using ffmpeg."""
+    import subprocess
+    import tempfile
+
+    output_dir = "/mnt/1TB-storage/anime-output/episodes"
+    os.makedirs(output_dir, exist_ok=True)
+    output_path = f"{output_dir}/episode_{episode_id}.mp4"
+
+    # Create concat file
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+        for path in segment_paths:
+            f.write(f"file '{path}'\n")
+        concat_file = f.name
+
+    try:
+        cmd = [
+            "ffmpeg", "-y",
+            "-f", "concat",
+            "-safe", "0",
+            "-i", concat_file,
+            "-c:v", "libx264",
+            "-preset", "fast",
+            output_path
+        ]
+        subprocess.run(cmd, check=True, capture_output=True)
+        return output_path
+    finally:
+        os.unlink(concat_file)
+
+
 if __name__ == "__main__":
     import uvicorn
 
