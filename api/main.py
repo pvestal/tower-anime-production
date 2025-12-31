@@ -217,6 +217,8 @@ class AnimeGenerationRequest(BaseModel):
     style: str = "anime"
     type: str = "professional"  # professional, personal, creative
     generation_type: str = "video"  # image or video - explicit user selection
+    project_id: Optional[int] = None  # Link to project for profile selection
+    profile_name: Optional[str] = None  # Direct profile selection
 
 
 class PersonalCreativeRequest(BaseModel):
@@ -351,8 +353,10 @@ async def submit_comfyui_workflow(workflow_data: dict):
                     result = await response.json()
                     return result.get("prompt_id")
                 else:
+                    error_text = await response.text()
+                    logger.error(f"ComfyUI error {response.status}: {error_text}")
                     raise HTTPException(
-                        status_code=500, detail=f"ComfyUI error: {response.status}"
+                        status_code=500, detail=f"ComfyUI error: {response.status} - {error_text[:200]}"
                     )
     except Exception as e:
         raise HTTPException(
@@ -477,14 +481,90 @@ async def generate_with_fixed_workflow(
     style: str = "anime",
     duration: int = 5,
     generation_type: str = "video",
+    project_id: int = None,
+    profile_name: str = None,
+    db: Session = None,
 ):
     """Generate anime using FIXED ComfyUI workflow - handles both image and video generation"""
     try:
+        # Get generation profile from database using SQLAlchemy
+        profile = None
+        # Use passed db session or create new one
+        should_close_db = False
+        if db is None:
+            db = SessionLocal()
+            should_close_db = True
+
+        try:
+            if project_id:
+                # Get profile from project
+                result = db.execute(text("""
+                    SELECT gp.*, c.model_path as checkpoint_path, l.model_path as lora_path
+                    FROM projects p
+                    LEFT JOIN generation_profiles gp ON p.default_style = gp.name
+                    LEFT JOIN ai_models c ON gp.checkpoint_id = c.id
+                    LEFT JOIN ai_models l ON gp.lora_id = l.id
+                    WHERE p.id = :project_id
+                """), {"project_id": project_id})
+                profile = result.first()
+            elif profile_name:
+                # Get profile directly by name
+                result = db.execute(text("""
+                    SELECT gp.*, c.model_path as checkpoint_path, l.model_path as lora_path
+                    FROM generation_profiles gp
+                    LEFT JOIN ai_models c ON gp.checkpoint_id = c.id
+                    LEFT JOIN ai_models l ON gp.lora_id = l.id
+                    WHERE gp.name = :profile_name
+                """), {"profile_name": profile_name})
+                profile = result.first()
+            else:
+                # Fallback to default profile
+                result = db.execute(text("""
+                    SELECT gp.*, c.model_path as checkpoint_path, l.model_path as lora_path
+                    FROM generation_profiles gp
+                    LEFT JOIN ai_models c ON gp.checkpoint_id = c.id
+                    LEFT JOIN ai_models l ON gp.lora_id = l.id
+                    WHERE gp.is_default = true
+                    LIMIT 1
+                """))
+                profile = result.first()
+        finally:
+            if should_close_db:
+                db.close()
+
+        # Extract model settings from profile (convert Row to dict)
+        if profile:
+            # Convert Row object to dictionary
+            profile_dict = dict(profile._mapping) if hasattr(profile, '_mapping') else dict(zip(profile.keys(), profile))
+            checkpoint = profile_dict.get('checkpoint_path') or "AOM3A1B.safetensors"  # Fallback only if no profile
+            lora = profile_dict.get('lora_path') if profile_dict.get('lora_path') else None
+            lora_strength = profile_dict.get('lora_strength') or 0.8
+            steps = profile_dict.get('steps') or 20
+            cfg = profile_dict.get('cfg_scale') or 7.0
+            width = profile_dict.get('width') or 512
+            height = profile_dict.get('height') or 768
+            negative_prompt = profile_dict.get('negative_prompt') or "worst quality, low quality, blurry"
+            style_prompt = profile_dict.get('style_prompt') or ""
+        else:
+            # Ultimate fallback if no profile found
+            logger.warning("No generation profile found, using hardcoded defaults")
+            checkpoint = "AOM3A1B.safetensors"
+            lora = None
+            lora_strength = 0.8
+            steps = 20
+            cfg = 7.0
+            width = 512
+            height = 768
+            negative_prompt = "worst quality, low quality, blurry"
+            style_prompt = ""
+
+        logger.info(f"Using generation profile: checkpoint={checkpoint}, lora={lora}, steps={steps}, cfg={cfg}")
+
         # Enhanced character-specific prompt (adapted for generation type)
         if character and character.lower() == "kai":
             base_character_prompt = f"1boy, Kai Nakamura, cyberpunk male character, spiky black hair, tech augmented eyes, black jacket, neon city background, {prompt}"
         else:
-            base_character_prompt = f"masterpiece, best quality, {prompt}"
+            base_character_prompt = f"masterpiece, best quality, {style_prompt}, {prompt}"
 
         # Adjust prompt based on generation type
         if generation_type == "image":
@@ -522,7 +602,7 @@ async def generate_with_fixed_workflow(
                 },
                 "2": {
                     "inputs": {
-                        "text": "nsfw, nude, worst quality, low quality, bad anatomy",
+                        "text": negative_prompt,
                         "clip": ["4", 1],
                     },
                     "class_type": "CLIPTextEncode",
@@ -531,12 +611,12 @@ async def generate_with_fixed_workflow(
                 "3": {
                     "inputs": {
                         "seed": 42,
-                        "steps": 20,
-                        "cfg": 7.0,
-                        "sampler_name": "euler_a",
+                        "steps": steps,
+                        "cfg": cfg,
+                        "sampler_name": "euler_ancestral",
                         "scheduler": "normal",
                         "denoise": 1.0,
-                        "model": ["4", 0],
+                        "model": ["4", 0] if not lora else ["10", 0],
                         "positive": ["1", 0],
                         "negative": ["2", 0],
                         "latent_image": ["5", 0],
@@ -545,12 +625,12 @@ async def generate_with_fixed_workflow(
                     "_meta": {"title": "KSampler"},
                 },
                 "4": {
-                    "inputs": {"ckpt_name": "anythingElseV4_v45.safetensors"},
+                    "inputs": {"ckpt_name": checkpoint},
                     "class_type": "CheckpointLoaderSimple",
                     "_meta": {"title": "Load Checkpoint"},
                 },
                 "5": {
-                    "inputs": {"width": 1024, "height": 1024, "batch_size": 1},
+                    "inputs": {"width": width, "height": height, "batch_size": 1},
                     "class_type": "EmptyLatentImage",
                     "_meta": {"title": "Empty Latent Image"},
                 },
@@ -568,6 +648,23 @@ async def generate_with_fixed_workflow(
                     "_meta": {"title": "Save Image"},
                 },
             }
+
+            # Add LoRA loading if specified
+            if lora:
+                workflow["10"] = {
+                    "inputs": {
+                        "lora_name": lora,
+                        "strength_model": lora_strength,
+                        "strength_clip": lora_strength,
+                        "model": ["4", 0],
+                        "clip": ["4", 1],
+                    },
+                    "class_type": "LoraLoader",
+                    "_meta": {"title": "Load LoRA"},
+                }
+                # Update positive/negative encoders to use LoRA clip
+                workflow["1"]["inputs"]["clip"] = ["10", 1]
+                workflow["2"]["inputs"]["clip"] = ["10", 1]
         elif frames > 24:
             # Use ADVANCED workflow with context windows for longer videos
             workflow = {
@@ -578,7 +675,7 @@ async def generate_with_fixed_workflow(
                 },
                 "2": {
                     "inputs": {
-                        "text": "worst quality, low quality, blurry, ugly, distorted, static, still image, text, watermark, no motion, slideshow",
+                        "text": negative_prompt + ", static, still image, text, watermark, no motion, slideshow",
                         "clip": ["4", 1],
                     },
                     "class_type": "CLIPTextEncode",
@@ -587,8 +684,8 @@ async def generate_with_fixed_workflow(
                 "3": {
                     "inputs": {
                         "seed": timestamp,
-                        "steps": 25,
-                        "cfg": 8.0,
+                        "steps": steps,
+                        "cfg": cfg,
                         "sampler_name": "dpmpp_2m",
                         "scheduler": "karras",
                         "denoise": 1.0,
@@ -601,7 +698,7 @@ async def generate_with_fixed_workflow(
                     "_meta": {"title": "KSampler"},
                 },
                 "4": {
-                    "inputs": {"ckpt_name": "AOM3A1B.safetensors"},
+                    "inputs": {"ckpt_name": checkpoint},
                     "class_type": "CheckpointLoaderSimple",
                     "_meta": {"title": "Load Checkpoint"},
                 },
@@ -682,7 +779,7 @@ async def generate_with_fixed_workflow(
                 },
                 "2": {
                     "inputs": {
-                        "text": "worst quality, low quality, blurry, ugly, distorted, static, still image, no motion, slideshow",
+                        "text": negative_prompt + ", static, still image, no motion, slideshow",
                         "clip": ["4", 1],
                     },
                     "class_type": "CLIPTextEncode",
@@ -691,8 +788,8 @@ async def generate_with_fixed_workflow(
                 "3": {
                     "inputs": {
                         "seed": timestamp,
-                        "steps": 25,
-                        "cfg": 8.0,
+                        "steps": steps,
+                        "cfg": cfg,
                         "sampler_name": "dpmpp_2m",
                         "scheduler": "karras",
                         "denoise": 1.0,
@@ -705,7 +802,7 @@ async def generate_with_fixed_workflow(
                     "_meta": {"title": "KSampler"},
                 },
                 "4": {
-                    "inputs": {"ckpt_name": "AOM3A1B.safetensors"},
+                    "inputs": {"ckpt_name": checkpoint},
                     "class_type": "CheckpointLoaderSimple",
                     "_meta": {"title": "Load Checkpoint"},
                 },
@@ -790,6 +887,9 @@ async def generate_with_quality_control(
     style: str = "anime",
     duration: int = 5,
     generation_type: str = "video",
+    project_id: int = None,
+    profile_name: str = None,
+    db: Session = None,
 ):
     """Generate anime content with integrated quality control and automatic rejection"""
     try:
@@ -802,6 +902,9 @@ async def generate_with_quality_control(
             style=style,
             duration=duration,
             generation_type=generation_type,
+            project_id=project_id,
+            profile_name=profile_name,
+            db=db,
         )
 
         if generation_result.get("status") != "success":
@@ -1383,6 +1486,9 @@ async def generate_anime_content(
                 style=request.style,
                 duration=None,  # Images don't need duration
                 generation_type="image",
+                project_id=request.project_id,
+                profile_name=request.profile_name,
+                db=db,
             )
         elif request.generation_type == "video":
             # For videos, use quality-controlled generation
@@ -1392,6 +1498,9 @@ async def generate_anime_content(
                 style=request.style,
                 duration=request.duration,
                 generation_type="video",
+                project_id=request.project_id,
+                profile_name=request.profile_name,
+                db=db,
             )
         else:
             raise HTTPException(
