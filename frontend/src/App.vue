@@ -161,7 +161,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useToast } from 'primevue/usetoast'
 
 const toast = useToast()
-const API_BASE = 'http://***REMOVED***:8323/api/anime'
+const API_BASE = 'http://***REMOVED***:8328/api/anime'
 
 // State
 const projects = ref([])
@@ -186,7 +186,7 @@ const filteredProjects = computed(() => {
 // Methods
 async function loadProjects() {
   try {
-    const response = await fetch(`${API_BASE}/episodes`)
+    const response = await fetch(`${API_BASE}/projects`)
     projects.value = await response.json()
   } catch (error) {
     toast.add({ severity: 'error', summary: 'Error', detail: 'Failed to load projects', life: 3000 })
@@ -214,7 +214,7 @@ function onSceneSelect(event) {
 
 async function createProject() {
   try {
-    const response = await fetch(`${API_BASE}/episodes`, {
+    const response = await fetch(`${API_BASE}/projects`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(newProject.value)
@@ -278,9 +278,22 @@ async function saveScene() {
   }
 }
 
-function generateScene() {
+async function generateScene() {
   if (!selectedScene.value) return
-  toast.add({ severity: 'info', summary: 'Generation Started', detail: 'Scene generation queued (ComfyUI integration pending)', life: 5000 })
+  try {
+    const response = await fetch(`${API_BASE}/projects/${selectedProject.value?.id || 1}/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        prompt: selectedScene.value.description || 'anime scene',
+        generation_type: 'image'
+      })
+    })
+    const result = await response.json()
+    toast.add({ severity: 'success', summary: 'Generation Started', detail: `Job ID: ${result.job_id}`, life: 5000 })
+  } catch (error) {
+    toast.add({ severity: 'error', summary: 'Error', detail: 'Generation failed', life: 3000 })
+  }
 }
 
 function generateSceneById(sceneId) {

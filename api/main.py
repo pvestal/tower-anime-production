@@ -21,7 +21,13 @@ import asyncio
 import aiohttp
 import sys
 import logging
+import random
+import time
 from datetime import datetime, timedelta
+
+# Fix Python path for Echo Brain imports
+import sys
+sys.path.insert(0, '/opt/tower-anime-production')
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -153,27 +159,155 @@ async def submit_comfyui_workflow(workflow_data: dict):
         raise HTTPException(status_code=500, detail=f"ComfyUI connection failed: {str(e)}")
 
 async def generate_with_echo_service(prompt: str, character: str = "Kai Nakamura", style: str = "anime"):
-    """Generate anime using Echo Brain service"""
+    """Generate anime using direct ComfyUI with SSOT profiles"""
     try:
-        async with aiohttp.ClientSession() as session:
-            request_data = {
-                "prompt": prompt,
-                "character": character,
-                "scene_type": "cyberpunk_action",
-                "duration": 3,
-                "style": style,
-                "echo_intelligence": "professional"
+        # Get SSOT profile from database
+        from sqlalchemy import text
+        db = next(get_db())
+
+        # Default to tokyo_debt_realism for realistic Mei
+        profile_name = "tokyo_debt_realism" if "mei" in prompt.lower() else "cyberpunk_arcane"
+
+        profile_query = text("""
+            SELECT
+                p.steps, p.cfg_scale, p.sampler, p.scheduler,
+                p.width, p.height, p.negative_prompt, p.style_prompt,
+                p.lora_strength,
+                mc.model_path as checkpoint_path,
+                ml.model_path as lora_path
+            FROM generation_profiles p
+            LEFT JOIN ai_models mc ON p.checkpoint_id = mc.id
+            LEFT JOIN ai_models ml ON p.lora_id = ml.id
+            WHERE p.name = :profile_name
+        """)
+
+        profile = db.execute(profile_query, {"profile_name": profile_name}).fetchone()
+
+        if profile:
+            checkpoint = profile.checkpoint_path or "realisticVision_v51.safetensors"
+            lora_path = profile.lora_path  # Could be None
+            lora_strength = profile.lora_strength or 1.0
+            steps = profile.steps or 25
+            cfg = profile.cfg_scale or 7
+            sampler = profile.sampler or "dpmpp_2m"
+            scheduler = profile.scheduler or "karras"
+            width = profile.width or 512
+            height = profile.height or 768
+            negative = profile.negative_prompt or "worst quality, low quality, blurry"
+            style_prompt = profile.style_prompt or ""
+            full_prompt = f"{prompt}, {style_prompt}" if style_prompt else prompt
+        else:
+            # Fallback defaults
+            checkpoint = "realisticVision_v51.safetensors"
+            lora_path = None
+            lora_strength = 1.0
+            steps = 25
+            cfg = 7
+            sampler = "dpmpp_2m"
+            scheduler = "karras"
+            width = 512
+            height = 768
+            negative = "worst quality, low quality, blurry"
+            full_prompt = prompt
+
+        # Build ComfyUI workflow with SSOT values
+        # Determine if we need LoRA - wire through it if present
+        if lora_path:
+            # WITH LoRA - wire through node 10
+            model_source = ["10", 0]  # LoRA output model
+            clip_source = ["10", 1]   # LoRA output clip
+        else:
+            # NO LoRA - wire direct from checkpoint
+            model_source = ["4", 0]   # Checkpoint model
+            clip_source = ["4", 1]    # Checkpoint clip
+
+        workflow = {
+            "3": {
+                "inputs": {
+                    "seed": random.randint(1, 1000000),
+                    "steps": steps,
+                    "cfg": cfg,
+                    "sampler_name": sampler,
+                    "scheduler": scheduler,
+                    "denoise": 1,
+                    "model": model_source,
+                    "positive": ["6", 0],
+                    "negative": ["7", 0],
+                    "latent_image": ["5", 0]
+                },
+                "class_type": "KSampler"
+            },
+            "4": {
+                "inputs": {
+                    "ckpt_name": checkpoint
+                },
+                "class_type": "CheckpointLoaderSimple"
+            },
+            "5": {
+                "inputs": {
+                    "width": width,
+                    "height": height,
+                    "batch_size": 1
+                },
+                "class_type": "EmptyLatentImage"
+            },
+            "6": {
+                "inputs": {
+                    "text": full_prompt,
+                    "clip": clip_source
+                },
+                "class_type": "CLIPTextEncode"
+            },
+            "7": {
+                "inputs": {
+                    "text": negative,
+                    "clip": clip_source
+                },
+                "class_type": "CLIPTextEncode"
+            },
+            "8": {
+                "inputs": {
+                    "samples": ["3", 0],
+                    "vae": ["4", 2]
+                },
+                "class_type": "VAEDecode"
+            },
+            "9": {
+                "inputs": {
+                    "filename_prefix": f"anime_{int(time.time())}",
+                    "images": ["8", 0]
+                },
+                "class_type": "SaveImage"
+            }
+        }
+
+        # Add LoRA node if we have a LoRA
+        if lora_path:
+            workflow["10"] = {
+                "inputs": {
+                    "lora_name": lora_path,
+                    "strength_model": lora_strength,
+                    "strength_clip": lora_strength,
+                    "model": ["4", 0],
+                    "clip": ["4", 1]
+                },
+                "class_type": "LoraLoader"
             }
 
-            async with session.post(f"{ECHO_SERVICE_URL}/api/generate-with-echo", json=request_data) as response:
+        async with aiohttp.ClientSession() as session:
+            # Submit to ComfyUI
+            async with session.post(f"{COMFYUI_URL}/prompt", json={"prompt": workflow}) as response:
                 if response.status == 200:
                     result = await response.json()
-                    return result
+                    return {
+                        "prompt_id": result.get("prompt_id"),
+                        "output_path": f"/mnt/1TB-storage/ComfyUI/output/anime_{int(time.time())}_00001_.png"
+                    }
                 else:
                     error_text = await response.text()
-                    raise HTTPException(status_code=500, detail=f"Echo service error: {response.status} - {error_text}")
+                    raise HTTPException(status_code=500, detail=f"ComfyUI error: {response.status}")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Echo service connection failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"ComfyUI connection failed: {str(e)}")
 
 async def get_real_comfyui_progress(request_id: str) -> float:
     """Get REAL progress from ComfyUI queue system"""
@@ -257,6 +391,21 @@ async def delete_project(project_id: int, db: Session = Depends(get_db)):
     db.delete(project)
     db.commit()
     return {"message": "Project deleted successfully"}
+
+@app.put("/api/anime/projects/{project_id}")
+async def update_project(project_id: int, update_data: dict, db: Session = Depends(get_db)):
+    """Update anime project"""
+    project = db.query(AnimeProject).filter(AnimeProject.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    for key, value in update_data.items():
+        if hasattr(project, key):
+            setattr(project, key, value)
+
+    db.commit()
+    db.refresh(project)
+    return project
 
 @app.post("/api/anime/generate/project/{project_id}")
 async def generate_video_for_project(project_id: int, request: AnimeGenerationRequest, db: Session = Depends(get_db)):
@@ -659,6 +808,42 @@ async def get_job_status(job_id: int, db: Session = Depends(get_db)):
         "created_at": job.created_at
     }
 
+@app.get("/api/anime/jobs/{job_id}/status")
+async def get_job_status_anime(job_id: int, db: Session = Depends(get_db)):
+    """Get production job status (anime API path)"""
+    job = db.query(ProductionJob).filter(ProductionJob.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    return {
+        "id": job.id,
+        "status": job.status,
+        "progress": getattr(job, 'progress', 0),
+        "output_path": job.output_path
+    }
+
+@app.get("/api/anime/images")
+async def get_gallery_images():
+    """Get recent generated images"""
+    import glob
+    output_dir = "/mnt/1TB-storage/ComfyUI/output"
+    image_files = glob.glob(f"{output_dir}/*.png")
+
+    # Sort by modification time, newest first
+    image_files.sort(key=os.path.getmtime, reverse=True)
+
+    # Return last 20 images
+    images = []
+    for img_path in image_files[:20]:
+        images.append({
+            "id": os.path.basename(img_path),
+            "path": img_path,
+            "filename": os.path.basename(img_path),
+            "created_at": datetime.fromtimestamp(os.path.getmtime(img_path)).isoformat()
+        })
+
+    return images
+
 @app.get("/quality/assess/{job_id}")
 async def assess_quality(job_id: int, db: Session = Depends(get_db)):
     """Assess quality of generated content using REAL computer vision"""
@@ -845,9 +1030,17 @@ async def get_daily_budget():
         "autoApprovalThreshold": 5.00
     }
 
+# Import Echo Brain router
+try:
+    from echo_brain import echo_brain_router
+    app.include_router(echo_brain_router)
+    logger.info("Echo Brain Creative AI system integrated")
+except ImportError as e:
+    logger.warning(f"Echo Brain module not available: {e}")
+
 # Mount static files
 app.mount("/static", StaticFiles(directory="/opt/tower-anime-production/static"), name="static")
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8305)  # Tower Anime Production port
+    uvicorn.run(app, host="127.0.0.1", port=8328)  # Tower Anime Production port
