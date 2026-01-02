@@ -1,0 +1,110 @@
+{
+  "3": {
+    "inputs": {
+      "ckpt_name": "realisticVision_v51.safetensors"
+    },
+    "class_type": "CheckpointLoaderSimple"
+  },
+  "4": {
+    "inputs": {
+      "width": 512,
+      "height": 768,
+      "batch_size": 16
+    },
+    "class_type": "EmptyLatentImage"
+  },
+  "5": {
+    "inputs": {
+      "text": "mei hatsune walking, masterpiece, best quality",
+      "clip": [
+        "3",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode"
+  },
+  "6": {
+    "inputs": {
+      "text": "worst quality, low quality, blurry",
+      "clip": [
+        "3",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode"
+  },
+  "10": {
+    "inputs": {
+      "model_name": "mm_sd_v15_v2.ckpt"
+    },
+    "class_type": "ADE_LoadAnimateDiffModel"
+  },
+  "11": {
+    "inputs": {
+      "model": [
+        "3",
+        0
+      ],
+      "motion_model": [
+        "10",
+        0
+      ]
+    },
+    "class_type": "ADE_ApplyAnimateDiffModelSimple"
+  },
+  "12": {
+    "inputs": {
+      "seed": 42,
+      "steps": 20,
+      "cfg": 7,
+      "sampler_name": "dpmpp_2m",
+      "scheduler": "karras",
+      "denoise": 1,
+      "model": [
+        "11",
+        0
+      ],
+      "positive": [
+        "5",
+        0
+      ],
+      "negative": [
+        "6",
+        0
+      ],
+      "latent_image": [
+        "4",
+        0
+      ]
+    },
+    "class_type": "KSampler"
+  },
+  "13": {
+    "inputs": {
+      "samples": [
+        "12",
+        0
+      ],
+      "vae": [
+        "3",
+        2
+      ]
+    },
+    "class_type": "VAEDecode"
+  },
+  "14": {
+    "inputs": {
+      "frame_rate": 8,
+      "loop_count": 0,
+      "filename_prefix": "anime_simple_test",
+      "format": "video/h264-mp4",
+      "pingpong": false,
+      "save_output": true,
+      "images": [
+        "13",
+        0
+      ]
+    },
+    "class_type": "VHS_VideoCombine"
+  }
+}

@@ -2,7 +2,10 @@
   "1": {
     "inputs": {
       "text": "masterpiece, best quality, 1girl, anime style, beautiful detailed eyes, flowing hair, magical girl transformation, sparkles, dynamic movement, colorful background, high resolution, detailed animation",
-      "clip": ["13", 1]
+      "clip": [
+        "4",
+        1
+      ]
     },
     "class_type": "CLIPTextEncode",
     "_meta": {
@@ -12,7 +15,10 @@
   "2": {
     "inputs": {
       "text": "worst quality, low quality, blurry, ugly, distorted, static, still image, text, watermark",
-      "clip": ["13", 1]
+      "clip": [
+        "4",
+        1
+      ]
     },
     "class_type": "CLIPTextEncode",
     "_meta": {
@@ -27,10 +33,22 @@
       "sampler_name": "euler",
       "scheduler": "normal",
       "denoise": 1.0,
-      "model": ["12", 0],
-      "positive": ["1", 0],
-      "negative": ["2", 0],
-      "latent_image": ["5", 0]
+      "model": [
+        "12",
+        0
+      ],
+      "positive": [
+        "1",
+        0
+      ],
+      "negative": [
+        "2",
+        0
+      ],
+      "latent_image": [
+        "5",
+        0
+      ]
     },
     "class_type": "KSampler",
     "_meta": {
@@ -39,7 +57,7 @@
   },
   "4": {
     "inputs": {
-      "ckpt_name": "AOM3A1B.safetensors"
+      "ckpt_name": "realisticVision_v51.safetensors"
     },
     "class_type": "CheckpointLoaderSimple",
     "_meta": {
@@ -50,62 +68,38 @@
     "inputs": {
       "width": 512,
       "height": 512,
-      "batch_size": 120
+      "batch_size": 24
     },
     "class_type": "EmptyLatentImage",
     "_meta": {
-      "title": "Empty Latent Image (120 frames)"
+      "title": "Empty Latent Image (24 frames - 1 second)"
     }
   },
   "6": {
     "inputs": {
-      "samples": ["3", 0],
-      "vae": ["4", 2]
+      "samples": [
+        "3",
+        0
+      ],
+      "vae": [
+        "4",
+        2
+      ]
     },
     "class_type": "VAEDecode",
     "_meta": {
       "title": "VAE Decode"
     }
   },
-  "7": {
-    "inputs": {
-      "images": ["6", 0],
-      "frame_rate": 24,
-      "loop_count": 0,
-      "filename_prefix": "animatediff_5sec",
-      "format": "video/h264-mp4",
-      "pix_fmt": "yuv420p",
-      "crf": 20,
-      "save_metadata": true,
-      "pingpong": false,
-      "save_output": true
-    },
-    "class_type": "VHS_VideoCombine",
-    "_meta": {
-      "title": "Video Combine - 5 Second Video"
-    }
-  },
-  "8": {
-    "inputs": {
-      "ckpt_name": "rife47.pth",
-      "frames": ["6", 0],
-      "clear_cache_after_n_frames": 10,
-      "multiplier": 6,
-      "fast_mode": false,
-      "ensemble": false,
-      "scale_factor": 1.0
-    },
-    "class_type": "RIFE VFI",
-    "_meta": {
-      "title": "RIFE VFI - 6x Interpolation"
-    }
-  },
   "9": {
     "inputs": {
-      "images": ["8", 0],
-      "frame_rate": 24,
+      "images": [
+        "6",
+        0
+      ],
+      "frame_rate": 8,
       "loop_count": 0,
-      "filename_prefix": "anime_30sec_final",
+      "filename_prefix": "anime_fixed_video",
       "format": "video/h264-mp4",
       "pix_fmt": "yuv420p",
       "crf": 18,
@@ -120,7 +114,7 @@
   },
   "10": {
     "inputs": {
-      "model_name": "mm-Stabilized_high.pth"
+      "model_name": "mm_sd_v15_v2.ckpt"
     },
     "class_type": "ADE_LoadAnimateDiffModel",
     "_meta": {
@@ -129,7 +123,10 @@
   },
   "11": {
     "inputs": {
-      "motion_model": ["10", 0]
+      "motion_model": [
+        "10",
+        0
+      ]
     },
     "class_type": "ADE_ApplyAnimateDiffModelSimple",
     "_meta": {
@@ -138,26 +135,19 @@
   },
   "12": {
     "inputs": {
-      "model": ["13", 0],
+      "model": [
+        "4",
+        0
+      ],
       "beta_schedule": "autoselect",
-      "m_models": ["11", 0]
+      "m_models": [
+        "11",
+        0
+      ]
     },
     "class_type": "ADE_UseEvolvedSampling",
     "_meta": {
       "title": "Use Evolved Sampling"
-    }
-  },
-  "13": {
-    "inputs": {
-      "model": ["4", 0],
-      "clip": ["4", 1],
-      "lora_name": "mei_working_v1.safetensors",
-      "strength_model": 1.0,
-      "strength_clip": 1.0
-    },
-    "class_type": "LoraLoader",
-    "_meta": {
-      "title": "LoRA Loader - Mei Character"
     }
   }
 }
