@@ -2,7 +2,7 @@
   "1": {
     "inputs": {
       "text": "masterpiece, best quality, 1girl, anime style, beautiful detailed eyes, flowing hair, magical girl transformation, sparkles, dynamic movement, colorful background, high resolution, detailed animation",
-      "clip": ["4", 1]
+      "clip": ["13", 1]
     },
     "class_type": "CLIPTextEncode",
     "_meta": {
@@ -12,7 +12,7 @@
   "2": {
     "inputs": {
       "text": "worst quality, low quality, blurry, ugly, distorted, static, still image, text, watermark",
-      "clip": ["4", 1]
+      "clip": ["13", 1]
     },
     "class_type": "CLIPTextEncode",
     "_meta": {
@@ -39,7 +39,7 @@
   },
   "4": {
     "inputs": {
-      "ckpt_name": "AOM3A1B.safetensors"
+      "ckpt_name": "realisticVision_v51.safetensors"
     },
     "class_type": "CheckpointLoaderSimple",
     "_meta": {
@@ -120,7 +120,7 @@
   },
   "10": {
     "inputs": {
-      "model_name": "mm-Stabilized_high.pth"
+      "model_name": "mm_sd_v15_v2.ckpt"
     },
     "class_type": "ADE_LoadAnimateDiffModel",
     "_meta": {
@@ -138,13 +138,26 @@
   },
   "12": {
     "inputs": {
-      "model": ["4", 0],
+      "model": ["13", 0],
       "beta_schedule": "autoselect",
       "m_models": ["11", 0]
     },
     "class_type": "ADE_UseEvolvedSampling",
     "_meta": {
       "title": "Use Evolved Sampling"
+    }
+  },
+  "13": {
+    "inputs": {
+      "model": ["4", 0],
+      "clip": ["4", 1],
+      "lora_name": "mei_working_v1.safetensors",
+      "strength_model": 1.0,
+      "strength_clip": 1.0
+    },
+    "class_type": "LoraLoader",
+    "_meta": {
+      "title": "LoRA Loader - Mei Character"
     }
   }
 }

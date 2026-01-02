@@ -1,0 +1,150 @@
+{
+  "1": {
+    "inputs": {
+      "ckpt_name": "realisticVision_v51.safetensors"
+    },
+    "class_type": "CheckpointLoaderSimple",
+    "_meta": {
+      "title": "Load Checkpoint"
+    }
+  },
+  "2": {
+    "inputs": {
+      "width": 512,
+      "height": 768,
+      "batch_size": 16
+    },
+    "class_type": "EmptyLatentImage",
+    "_meta": {
+      "title": "Empty Latent"
+    }
+  },
+  "3": {
+    "inputs": {
+      "text": "character, masterpiece, best quality, consistent character",
+      "clip": [
+        "1",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Positive Prompt"
+    }
+  },
+  "4": {
+    "inputs": {
+      "text": "nsfw, nude, naked, exposed, worst quality, low quality, blurry, inconsistent, bad anatomy, deformed",
+      "clip": [
+        "1",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Negative Prompt"
+    }
+  },
+  "5": {
+    "inputs": {
+      "model_name": "mm_sd_v15_v2.ckpt"
+    },
+    "class_type": "ADE_LoadAnimateDiffModel",
+    "_meta": {
+      "title": "Load AnimateDiff"
+    }
+  },
+  "6": {
+    "inputs": {
+      "motion_model": [
+        "5",
+        0
+      ]
+    },
+    "class_type": "ADE_ApplyAnimateDiffModelSimple",
+    "_meta": {
+      "title": "Apply AnimateDiff"
+    }
+  },
+  "7": {
+    "inputs": {
+      "model": [
+        "1",
+        0
+      ],
+      "m_models": [
+        "6",
+        0
+      ],
+      "beta_schedule": "sqrt_linear (AnimateDiff)"
+    },
+    "class_type": "ADE_UseEvolvedSampling",
+    "_meta": {
+      "title": "Evolved Sampling (Converts M_MODELS to MODEL)"
+    }
+  },
+  "8": {
+    "inputs": {
+      "seed": 42,
+      "steps": 20,
+      "cfg": 7,
+      "sampler_name": "dpmpp_2m",
+      "scheduler": "karras",
+      "denoise": 1,
+      "model": [
+        "7",
+        0
+      ],
+      "positive": [
+        "3",
+        0
+      ],
+      "negative": [
+        "4",
+        0
+      ],
+      "latent_image": [
+        "2",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KSampler"
+    }
+  },
+  "9": {
+    "inputs": {
+      "samples": [
+        "8",
+        0
+      ],
+      "vae": [
+        "1",
+        2
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "10": {
+    "inputs": {
+      "frame_rate": 8,
+      "loop_count": 0,
+      "filename_prefix": "anime_fixed_animatediff",
+      "format": "video/h264-mp4",
+      "pingpong": false,
+      "save_output": true,
+      "images": [
+        "9",
+        0
+      ]
+    },
+    "class_type": "VHS_VideoCombine",
+    "_meta": {
+      "title": "Save as MP4"
+    }
+  }
+}
