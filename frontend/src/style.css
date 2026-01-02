@@ -1,13 +1,24 @@
+/* Import Claude Console Dark Theme */
+@import './claude-console-theme.css';
+
+/* Import PrimeVue overrides */
+@import './primevue-override.css';
+
+/* Tailwind imports after theme to allow overrides if needed */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
+/* Override Tailwind defaults with Claude Console theme */
+@layer base {
+  body {
+    @apply bg-[#1a1a1a] text-[#e0e0e0];
+  }
 
-body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  /* Ensure dark theme is applied globally */
+  #app {
+    min-height: 100vh;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+  }
 }

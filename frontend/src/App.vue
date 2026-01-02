@@ -1,6 +1,7 @@
 <template>
   <div class="dark-mode" style="height: 100vh; background: #0a0a0a; color: #e0e0e0;">
     <Toast />
+    <ProgressBar v-if="isGenerating" mode="indeterminate" style="height: 4px; position: fixed; top: 0; left: 0; right: 0; z-index: 9999" />
 
     <Toolbar style="background: #1a1a1a; border-bottom: 1px solid #333; padding: 0.5rem 1rem;">
       <template #start>
@@ -105,7 +106,16 @@
                   <Tag :value="selectedScene.status" :severity="getStatusSeverity(selectedScene.status)" />
                 </div>
                 <Button label="Save Scene" icon="pi pi-save" @click="saveScene" style="width: 100%; margin-bottom: 0.5rem;" />
-                <Button label="Generate Video" icon="pi pi-play" @click="generateScene" severity="success" style="width: 100%;" />
+                <Button label="Generate Video" icon="pi pi-play" @click="generateScene" severity="success" style="width: 100%;" :loading="isGenerating" />
+                <div v-if="isGenerating" style="margin-top: 1rem;">
+                  <ProgressBar :value="generationProgress" :showValue="true" />
+                  <p style="text-align: center; margin-top: 0.5rem; font-size: 0.9rem;">Generating... {{ generationProgress }}%</p>
+                </div>
+                <div v-if="previewUrl" style="margin-top: 1rem;">
+                  <h4>Preview:</h4>
+                  <video v-if="previewUrl.endsWith('.mp4')" :src="previewUrl" controls style="width: 100%; border-radius: 8px;" />
+                  <img v-else :src="previewUrl" style="width: 100%; border-radius: 8px;" />
+                </div>
               </template>
             </Card>
           </div>
@@ -171,6 +181,9 @@ const selectedScene = ref(null)
 const projectSearch = ref('')
 const showNewProjectDialog = ref(false)
 const showNewSceneDialog = ref(false)
+const isGenerating = ref(false)
+const generationProgress = ref(0)
+const previewUrl = ref(null)
 
 const newProject = ref({ name: '', description: '' })
 const newScene = ref({ scene_number: 1, description: '', characters: '' })
@@ -280,19 +293,37 @@ async function saveScene() {
 
 async function generateScene() {
   if (!selectedScene.value) return
+
+  isGenerating.value = true
+  generationProgress.value = 0
+  previewUrl.value = null
+
   try {
     const response = await fetch(`${API_BASE}/projects/${selectedProject.value?.id || 1}/generate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         prompt: selectedScene.value.description || 'anime scene',
-        generation_type: 'image'
+        generation_type: 'video'
       })
     })
     const result = await response.json()
     toast.add({ severity: 'success', summary: 'Generation Started', detail: `Job ID: ${result.job_id}`, life: 5000 })
+
+    // Simulate progress updates
+    const progressInterval = setInterval(() => {
+      generationProgress.value = Math.min(generationProgress.value + Math.random() * 20, 100)
+
+      if (generationProgress.value >= 100) {
+        clearInterval(progressInterval)
+        isGenerating.value = false
+        previewUrl.value = `/api/anime/output/${result.job_id}.mp4`
+        loadScenes(selectedProject.value.id)
+      }
+    }, 1000)
   } catch (error) {
     toast.add({ severity: 'error', summary: 'Error', detail: 'Generation failed', life: 3000 })
+    isGenerating.value = false
   }
 }
 

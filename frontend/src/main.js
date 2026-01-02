@@ -1,7 +1,7 @@
 import { createApp } from 'vue'
 import PrimeVue from 'primevue/config'
-import Aura from '@primevue/themes/aura'
 import App from './App.vue'
+import './style.css'
 
 // PrimeVue Components
 import DataTable from 'primevue/datatable'
@@ -22,10 +22,15 @@ import 'primeicons/primeicons.css'
 const app = createApp(App)
 
 app.use(PrimeVue, {
-  theme: {
-    preset: Aura,
-    options: {
-      darkModeSelector: '.dark-mode'
+  unstyled: true,
+  pt: {
+    global: {
+      css: `
+        .p-component {
+          font-family: var(--font-primary);
+          color: var(--text-primary);
+        }
+      `
     }
   }
 })
