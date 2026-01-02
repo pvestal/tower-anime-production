@@ -290,37 +290,24 @@ const loadBranchComparison = async () => {
     }
   } catch (error) {
     console.error('Failed to load branch comparison:', error)
-    // Provide mock data for demo
-    branchComparison.value = {
-      source: {
-        commits: 8,
-        scenes: 5,
-        lastModified: new Date(Date.now() - 86400000)
+    // Fetch actual branch comparison data
+    try {
+      const response = await fetch(`/api/anime/projects/${props.projectId}/branches/compare?source=${selectedSourceBranch.value}&target=${currentBranch.value}`)
+      if (response.ok) {
+        branchComparison.value = await response.json()
+      } else {
+        // Fallback to empty comparison
+        branchComparison.value = {
+          source: { commits: 0, scenes: 0, lastModified: new Date() },
+          target: { commits: 0, scenes: 0, lastModified: new Date()
       },
-      target: {
-        commits: 15,
-        scenes: 8,
-        lastModified: new Date()
-      },
-      changes: [
-        { id: 1, type: 'added', description: 'Added new character introduction scene' },
-        { id: 2, type: 'modified', description: 'Enhanced battle sequence choreography' },
-        { id: 3, type: 'added', description: 'New background music for emotional scenes' },
-        { id: 4, type: 'modified', description: 'Updated character dialogue in finale' }
-      ],
-      conflicts: [
-        {
-          id: 1,
-          scene: 'Scene 3: Battle Sequence',
-          description: 'Both branches modified the same fight choreography'
-        },
-        {
-          id: 2,
-          scene: 'Scene 7: Character Dialogue',
-          description: 'Different dialogue choices for the same character'
+          changes: []
         }
-      ]
+      }
+    } catch (error) {
+      console.error('Failed to fetch branch comparison:', error)
     }
+    // Conflicts will be populated from API response if any exist
   }
 }
 
