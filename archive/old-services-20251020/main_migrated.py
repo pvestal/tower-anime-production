@@ -3,16 +3,13 @@
 Tower Anime_Production Service - Migrated to use Tower Common Library
 """
 
+from fastapi import APIRouter
+from tower_common import TowerBaseService
 import sys
-import os
-from pathlib import Path
 
 # Add tower-common to Python path
 sys.path.insert(0, "/opt/tower-common")
 
-from tower_common import TowerBaseService
-from tower_common.errors import NotFoundError, ValidationError
-from fastapi import APIRouter, Depends
 
 class Anime_ProductionService(TowerBaseService):
     """Migrated Anime_Production service using Tower Common patterns"""
@@ -22,9 +19,7 @@ class Anime_ProductionService(TowerBaseService):
             service_name="tower-anime-production",
             description="Anime production service with AI workflows",
             version="1.0.0",
-            config_overrides={
-                "port": 44451
-            }
+            config_overrides={"port": 44451},
         )
 
         # Setup service-specific routes
@@ -57,7 +52,9 @@ class Anime_ProductionService(TowerBaseService):
         # - Model loading
         # - External service connections
 
-        self.logger.get_logger().info(f"{self.service_name} migration startup completed")
+        self.logger.get_logger().info(
+            f"{self.service_name} migration startup completed"
+        )
 
     async def shutdown(self):
         """Service shutdown logic"""
@@ -65,10 +62,12 @@ class Anime_ProductionService(TowerBaseService):
 
         await super().shutdown()
 
+
 # Service factory
 def create_service() -> Anime_ProductionService:
     """Create and configure the service"""
     return Anime_ProductionService()
+
 
 if __name__ == "__main__":
     service = create_service()
