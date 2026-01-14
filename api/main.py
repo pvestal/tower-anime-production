@@ -381,6 +381,210 @@ async def health_check():
     """Health check endpoint"""
     return {"status": "healthy", "service": "tower-anime-production"}
 
+
+# =============================================================================
+# ECHO BRAIN INTEGRATION ENDPOINTS
+# These endpoints match the contract expected by tower-echo-brain
+# =============================================================================
+
+class EchoBrainGenerateRequest(BaseModel):
+    """Request format expected by Echo Brain"""
+    prompt: str
+    style: str = "anime"
+    duration: int = 30
+    character: Optional[str] = "original"
+    scene_type: Optional[str] = "dialogue"
+    project_id: Optional[int] = None  # Optional - will use/create default project
+
+
+@app.post("/api/anime/generate")
+async def generate_for_echo_brain(request: EchoBrainGenerateRequest, db: Session = Depends(get_db)):
+    """
+    Echo Brain Integration Endpoint
+
+    Called by tower-echo-brain (port 8309) to generate anime content.
+    Creates a job and returns immediately with job_id for polling.
+
+    Request: {"prompt": "...", "style": "anime", "duration": 30}
+    Response: {"job_id": "abc123", "status": "queued"}
+    """
+    # Get or create default project for Echo Brain generations
+    project_id = request.project_id
+    if not project_id:
+        # Look for existing Echo Brain project or create one
+        echo_project = db.query(AnimeProject).filter(
+            AnimeProject.name == "Echo Brain Generations"
+        ).first()
+
+        if not echo_project:
+            echo_project = AnimeProject(
+                name="Echo Brain Generations",
+                description="Auto-generated project for Echo Brain integration",
+                status="active"
+            )
+            db.add(echo_project)
+            db.commit()
+            db.refresh(echo_project)
+
+        project_id = echo_project.id
+
+    # Create production job
+    job = ProductionJob(
+        project_id=project_id,
+        job_type="echo_brain_generation",
+        prompt=request.prompt,
+        parameters=request.json(),
+        status="queued"
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+
+    # Start async generation (non-blocking)
+    asyncio.create_task(_process_echo_brain_job(job.id, request, db))
+
+    return {
+        "job_id": str(job.id),
+        "status": "queued",
+        "message": "Generation queued successfully",
+        "project_id": project_id
+    }
+
+
+async def _process_echo_brain_job(job_id: int, request: EchoBrainGenerateRequest, db: Session):
+    """Background task to process Echo Brain generation request"""
+    try:
+        # Get fresh db session for background task
+        db = SessionLocal()
+        job = db.query(ProductionJob).filter(ProductionJob.id == job_id).first()
+        if not job:
+            return
+
+        job.status = "processing"
+        db.commit()
+
+        # Determine generation type based on duration
+        generation_type = "video" if request.duration > 5 else "image"
+
+        # Generate using ComfyUI
+        result = await generate_with_echo_service(
+            prompt=request.prompt,
+            character=request.character or "original",
+            style=request.style,
+            generation_type=generation_type
+        )
+
+        job.status = "completed"
+        job.output_path = result.get("output_path", "")
+        db.commit()
+
+    except Exception as e:
+        logger.error(f"Echo Brain job {job_id} failed: {e}")
+        try:
+            job = db.query(ProductionJob).filter(ProductionJob.id == job_id).first()
+            if job:
+                job.status = "failed"
+                db.commit()
+        except:
+            pass
+    finally:
+        db.close()
+
+
+@app.get("/api/anime/jobs/{job_id}")
+async def get_echo_brain_job(job_id: str, db: Session = Depends(get_db)):
+    """
+    Get job status for Echo Brain polling
+
+    Response format:
+    - queued: {"job_id": "123", "status": "queued", "progress": 0}
+    - processing: {"job_id": "123", "status": "processing", "progress": 0.5}
+    - completed: {"job_id": "123", "status": "completed", "progress": 1.0, "output_url": "..."}
+    - failed: {"job_id": "123", "status": "failed", "error": "..."}
+    """
+    try:
+        job_id_int = int(job_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid job_id format")
+
+    job = db.query(ProductionJob).filter(ProductionJob.id == job_id_int).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    # Map status to progress
+    progress_map = {
+        "queued": 0.0,
+        "processing": 0.5,
+        "completed": 1.0,
+        "failed": 0.0
+    }
+
+    response = {
+        "job_id": str(job.id),
+        "status": job.status,
+        "progress": progress_map.get(job.status, 0.0),
+        "created_at": job.created_at.isoformat() if job.created_at else None
+    }
+
+    if job.status == "completed" and job.output_path:
+        response["output_url"] = f"/api/anime/output/{job.id}"
+        response["output_path"] = job.output_path
+
+    if job.status == "failed":
+        response["error"] = "Generation failed - check logs for details"
+
+    return response
+
+
+@app.get("/api/anime/output/{job_id}")
+async def get_job_output(job_id: int, db: Session = Depends(get_db)):
+    """
+    Get the output file for a completed job
+    Returns the file path or serves the file
+    """
+    job = db.query(ProductionJob).filter(ProductionJob.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if job.status != "completed":
+        raise HTTPException(status_code=400, detail=f"Job not completed, status: {job.status}")
+
+    if not job.output_path or not os.path.exists(job.output_path):
+        raise HTTPException(status_code=404, detail="Output file not found")
+
+    from fastapi.responses import FileResponse
+    return FileResponse(
+        job.output_path,
+        media_type="video/mp4" if job.output_path.endswith(".mp4") else "image/png",
+        filename=os.path.basename(job.output_path)
+    )
+
+
+@app.post("/api/anime/jobs/{job_id}/cancel")
+async def cancel_echo_brain_job(job_id: str, db: Session = Depends(get_db)):
+    """Cancel a queued or processing job"""
+    try:
+        job_id_int = int(job_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid job_id format")
+
+    job = db.query(ProductionJob).filter(ProductionJob.id == job_id_int).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if job.status in ["completed", "failed", "cancelled"]:
+        return {"job_id": str(job.id), "status": job.status, "message": "Job already finished"}
+
+    job.status = "cancelled"
+    db.commit()
+
+    return {"job_id": str(job.id), "status": "cancelled", "message": "Job cancelled"}
+
+
+# =============================================================================
+# END ECHO BRAIN INTEGRATION ENDPOINTS
+# =============================================================================
+
 @app.get("/api/anime/projects", response_model=List[AnimeProjectResponse])
 async def get_projects(db: Session = Depends(get_db)):
     """Get all anime projects"""
