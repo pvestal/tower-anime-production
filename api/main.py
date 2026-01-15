@@ -1150,6 +1150,609 @@ async def get_scene_background(scene_id: int):
 # END ANIMATION SERVICES ENDPOINTS
 # =============================================================================
 
+
+# =============================================================================
+# SESSION MANAGEMENT ENDPOINTS
+# AI Director creative sessions
+# =============================================================================
+
+_session_manager = None
+
+
+async def get_session_manager():
+    """Get or create SessionManager instance."""
+    global _session_manager
+    if _session_manager is None:
+        from services.session.session_manager import create_session_manager
+        _session_manager = await create_session_manager(DATABASE_URL_ASYNC)
+    return _session_manager
+
+
+# --- Session Request/Response Models ---
+
+class SessionCreateRequest(BaseModel):
+    project_id: int
+    user_id: Optional[int] = None
+    echo_conversation_id: Optional[str] = None
+    initial_context: Optional[Dict[str, Any]] = None
+
+
+class SessionModeUpdate(BaseModel):
+    mode: str  # planning, directing, reviewing, generating
+    reason: Optional[str] = None
+
+
+class SessionSceneUpdate(BaseModel):
+    scene_id: int
+    scene_context: Optional[Dict[str, Any]] = None
+
+
+class SessionCharactersUpdate(BaseModel):
+    character_ids: List[int]
+
+
+class ContextUpdateRequest(BaseModel):
+    updates: Dict[str, Any]
+    source: str = "user"  # user, ai_suggestion, generation_result, system, auto
+    reason: Optional[str] = None
+    generation_id: Optional[int] = None
+
+
+class SuggestionCreateRequest(BaseModel):
+    suggestion_type: str  # pose, camera, lighting, prompt, sequence, style, transition
+    suggestion_data: Dict[str, Any]
+    explanation: Optional[str] = None
+    confidence_score: Optional[float] = None
+    model_used: Optional[str] = None
+
+
+class SuggestionResponseRequest(BaseModel):
+    accepted: bool
+    modification: Optional[Dict[str, Any]] = None
+
+
+class GenerationFeedbackRequest(BaseModel):
+    generation_id: int
+    prompt_used: str
+    enhanced_prompt: Optional[str] = None
+    negative_prompt: Optional[str] = None
+    generation_params: Dict[str, Any]
+    quality_scores: Dict[str, float]
+    character_ids: Optional[List[int]] = None
+    pose_ids: Optional[List[int]] = None
+    context_tags: Optional[List[str]] = None
+    style_tags: Optional[List[str]] = None
+
+
+class UserFeedbackRequest(BaseModel):
+    rating: int  # 1-5
+    comments: Optional[str] = None
+    accepted: bool = True
+
+
+class DirectorNoteRequest(BaseModel):
+    note: str
+    note_type: str = "observation"
+    related_generation_id: Optional[int] = None
+
+
+# --- Session Endpoints ---
+
+@app.post("/api/anime/sessions")
+async def create_session(request: SessionCreateRequest):
+    """Create a new creative session for AI Director."""
+    try:
+        manager = await get_session_manager()
+        session = await manager.create_session(
+            project_id=request.project_id,
+            user_id=request.user_id,
+            echo_conversation_id=request.echo_conversation_id,
+            initial_context=request.initial_context
+        )
+        return {
+            "session_uuid": session.session_uuid,
+            "project_id": session.project_id,
+            "status": session.status.value,
+            "mode": session.current_mode.value,
+            "created_at": session.created_at.isoformat() if session.created_at else None
+        }
+    except Exception as e:
+        logger.error(f"Error creating session: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/anime/sessions/{session_uuid}")
+async def get_session(session_uuid: str):
+    """Get session details."""
+    try:
+        manager = await get_session_manager()
+        session = await manager.get_session(session_uuid)
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        return {
+            "session_uuid": session.session_uuid,
+            "project_id": session.project_id,
+            "user_id": session.user_id,
+            "status": session.status.value,
+            "mode": session.current_mode.value,
+            "current_scene_id": session.current_scene_id,
+            "current_character_ids": session.current_character_ids,
+            "echo_conversation_id": session.echo_conversation_id,
+            "interaction_count": session.interaction_count,
+            "generation_count": session.generation_count,
+            "successful_generations": session.successful_generations,
+            "created_at": session.created_at.isoformat() if session.created_at else None,
+            "expires_at": session.expires_at.isoformat() if session.expires_at else None
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting session: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/anime/sessions/{session_uuid}/full")
+async def get_session_with_context(session_uuid: str):
+    """Get session with all related context data."""
+    try:
+        manager = await get_session_manager()
+        data = await manager.get_session_with_context(session_uuid)
+        if not data:
+            raise HTTPException(status_code=404, detail="Session not found")
+        return data
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting session context: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/anime/sessions/get-or-create")
+async def get_or_create_session(project_id: int, user_id: Optional[int] = None):
+    """Get existing active session or create new one for project."""
+    try:
+        manager = await get_session_manager()
+        session = await manager.get_or_create_session(project_id, user_id)
+        return {
+            "session_uuid": session.session_uuid,
+            "project_id": session.project_id,
+            "status": session.status.value,
+            "mode": session.current_mode.value,
+            "is_new": session.interaction_count == 0
+        }
+    except Exception as e:
+        logger.error(f"Error getting/creating session: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.patch("/api/anime/sessions/{session_uuid}/mode")
+async def update_session_mode(session_uuid: str, request: SessionModeUpdate):
+    """Update the session's current mode."""
+    try:
+        manager = await get_session_manager()
+        from services.session.session_manager import SessionMode
+        mode = SessionMode(request.mode)
+        success = await manager.update_session_mode(session_uuid, mode, request.reason)
+        if not success:
+            raise HTTPException(status_code=404, detail="Session not found or not active")
+        return {"session_uuid": session_uuid, "mode": request.mode}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid mode: {request.mode}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating session mode: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.patch("/api/anime/sessions/{session_uuid}/scene")
+async def update_session_scene(session_uuid: str, request: SessionSceneUpdate):
+    """Update the session's current scene."""
+    try:
+        manager = await get_session_manager()
+        success = await manager.update_session_scene(
+            session_uuid, request.scene_id, request.scene_context
+        )
+        if not success:
+            raise HTTPException(status_code=404, detail="Session not found or not active")
+        return {"session_uuid": session_uuid, "scene_id": request.scene_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating session scene: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.patch("/api/anime/sessions/{session_uuid}/characters")
+async def update_session_characters(session_uuid: str, request: SessionCharactersUpdate):
+    """Update characters in focus for the session."""
+    try:
+        manager = await get_session_manager()
+        success = await manager.update_session_characters(session_uuid, request.character_ids)
+        if not success:
+            raise HTTPException(status_code=404, detail="Session not found or not active")
+        return {"session_uuid": session_uuid, "character_ids": request.character_ids}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating session characters: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/anime/sessions/{session_uuid}/pause")
+async def pause_session(session_uuid: str):
+    """Pause an active session."""
+    try:
+        manager = await get_session_manager()
+        success = await manager.pause_session(session_uuid)
+        if not success:
+            raise HTTPException(status_code=404, detail="Session not found")
+        return {"session_uuid": session_uuid, "status": "paused"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error pausing session: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/anime/sessions/{session_uuid}/resume")
+async def resume_session(session_uuid: str):
+    """Resume a paused session."""
+    try:
+        manager = await get_session_manager()
+        success = await manager.resume_session(session_uuid)
+        if not success:
+            raise HTTPException(status_code=404, detail="Session not found or not paused")
+        return {"session_uuid": session_uuid, "status": "active"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error resuming session: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/anime/sessions/{session_uuid}/complete")
+async def complete_session(session_uuid: str):
+    """Mark a session as completed."""
+    try:
+        manager = await get_session_manager()
+        success = await manager.complete_session(session_uuid)
+        if not success:
+            raise HTTPException(status_code=404, detail="Session not found")
+        return {"session_uuid": session_uuid, "status": "completed"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error completing session: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- Context Endpoints ---
+
+@app.get("/api/anime/sessions/{session_uuid}/context")
+async def get_session_context(session_uuid: str):
+    """Get the cached context for a session."""
+    try:
+        manager = await get_session_manager()
+        context = await manager.get_context(session_uuid)
+        if context is None:
+            raise HTTPException(status_code=404, detail="Session not found")
+        return {"session_uuid": session_uuid, "context": context}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting context: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.patch("/api/anime/sessions/{session_uuid}/context")
+async def update_session_context(session_uuid: str, request: ContextUpdateRequest):
+    """Update session context with change tracking."""
+    try:
+        manager = await get_session_manager()
+        success = await manager.update_context(
+            session_uuid,
+            request.updates,
+            request.source,
+            request.reason,
+            request.generation_id
+        )
+        if not success:
+            raise HTTPException(status_code=404, detail="Session not found or not active")
+        return {"session_uuid": session_uuid, "updated_keys": list(request.updates.keys())}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating context: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/anime/sessions/{session_uuid}/context/history")
+async def get_context_history(
+    session_uuid: str,
+    context_key: Optional[str] = None,
+    limit: int = 50
+):
+    """Get context change history."""
+    try:
+        manager = await get_session_manager()
+        history = await manager.get_context_history(session_uuid, context_key, limit)
+        return [
+            {
+                "id": h.id,
+                "context_key": h.context_key,
+                "old_value": h.old_value,
+                "new_value": h.new_value,
+                "change_source": h.change_source,
+                "change_reason": h.change_reason,
+                "generation_id": h.generation_id,
+                "created_at": h.created_at.isoformat()
+            }
+            for h in history
+        ]
+    except Exception as e:
+        logger.error(f"Error getting context history: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- Director Suggestions Endpoints ---
+
+@app.post("/api/anime/sessions/{session_uuid}/suggestions")
+async def create_suggestion(session_uuid: str, request: SuggestionCreateRequest):
+    """Create a new director suggestion."""
+    try:
+        manager = await get_session_manager()
+        from services.session.session_manager import SuggestionType
+        suggestion_type = SuggestionType(request.suggestion_type)
+
+        suggestion_id = await manager.create_suggestion(
+            session_uuid,
+            suggestion_type,
+            request.suggestion_data,
+            request.explanation,
+            request.confidence_score,
+            request.model_used
+        )
+
+        if not suggestion_id:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        return {"id": suggestion_id, "session_uuid": session_uuid, "status": "pending"}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid suggestion type: {request.suggestion_type}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating suggestion: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/anime/sessions/{session_uuid}/suggestions")
+async def get_pending_suggestions(
+    session_uuid: str,
+    suggestion_type: Optional[str] = None
+):
+    """Get all pending suggestions for a session."""
+    try:
+        manager = await get_session_manager()
+        from services.session.session_manager import SuggestionType
+
+        stype = SuggestionType(suggestion_type) if suggestion_type else None
+        suggestions = await manager.get_pending_suggestions(session_uuid, stype)
+
+        return [
+            {
+                "id": s.id,
+                "suggestion_type": s.suggestion_type.value,
+                "suggestion_data": s.suggestion_data,
+                "explanation": s.explanation,
+                "confidence_score": s.confidence_score,
+                "status": s.status.value,
+                "created_at": s.created_at.isoformat(),
+                "expires_at": s.expires_at.isoformat()
+            }
+            for s in suggestions
+        ]
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid suggestion type: {suggestion_type}")
+    except Exception as e:
+        logger.error(f"Error getting suggestions: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/anime/suggestions/{suggestion_id}/respond")
+async def respond_to_suggestion(suggestion_id: int, request: SuggestionResponseRequest):
+    """Record user response to a suggestion."""
+    try:
+        manager = await get_session_manager()
+        success = await manager.respond_to_suggestion(
+            suggestion_id, request.accepted, request.modification
+        )
+        if not success:
+            raise HTTPException(status_code=404, detail="Suggestion not found or already responded")
+
+        status = "accepted" if request.accepted else "rejected"
+        if request.modification:
+            status = "modified"
+        return {"id": suggestion_id, "status": status}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error responding to suggestion: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- Learning Feedback Endpoints ---
+
+@app.post("/api/anime/sessions/{session_uuid}/feedback")
+async def record_generation_feedback(session_uuid: str, request: GenerationFeedbackRequest):
+    """Record feedback for a generation."""
+    try:
+        manager = await get_session_manager()
+        feedback_id = await manager.record_generation_feedback(
+            session_uuid,
+            request.generation_id,
+            request.prompt_used,
+            request.enhanced_prompt,
+            request.negative_prompt,
+            request.generation_params,
+            request.quality_scores,
+            request.character_ids,
+            request.pose_ids,
+            request.context_tags,
+            request.style_tags
+        )
+
+        if not feedback_id:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        return {"id": feedback_id, "session_uuid": session_uuid}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error recording feedback: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.patch("/api/anime/feedback/{feedback_id}/user")
+async def add_user_feedback(feedback_id: int, request: UserFeedbackRequest):
+    """Add user feedback to a generation record."""
+    try:
+        manager = await get_session_manager()
+        success = await manager.add_user_feedback(
+            feedback_id, request.rating, request.comments, request.accepted
+        )
+        if not success:
+            raise HTTPException(status_code=404, detail="Feedback record not found")
+        return {"id": feedback_id, "rating": request.rating}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error adding user feedback: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- Director Notes Endpoints ---
+
+@app.post("/api/anime/sessions/{session_uuid}/notes")
+async def add_director_note(session_uuid: str, request: DirectorNoteRequest):
+    """Add a director note to the session."""
+    try:
+        manager = await get_session_manager()
+        success = await manager.add_director_note(
+            session_uuid,
+            request.note,
+            request.note_type,
+            request.related_generation_id
+        )
+        if not success:
+            raise HTTPException(status_code=404, detail="Session not found")
+        return {"session_uuid": session_uuid, "status": "note_added"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error adding note: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- Echo Brain Integration Endpoints for Sessions ---
+
+@app.post("/api/anime/sessions/{session_uuid}/echo/link")
+async def link_echo_conversation(session_uuid: str, echo_conversation_id: str):
+    """Link an Echo Brain conversation to a session."""
+    try:
+        manager = await get_session_manager()
+        success = await manager.link_echo_conversation(session_uuid, echo_conversation_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Session not found or not active")
+        return {"session_uuid": session_uuid, "echo_conversation_id": echo_conversation_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error linking Echo conversation: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/anime/sessions/{session_uuid}/echo/state")
+async def get_echo_state(session_uuid: str):
+    """Get saved Echo Brain session state."""
+    try:
+        manager = await get_session_manager()
+        state = await manager.get_echo_state(session_uuid)
+        return {"session_uuid": session_uuid, "echo_state": state}
+    except Exception as e:
+        logger.error(f"Error getting Echo state: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/anime/sessions/{session_uuid}/echo/state")
+async def save_echo_state(session_uuid: str, state: Dict[str, Any]):
+    """Save Echo Brain session state."""
+    try:
+        manager = await get_session_manager()
+        success = await manager.save_echo_state(session_uuid, state)
+        if not success:
+            raise HTTPException(status_code=404, detail="Session not found")
+        return {"session_uuid": session_uuid, "status": "state_saved"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error saving Echo state: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- Pattern Endpoints ---
+
+@app.get("/api/anime/patterns/best")
+async def get_best_patterns(context_tags: Optional[str] = None, limit: int = 5):
+    """Get the best prompt patterns for the current context."""
+    try:
+        manager = await get_session_manager()
+        tags = context_tags.split(",") if context_tags else None
+        patterns = await manager.get_best_patterns(tags, limit)
+        return patterns
+    except Exception as e:
+        logger.error(f"Error getting patterns: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/anime/patterns/refresh")
+async def refresh_pattern_analysis():
+    """Refresh the materialized view for pattern analysis."""
+    try:
+        manager = await get_session_manager()
+        await manager.refresh_pattern_analysis()
+        return {"status": "refreshed"}
+    except Exception as e:
+        logger.error(f"Error refreshing patterns: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- Admin/Maintenance Endpoints ---
+
+@app.post("/api/anime/sessions/expire-old")
+async def expire_old_sessions(dry_run: bool = True):
+    """Expire old sessions (admin endpoint)."""
+    try:
+        manager = await get_session_manager()
+        count = await manager.expire_old_sessions(dry_run)
+        return {
+            "expired_count": count,
+            "dry_run": dry_run,
+            "message": "Would expire" if dry_run else "Expired"
+        }
+    except Exception as e:
+        logger.error(f"Error expiring sessions: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# END SESSION MANAGEMENT ENDPOINTS
+# =============================================================================
+
 @app.get("/api/anime/projects", response_model=List[AnimeProjectResponse])
 async def get_projects(db: Session = Depends(get_db)):
     """Get all anime projects"""

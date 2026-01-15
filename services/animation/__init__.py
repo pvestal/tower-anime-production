@@ -24,6 +24,15 @@ from services.animation.shot_assembler import (
     create_shot_assembler,
 )
 
+from services.animation.keyframe_animator import (
+    KeyframeAnimator,
+    MotionCurve,
+    Keyframe,
+    AnimationClip,
+    GenerationResult,
+    create_keyframe_animator,
+)
+
 __all__ = [
     # Pose Manager
     "PoseManager",
@@ -41,4 +50,11 @@ __all__ = [
     "TransitionSpec",
     "AssemblyResult",
     "create_shot_assembler",
+    # Keyframe Animator
+    "KeyframeAnimator",
+    "MotionCurve",
+    "Keyframe",
+    "AnimationClip",
+    "GenerationResult",
+    "create_keyframe_animator",
 ]
