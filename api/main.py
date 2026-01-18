@@ -4,11 +4,15 @@ Tower Anime Production Service - Unified API
 Consolidates all anime production functionality into single service
 """
 
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
+import jwt
+import hashlib
+import secrets
 from sqlalchemy import create_engine, Column, Integer, String, DateTime, Text, Float
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.dialects.postgresql import JSONB
@@ -89,6 +93,83 @@ class SystemConfig:
     def refresh(cls):
         """Clear cache to reload from database"""
         cls._cache = {}
+
+# Authentication Configuration
+JWT_SECRET = os.getenv('JWT_SECRET_KEY', secrets.token_hex(32))
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRE_HOURS = 24
+
+security = HTTPBearer()
+
+class AuthUser(BaseModel):
+    username: str
+    password: str
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int = JWT_EXPIRE_HOURS * 3600
+
+# Simple user store (in production, use database)
+USERS_DB = {
+    "admin": {
+        "username": "admin",
+        "password_hash": hashlib.sha256(os.getenv('ADMIN_PASSWORD', 'tower_admin_2025').encode()).hexdigest(),
+        "role": "admin"
+    },
+    "user": {
+        "username": "user",
+        "password_hash": hashlib.sha256(os.getenv('USER_PASSWORD', 'tower_user_2025').encode()).hexdigest(),
+        "role": "user"
+    }
+}
+
+def verify_password(password: str, password_hash: str) -> bool:
+    """Verify password against hash"""
+    return hashlib.sha256(password.encode()).hexdigest() == password_hash
+
+def create_access_token(username: str, role: str) -> str:
+    """Create JWT access token"""
+    payload = {
+        "sub": username,
+        "role": role,
+        "exp": datetime.utcnow() + timedelta(hours=JWT_EXPIRE_HOURS),
+        "iat": datetime.utcnow()
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
+    """Verify JWT token and return user info"""
+    try:
+        payload = jwt.decode(credentials.credentials, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        username = payload.get("sub")
+        role = payload.get("role")
+        if username is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication credentials",
+                headers={"WWW-Authenticate": "Bearer"}
+            )
+        return {"username": username, "role": role}
+    except jwt.PyJWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication credentials",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+
+def require_auth(current_user: dict = Depends(verify_token)) -> dict:
+    """Dependency to require authentication"""
+    return current_user
+
+def require_admin(current_user: dict = Depends(verify_token)) -> dict:
+    """Dependency to require admin role"""
+    if current_user["role"] != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
+    return current_user
 
 app = FastAPI(
     title="Tower Anime Production API",
@@ -595,6 +676,34 @@ async def get_real_comfyui_progress(request_id: str) -> float:
         logger.error(f"Error getting ComfyUI progress: {e}")
         return 0.0
 
+# Authentication Endpoints
+@app.post("/auth/login", response_model=TokenResponse)
+async def login(user: AuthUser):
+    """Authenticate user and return JWT token"""
+    if user.username not in USERS_DB:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid username or password"
+        )
+
+    user_data = USERS_DB[user.username]
+    if not verify_password(user.password, user_data["password_hash"]):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid username or password"
+        )
+
+    access_token = create_access_token(user.username, user_data["role"])
+    return TokenResponse(access_token=access_token)
+
+@app.get("/auth/me")
+async def get_current_user(current_user: dict = Depends(require_auth)):
+    """Get current authenticated user info"""
+    return {
+        "username": current_user["username"],
+        "role": current_user["role"]
+    }
+
 # API Endpoints
 
 @app.get("/health")
@@ -608,20 +717,20 @@ async def health_check():
     return {"status": "healthy", "service": "tower-anime-production"}
 
 @app.get("/api/anime/projects", response_model=List[AnimeProjectResponse])
-async def get_projects(db: Session = Depends(get_db)):
+async def get_projects(current_user: dict = Depends(require_auth), db: Session = Depends(get_db)):
     """Get all anime projects"""
     projects = db.query(AnimeProject).all()
     return projects
 
 @app.get("/api/anime/characters")
-async def get_characters(db: Session = Depends(get_db)):
+async def get_characters(current_user: dict = Depends(require_auth), db: Session = Depends(get_db)):
     """Get all characters"""
     from sqlalchemy import text
     result = db.execute(text("SELECT id, name, description, project_id FROM characters"))
     return [{"id": r[0], "name": r[1], "description": r[2], "project_id": r[3]} for r in result.fetchall()]
 
 @app.post("/api/anime/characters")
-async def create_character(data: dict, db: Session = Depends(get_db)):
+async def create_character(data: dict, current_user: dict = Depends(require_auth), db: Session = Depends(get_db)):
     """Create character"""
     from sqlalchemy import text
     result = db.execute(text(
@@ -631,7 +740,7 @@ async def create_character(data: dict, db: Session = Depends(get_db)):
     return {"id": result.fetchone()[0], "name": data["name"]}
 
 @app.delete("/api/anime/characters/{character_id}")
-async def delete_character(character_id: int, db: Session = Depends(get_db)):
+async def delete_character(character_id: int, current_user: dict = Depends(require_auth), db: Session = Depends(get_db)):
     """Delete character"""
     from sqlalchemy import text
     db.execute(text("DELETE FROM characters WHERE id = :id"), {"id": character_id})
@@ -639,7 +748,7 @@ async def delete_character(character_id: int, db: Session = Depends(get_db)):
     return {"message": "Character deleted"}
 
 @app.post("/api/anime/projects", response_model=AnimeProjectResponse)
-async def create_project(project: AnimeProjectCreate, db: Session = Depends(get_db)):
+async def create_project(project: AnimeProjectCreate, current_user: dict = Depends(require_auth), db: Session = Depends(get_db)):
     """Create new anime project"""
     db_project = AnimeProject(**project.dict())
     db.add(db_project)
@@ -648,7 +757,7 @@ async def create_project(project: AnimeProjectCreate, db: Session = Depends(get_
     return db_project
 
 @app.patch("/api/anime/projects/{project_id}")
-async def update_project(project_id: int, updates: dict, db: Session = Depends(get_db)):
+async def update_project(project_id: int, updates: dict, current_user: dict = Depends(require_auth), db: Session = Depends(get_db)):
     """Update anime project"""
     project = db.query(AnimeProject).filter(AnimeProject.id == project_id).first()
     if not project:
@@ -664,7 +773,7 @@ async def update_project(project_id: int, updates: dict, db: Session = Depends(g
     return project
 
 @app.delete("/api/anime/projects/{project_id}")
-async def delete_project(project_id: int, db: Session = Depends(get_db)):
+async def delete_project(project_id: int, current_user: dict = Depends(require_admin), db: Session = Depends(get_db)):
     """Delete anime project"""
     project = db.query(AnimeProject).filter(AnimeProject.id == project_id).first()
     if not project:
@@ -675,7 +784,7 @@ async def delete_project(project_id: int, db: Session = Depends(get_db)):
     return {"message": "Project deleted successfully"}
 
 @app.put("/api/anime/projects/{project_id}")
-async def update_project(project_id: int, update_data: dict, db: Session = Depends(get_db)):
+async def update_project(project_id: int, update_data: dict, current_user: dict = Depends(require_auth), db: Session = Depends(get_db)):
     """Update anime project"""
     project = db.query(AnimeProject).filter(AnimeProject.id == project_id).first()
     if not project:
@@ -690,7 +799,7 @@ async def update_project(project_id: int, update_data: dict, db: Session = Depen
     return project
 
 @app.post("/api/anime/generate/project/{project_id}")
-async def generate_video_for_project(project_id: int, request: AnimeGenerationRequest, db: Session = Depends(get_db)):
+async def generate_video_for_project(project_id: int, request: AnimeGenerationRequest, current_user: dict = Depends(require_auth), db: Session = Depends(get_db)):
     """Generate video for specific project"""
     project = db.query(AnimeProject).filter(AnimeProject.id == project_id).first()
     if not project:
@@ -743,7 +852,7 @@ async def generate_video_for_project(project_id: int, request: AnimeGenerationRe
 
 # FRONTEND COMPATIBILITY: Renamed to avoid routing conflicts with /generate/{type}
 @app.post("/api/anime/projects/{project_id}/generate")
-async def generate_video_frontend_compat(project_id: int, request: dict, db: Session = Depends(get_db)):
+async def generate_video_frontend_compat(project_id: int, request: dict, current_user: dict = Depends(require_auth), db: Session = Depends(get_db)):
     """Generate video - Frontend compatibility endpoint"""
     # Convert frontend request format to backend format
     anime_request = AnimeGenerationRequest(
@@ -785,12 +894,12 @@ async def get_generation_status(request_id: str, db: Session = Depends(get_db)):
     }
 
 @app.post("/api/anime/generation/{request_id}/cancel")
-async def cancel_generation(request_id: str, db: Session = Depends(get_db)):
+async def cancel_generation(request_id: str, current_user: dict = Depends(require_auth)):
     """Cancel generation by request ID"""
     return {"message": "Generation cancelled"}
 
 @app.get("/api/anime/projects/{project_id}/history")
-async def get_project_history(project_id: int, db: Session = Depends(get_db)):
+async def get_project_history(project_id: int, current_user: dict = Depends(require_auth), db: Session = Depends(get_db)):
     """Get project history"""
     project = db.query(AnimeProject).filter(AnimeProject.id == project_id).first()
     if not project:
@@ -800,7 +909,7 @@ async def get_project_history(project_id: int, db: Session = Depends(get_db)):
     return {"history": [{"id": job.id, "type": job.job_type, "status": job.status, "created_at": job.created_at} for job in jobs]}
 
 @app.post("/api/anime/projects/clear-stuck")
-async def clear_stuck_projects(db: Session = Depends(get_db)):
+async def clear_stuck_projects(current_user: dict = Depends(require_admin)):
     """Clear projects stuck in 'generating' status"""
     try:
         # Find stuck projects (generating for more than 10 minutes)
@@ -879,6 +988,7 @@ class CharacterGenerateRequest(BaseModel):
 async def generate_character_shot(
     character_id: int,
     request: CharacterGenerateRequest,
+    current_user: dict = Depends(require_auth),
     db: Session = Depends(get_db)
 ):
     """Generate image/video of specific character from database"""
@@ -985,7 +1095,7 @@ async def generate_character_shot(
     }
 
 @app.get("/api/anime/characters")
-async def list_all_characters(db: Session = Depends(get_db)):
+async def list_all_characters(current_user: dict = Depends(require_auth), db: Session = Depends(get_db)):
     """List all characters with their projects"""
     from sqlalchemy import text
 
@@ -1010,7 +1120,7 @@ async def list_all_characters(db: Session = Depends(get_db)):
     ]
 
 @app.post("/echo/enhance-prompt")
-async def enhance_prompt_with_echo(request: dict):
+async def enhance_prompt_with_echo(request: dict, current_user: dict = Depends(require_auth)):
     """Enhance prompt using Echo Brain AI"""
     original_prompt = request.get("prompt", "")
 
@@ -1028,7 +1138,7 @@ async def enhance_prompt_with_echo(request: dict):
     }
 
 @app.post("/generate/integrated")
-async def generate_with_integrated_pipeline(request: AnimeGenerationRequest, db: Session = Depends(get_db)):
+async def generate_with_integrated_pipeline(request: AnimeGenerationRequest, current_user: dict = Depends(require_auth), db: Session = Depends(get_db)):
     """Generate anime using the new integrated pipeline with quality controls"""
     if not pipeline:
         raise HTTPException(status_code=503, detail="Integrated pipeline not available")
@@ -1093,7 +1203,7 @@ async def generate_with_integrated_pipeline(request: AnimeGenerationRequest, db:
         raise HTTPException(status_code=500, detail=f"Integrated generation failed: {str(e)}")
 
 @app.post("/generate/professional")
-async def generate_professional_anime(request: AnimeGenerationRequest, db: Session = Depends(get_db)):
+async def generate_professional_anime(request: AnimeGenerationRequest, current_user: dict = Depends(require_auth), db: Session = Depends(get_db)):
     """Generate professional anime content"""
     # Create production job record
     job = ProductionJob(
@@ -1191,6 +1301,7 @@ async def generate_professional_anime(request: AnimeGenerationRequest, db: Sessi
 async def generate_personal_creative(
     request: AnimeGenerationRequest,
     personal: PersonalCreativeRequest = PersonalCreativeRequest(),
+    current_user: dict = Depends(require_auth),
     db: Session = Depends(get_db)
 ):
     """Generate personal/creative anime content with enlightenment features"""
@@ -1274,7 +1385,7 @@ async def get_gallery_images():
     return images
 
 @app.get("/api/anime/episodes/{project_id}/scenes")
-async def get_project_scenes(project_id: int, db: Session = Depends(get_db)):
+async def get_project_scenes(project_id: int, current_user: dict = Depends(require_auth), db: Session = Depends(get_db)):
     """Get scenes for a project (returns generated images for now)"""
     # Get all jobs for this project
     jobs = db.query(ProductionJob).filter(
@@ -1397,7 +1508,7 @@ async def git_control_interface():
 
 # Git Control API Endpoints
 @app.post("/api/anime/git/commit")
-async def commit_scene(commit_data: dict):
+async def commit_scene(commit_data: dict, current_user: dict = Depends(require_auth)):
     """Commit current scene as new version"""
     try:
         # Import git branching functionality
@@ -1422,7 +1533,7 @@ async def commit_scene(commit_data: dict):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/anime/git/branch")
-async def create_branch(branch_data: dict):
+async def create_branch(branch_data: dict, current_user: dict = Depends(require_auth)):
     """Create new creative branch"""
     try:
         sys.path.append('/opt/tower-anime-production')
@@ -1484,7 +1595,7 @@ async def get_daily_budget():
 
 # Scene generation endpoints
 @app.get("/api/anime/scenes")
-async def get_scenes(project_id: int = None, db: Session = Depends(get_db)):
+async def get_scenes(project_id: int = None, current_user: dict = Depends(require_auth), db: Session = Depends(get_db)):
     """Get scenes, optionally filtered by project"""
     from sqlalchemy import text
     if project_id:
@@ -1500,7 +1611,7 @@ async def get_scenes(project_id: int = None, db: Session = Depends(get_db)):
     return [dict(r._mapping) for r in result.fetchall()]
 
 @app.post("/api/anime/scenes")
-async def create_scene(data: dict, db: Session = Depends(get_db)):
+async def create_scene(data: dict, current_user: dict = Depends(require_auth), db: Session = Depends(get_db)):
     """Create a new scene"""
     from sqlalchemy import text
     result = db.execute(text("""
@@ -1523,6 +1634,7 @@ async def create_scene(data: dict, db: Session = Depends(get_db)):
 async def generate_from_scene(
     scene_id: str,
     generation_type: str = "image",
+    current_user: dict = Depends(require_auth),
     db: Session = Depends(get_db)
 ):
     """Generate image/video from actual scene data"""
@@ -1597,6 +1709,7 @@ async def generate_character_action(
     character_id: int,
     action: str = "portrait",
     generation_type: str = "image",
+    current_user: dict = Depends(require_auth),
     db: Session = Depends(get_db)
 ):
     """Generate image/video of specific character with action"""
@@ -1684,7 +1797,7 @@ if ECHO_BRAIN_AVAILABLE:
         return echo_brain_service.check_status()
 
     @app.post("/api/echo-brain/configure")
-    async def configure_echo_brain(config: dict):
+    async def configure_echo_brain(config: dict, current_user: dict = Depends(require_admin)):
         """Configure Echo Brain settings."""
         if "model" in config:
             echo_brain_service.config.model = config["model"]
@@ -1696,7 +1809,7 @@ if ECHO_BRAIN_AVAILABLE:
         return {"message": "Configuration updated", "config": config}
 
     @app.post("/api/echo-brain/scenes/suggest")
-    async def suggest_scene_details(request: dict):
+    async def suggest_scene_details(request: dict, current_user: dict = Depends(require_auth)):
         """Get Echo Brain suggestions for a scene."""
         project_id = request.get("project_id", 1)
 
@@ -1764,7 +1877,7 @@ if ECHO_BRAIN_AVAILABLE:
         }
 
     @app.post("/api/echo-brain/characters/{character_id}/dialogue")
-    async def generate_character_dialogue(character_id: int, request: dict):
+    async def generate_character_dialogue(character_id: int, request: dict, current_user: dict = Depends(require_auth)):
         """Generate dialogue for a specific character."""
         import psycopg2.extras
         conn = psycopg2.connect(
@@ -1818,7 +1931,7 @@ if ECHO_BRAIN_AVAILABLE:
         }
 
     @app.post("/api/echo-brain/episodes/{episode_id}/continue")
-    async def continue_episode(episode_id: str, request: dict):
+    async def continue_episode(episode_id: str, request: dict, current_user: dict = Depends(require_auth)):
         """Suggest continuation for an episode."""
         import psycopg2.extras
         conn = psycopg2.connect(
@@ -1888,7 +2001,7 @@ if ECHO_BRAIN_AVAILABLE:
         }
 
     @app.post("/api/echo-brain/storyline/analyze")
-    async def analyze_storyline(request: dict):
+    async def analyze_storyline(request: dict, current_user: dict = Depends(require_auth)):
         """Analyze storyline for consistency and improvements."""
         import psycopg2.extras
         conn = psycopg2.connect(
@@ -1934,7 +2047,7 @@ if ECHO_BRAIN_AVAILABLE:
         }
 
     @app.post("/api/echo-brain/projects/{project_id}/brainstorm")
-    async def brainstorm_project(project_id: int, request: dict):
+    async def brainstorm_project(project_id: int, request: dict, current_user: dict = Depends(require_auth)):
         """Brainstorm new ideas for a project."""
         import psycopg2.extras
         conn = psycopg2.connect(
@@ -1991,7 +2104,7 @@ if ECHO_BRAIN_AVAILABLE:
         }
 
     @app.post("/api/echo-brain/episodes/{episode_id}/batch-suggest")
-    async def batch_suggest_scenes(episode_id: str, request: dict):
+    async def batch_suggest_scenes(episode_id: str, request: dict, current_user: dict = Depends(require_auth)):
         """Batch suggest improvements for multiple scenes."""
         import psycopg2.extras
         conn = psycopg2.connect(
@@ -2025,7 +2138,7 @@ if ECHO_BRAIN_AVAILABLE:
         }
 
     @app.post("/api/echo-brain/suggestions/{suggestion_id}/feedback")
-    async def provide_feedback(suggestion_id: int, feedback: dict):
+    async def provide_feedback(suggestion_id: int, feedback: dict, current_user: dict = Depends(require_auth)):
         """Provide feedback on an Echo Brain suggestion."""
         conn = psycopg2.connect(
             host="localhost",
@@ -2065,7 +2178,7 @@ else:
         }
 
     @app.post("/api/echo-brain/suggest/scenes")
-    async def echo_brain_fallback_scenes(request: dict):
+    async def echo_brain_fallback_scenes(request: dict, current_user: dict = Depends(require_auth)):
         return {
             "success": False,
             "error": "Echo Brain service not available",
