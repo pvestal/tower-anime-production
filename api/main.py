@@ -56,7 +56,10 @@ except ImportError:
     ECHO_BRAIN_AVAILABLE = False
 
 # Database Setup
-DATABASE_URL = f"postgresql://patrick:{os.getenv('DATABASE_PASSWORD', '***REMOVED***')}@localhost/anime_production"
+DATABASE_PASSWORD = os.getenv('DATABASE_PASSWORD')
+if not DATABASE_PASSWORD:
+    raise ValueError("DATABASE_PASSWORD environment variable is required")
+DATABASE_URL = f"postgresql://patrick:{DATABASE_PASSWORD}@localhost/anime_production"
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
@@ -73,7 +76,7 @@ class SystemConfig:
                 host='localhost',
                 database='anime_production',
                 user='patrick',
-                password=os.getenv('DATABASE_PASSWORD', '***REMOVED***')
+                password=DATABASE_PASSWORD
             )
             with conn.cursor() as cur:
                 cur.execute("SELECT value FROM system_config WHERE key = %s", (key,))
@@ -96,7 +99,7 @@ app = FastAPI(
 # CORS configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:3000", "http://***REMOVED***:8328"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

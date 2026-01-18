@@ -8,6 +8,7 @@ import json
 import asyncio
 import httpx
 import psycopg2
+import os
 from datetime import datetime
 
 class EchoIntegrationSummaryReport:
@@ -19,7 +20,7 @@ class EchoIntegrationSummaryReport:
             'host': 'localhost',
             'database': 'anime_production',
             'user': 'patrick',
-            'password': '***REMOVED***'
+            'password': os.getenv('DATABASE_PASSWORD', '***REMOVED***')
         }
 
     async def generate_comprehensive_report(self):
@@ -104,7 +105,7 @@ class EchoIntegrationSummaryReport:
             # Check required tables
             tables = ['episodes', 'scenes', 'decision_points', 'characters']
             for table in tables:
-                cursor.execute(f"SELECT COUNT(*) FROM information_schema.tables WHERE table_name = '{table}'")
+                cursor.execute("SELECT COUNT(*) FROM information_schema.tables WHERE table_name = %s", (table,))
                 exists = cursor.fetchone()[0] > 0
                 print(f"{'✅' if exists else '❌'} Table '{table}': {'EXISTS' if exists else 'MISSING'}")
 

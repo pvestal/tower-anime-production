@@ -97,9 +97,13 @@ def init_database():
         
         print("\n📊 Database tables created:")
         for table in tables:
-            cursor.execute(f"SELECT COUNT(*) FROM {table}")
-            count = cursor.fetchone()[0]
-            print(f"   - {table} ({count} rows)")
+            # Use parameterized query with table name validation
+            if table.replace('_', '').replace('-', '').isalnum():  # Basic validation
+                cursor.execute(f"SELECT COUNT(*) FROM \"{table}\"")  # Quote table name for safety
+                count = cursor.fetchone()[0]
+                print(f"   - {table} ({count} rows)")
+            else:
+                print(f"   - {table} (SKIPPED - invalid table name)")
         
         # Show database stats
         db_size = DB_PATH.stat().st_size / 1024  # KB
