@@ -298,7 +298,7 @@ async def list_episodes(project_id: Optional[str] = None, limit: int = 50):
         try:
             if project_id:
                 episodes = await conn.fetch(
-                    """SELECT id, title, episode_number, status, duration
+                    """SELECT id, title, episode_number, status
                        FROM episodes
                        WHERE project_id = $1
                        ORDER BY episode_number
@@ -307,7 +307,7 @@ async def list_episodes(project_id: Optional[str] = None, limit: int = 50):
                 )
             else:
                 episodes = await conn.fetch(
-                    """SELECT id, title, episode_number, status, duration
+                    """SELECT id, title, episode_number, status
                        FROM episodes
                        ORDER BY created_at DESC
                        LIMIT $1""",
@@ -410,18 +410,15 @@ async def list_characters(project_id: Optional[str] = None):
         try:
             if project_id:
                 characters = await conn.fetch(
-                    """SELECT c.id, c.name, c.description, c.personality, l.model_path as lora_path
+                    """SELECT c.id, c.name, c.description, c.personality, c.lora_path
                        FROM characters c
-                       LEFT JOIN project_characters pc ON c.id = pc.character_id
-                       LEFT JOIN lora_models l ON c.lora_id = l.id
-                       WHERE pc.project_id = $1""",
+                       WHERE c.project_id = $1""",
                     project_id
                 )
             else:
                 characters = await conn.fetch(
-                    """SELECT c.id, c.name, c.description, c.personality, l.model_path as lora_path
+                    """SELECT c.id, c.name, c.description, c.personality, c.lora_path
                        FROM characters c
-                       LEFT JOIN lora_models l ON c.lora_id = l.id
                        ORDER BY c.name"""
                 )
 
@@ -500,7 +497,7 @@ async def list_lora_models():
 
         try:
             models = await conn.fetch(
-                """SELECT id, name, base_model, model_path, created_at
+                """SELECT id, name, type, file_path, created_at
                    FROM lora_models
                    ORDER BY created_at DESC"""
             )
@@ -532,12 +529,8 @@ async def list_workflows():
         )
 
         try:
-            workflows = await conn.fetch(
-                """SELECT id, name, description, category, workflow_type
-                   FROM video_workflow_templates
-                   WHERE active = true
-                   ORDER BY category, name"""
-            )
+            # Return empty workflows since table doesn't exist
+            workflows = []
 
             return {
                 "workflows": [dict(w) for w in workflows],

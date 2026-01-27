@@ -16,7 +16,8 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from api.core.database import get_db
 from api.core.security import require_auth, require_admin, require_user_or_admin, guest_or_auth
 from api.models import AnimeProject
-from api.schemas import AnimeProjectCreate, AnimeProjectResponse
+from api.schemas.requests import AnimeProjectCreate
+from api.schemas.responses import AnimeProjectResponse
 
 router = APIRouter()
 logger = logging.getLogger(__name__)

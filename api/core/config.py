@@ -60,7 +60,7 @@ def get_database_password() -> str:
     password = os.getenv('DATABASE_PASSWORD')
     if not password:
         # Use default for development - should be overridden in production
-        password = os.getenv('TOWER_ECHO_BRAIN_PASSWORD', 'tower_echo_brain_secret_key_2025')
+        password = 'RP78eIrW7cI2jYvL5akt1yurE'
     return password
 
 
@@ -104,7 +104,7 @@ AUTH_SERVICE_URL = get_service_url('auth', 8088)
 
 # Database Configuration
 DATABASE_HOST = get_database_host()
-DATABASE_URL = f"postgresql://patrick:{get_database_password()}@{DATABASE_HOST}/tower_consolidated"
+DATABASE_URL = f"postgresql://patrick:{get_database_password()}@{DATABASE_HOST}/anime_production"
 
 # Authentication Configuration
 JWT_SECRET = os.getenv('JWT_SECRET_KEY', secrets.token_hex(32))
