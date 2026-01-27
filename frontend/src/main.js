@@ -17,6 +17,7 @@ import Card from 'primevue/card'
 import Tag from 'primevue/tag'
 import Toast from 'primevue/toast'
 import ToastService from 'primevue/toastservice'
+import ProgressBar from 'primevue/progressbar'
 import 'primeicons/primeicons.css'
 
 const app = createApp(App)
@@ -50,5 +51,6 @@ app.component('Toolbar', Toolbar)
 app.component('Card', Card)
 app.component('Tag', Tag)
 app.component('Toast', Toast)
+app.component('ProgressBar', ProgressBar)
 
 app.mount('#app')

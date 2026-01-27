@@ -5,9 +5,9 @@ import os
 import secrets
 import hashlib
 from datetime import datetime, timedelta
-from typing import Dict
+from typing import Dict, Optional
 import jwt
-from fastapi import HTTPException, status, Depends
+from fastapi import HTTPException, status, Depends, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 
@@ -55,6 +55,29 @@ def create_access_token(username: str, role: str) -> str:
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
+def optional_auth(credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False))) -> Optional[Dict[str, str]]:
+    """Optional authentication - returns user info if token provided, None if guest"""
+    if not credentials:
+        return None  # Guest mode
+
+    try:
+        payload = jwt.decode(credentials.credentials, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        username = payload.get("sub")
+        role = payload.get("role")
+        if username is None:
+            return None  # Invalid token, treat as guest
+        return {"username": username, "role": role}
+    except jwt.PyJWTError:
+        return None  # Invalid token, treat as guest
+
+def create_guest_user() -> Dict[str, str]:
+    """Create a guest user context for unauthenticated users"""
+    return {
+        "username": "guest",
+        "role": "guest",
+        "is_guest": True
+    }
+
 def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)) -> Dict[str, str]:
     """Verify JWT token and return user info"""
     try:
@@ -67,7 +90,7 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)) 
                 detail="Invalid authentication credentials",
                 headers={"WWW-Authenticate": "Bearer"}
             )
-        return {"username": username, "role": role}
+        return {"username": username, "role": role, "is_guest": False}
     except jwt.PyJWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -79,11 +102,26 @@ def require_auth(current_user: Dict[str, str] = Depends(verify_token)) -> Dict[s
     """Dependency to require authentication"""
     return current_user
 
+def guest_or_auth(current_user: Optional[Dict[str, str]] = Depends(optional_auth)) -> Dict[str, str]:
+    """Dependency for guest mode or authenticated users"""
+    if current_user is None:
+        return create_guest_user()
+    return current_user
+
 def require_admin(current_user: Dict[str, str] = Depends(verify_token)) -> Dict[str, str]:
     """Dependency to require admin role"""
     if current_user["role"] != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required"
+        )
+    return current_user
+
+def require_user_or_admin(current_user: Dict[str, str] = Depends(guest_or_auth)) -> Dict[str, str]:
+    """Dependency to require user or admin role (guests denied)"""
+    if current_user.get("is_guest", False):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required for this action"
         )
     return current_user

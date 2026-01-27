@@ -15,7 +15,7 @@ import json
 router = APIRouter()
 
 # Database connection
-DATABASE_URL = "postgresql://patrick:{os.getenv(\'DATABASE_PASSWORD\')}@localhost/anime_production"
+DATABASE_URL = f"postgresql://patrick:{os.getenv('DATABASE_PASSWORD')}@localhost/tower_consolidated"
 
 class ContentRating(BaseModel):
     project_id: int

@@ -1,0 +1,6 @@
+--2026-01-26 06:06:17--  https://huggingface.co/Lightricks/LTX-Video/resolve/main/ltx-video-2b-v1.safetensors
+Resolving huggingface.co (huggingface.co)... 18.164.174.23, 18.164.174.17, 18.164.174.118, ...
+Connecting to huggingface.co (huggingface.co)|18.164.174.23|:443... connected.
+HTTP request sent, awaiting response... 404 Not Found
+2026-01-26 06:06:17 ERROR 404: Not Found.
+

@@ -387,7 +387,7 @@ class EchoAnimeBridge:
         """Query Echo Brain API"""
         async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(
-                f"{self.echo_url}/api/echo/chat",
+                f"{self.echo_url}/api/echo/query",
                 json={
                     "query": query,
                     "conversation_id": conversation_id or "anime_bridge",

@@ -1,0 +1,26 @@
+[Unit]
+Description=Tower LoRA Training API Service
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=exec
+User=patrick
+Group=patrick
+WorkingDirectory=/opt/tower-anime-production
+Environment=PYTHONPATH=/opt/tower-anime-production
+ExecStart=/opt/tower-anime-production/venv/bin/python /opt/tower-anime-production/api/lora_training_api.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Resource limits
+MemoryMax=4G
+CPUQuota=200%
+
+# Environment
+Environment=CUDA_VISIBLE_DEVICES=0
+
+[Install]
+WantedBy=multi-user.target

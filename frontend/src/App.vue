@@ -8,12 +8,22 @@
         <h2 style="margin: 0; font-size: 1.5rem; font-weight: 600;">
           <i class="pi pi-video" style="margin-right: 0.5rem;"></i>
           Anime Director Studio
+          <Tag v-if="isGuestMode" value="Guest Mode" severity="warning" style="margin-left: 1rem; font-size: 0.75rem;" />
         </h2>
       </template>
       <template #end>
-        <Button label="New Project" icon="pi pi-plus" @click="showNewProjectDialog = true" style="margin-right: 0.5rem;" />
-        <Button label="New Scene" icon="pi pi-file" @click="showNewSceneDialog = true" :disabled="!selectedProject" severity="secondary" style="margin-right: 0.5rem;" />
-        <Button label="Generate" icon="pi pi-play" @click="generateScene" :disabled="!selectedScene" severity="success" />
+        <div v-if="isGuestMode" style="margin-right: 1rem;">
+          <small style="color: #999;">Viewing in guest mode - Some features disabled</small>
+        </div>
+        <Button label="New Project" icon="pi pi-plus" @click="showNewProjectDialog = true"
+                :disabled="isGuestMode" style="margin-right: 0.5rem;"
+                :title="isGuestMode ? 'Authentication required' : ''" />
+        <Button label="New Scene" icon="pi pi-file" @click="showNewSceneDialog = true"
+                :disabled="!selectedProject || isGuestMode" severity="secondary" style="margin-right: 0.5rem;"
+                :title="isGuestMode ? 'Authentication required' : ''" />
+        <Button label="Generate" icon="pi pi-play" @click="generateScene"
+                :disabled="!selectedScene || isGuestMode" severity="success"
+                :title="isGuestMode ? 'Authentication required' : ''" />
       </template>
     </Toolbar>
 
@@ -184,6 +194,8 @@ const showNewSceneDialog = ref(false)
 const isGenerating = ref(false)
 const generationProgress = ref(0)
 const previewUrl = ref(null)
+const isGuestMode = ref(true) // Start in guest mode
+const systemStatus = ref(null)
 
 const newProject = ref({ name: '', description: '' })
 const newScene = ref({ scene_number: 1, description: '', characters: '' })
@@ -197,12 +209,41 @@ const filteredProjects = computed(() => {
 })
 
 // Methods
+async function checkGuestStatus() {
+  try {
+    const response = await fetch(`${API_BASE}/guest-status`)
+    if (response.ok) {
+      systemStatus.value = await response.json()
+      // Try to determine if we're truly authenticated by making a test call
+      // We're in guest mode by default, this is just to get system capabilities
+    }
+  } catch (error) {
+    console.log('Guest status check failed, continuing in guest mode')
+  }
+}
+
 async function loadProjects() {
   try {
     const response = await fetch(`${API_BASE}/projects`)
-    projects.value = await response.json()
+    if (response.ok) {
+      projects.value = await response.json()
+    } else if (response.status === 401) {
+      toast.add({
+        severity: 'warn',
+        summary: 'Guest Mode',
+        detail: 'Viewing in guest mode - authentication required for full features',
+        life: 5000
+      })
+    } else {
+      throw new Error(`HTTP ${response.status}`)
+    }
   } catch (error) {
-    toast.add({ severity: 'error', summary: 'Error', detail: 'Failed to load projects', life: 3000 })
+    toast.add({
+      severity: 'error',
+      summary: 'Error',
+      detail: `Failed to load projects: ${error.message}`,
+      life: 3000
+    })
   }
 }
 
@@ -226,12 +267,33 @@ function onSceneSelect(event) {
 }
 
 async function createProject() {
+  if (isGuestMode.value) {
+    toast.add({
+      severity: 'warn',
+      summary: 'Authentication Required',
+      detail: 'Please authenticate to create projects',
+      life: 5000
+    })
+    return
+  }
+
   try {
     const response = await fetch(`${API_BASE}/projects`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(newProject.value)
     })
+
+    if (response.status === 401) {
+      toast.add({
+        severity: 'error',
+        summary: 'Authentication Required',
+        detail: 'Please log in to create projects',
+        life: 5000
+      })
+      return
+    }
+
     const project = await response.json()
     projects.value.push(project)
     showNewProjectDialog.value = false
@@ -245,12 +307,33 @@ async function createProject() {
 async function createScene() {
   if (!selectedProject.value) return
 
+  if (isGuestMode.value) {
+    toast.add({
+      severity: 'warn',
+      summary: 'Authentication Required',
+      detail: 'Please authenticate to create scenes',
+      life: 5000
+    })
+    return
+  }
+
   try {
     const response = await fetch(`${API_BASE}/episodes/${selectedProject.value.id}/scenes`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(newScene.value)
     })
+
+    if (response.status === 401) {
+      toast.add({
+        severity: 'error',
+        summary: 'Authentication Required',
+        detail: 'Please log in to create scenes',
+        life: 5000
+      })
+      return
+    }
+
     const scene = await response.json()
     scenes.value.push(scene)
     showNewSceneDialog.value = false
@@ -294,6 +377,16 @@ async function saveScene() {
 async function generateScene() {
   if (!selectedScene.value) return
 
+  if (isGuestMode.value) {
+    toast.add({
+      severity: 'warn',
+      summary: 'Authentication Required',
+      detail: 'Please authenticate to generate content. Guest mode only allows viewing.',
+      life: 5000
+    })
+    return
+  }
+
   isGenerating.value = true
   generationProgress.value = 0
   previewUrl.value = null
@@ -307,6 +400,18 @@ async function generateScene() {
         generation_type: 'video'
       })
     })
+
+    if (response.status === 401) {
+      toast.add({
+        severity: 'error',
+        summary: 'Authentication Required',
+        detail: 'Please log in to generate content',
+        life: 5000
+      })
+      isGenerating.value = false
+      return
+    }
+
     const result = await response.json()
     toast.add({ severity: 'success', summary: 'Generation Started', detail: `Job ID: ${result.job_id}`, life: 5000 })
 
@@ -352,8 +457,19 @@ function formatDate(dateString) {
 }
 
 // Initialize
-onMounted(() => {
-  loadProjects()
+onMounted(async () => {
+  await checkGuestStatus()
+  await loadProjects()
+
+  // Show a helpful welcome message for guest users
+  if (isGuestMode.value) {
+    toast.add({
+      severity: 'info',
+      summary: 'Welcome to Anime Director Studio',
+      detail: 'You\'re viewing in guest mode. You can browse projects and characters, but authentication is required for content creation.',
+      life: 8000
+    })
+  }
 })
 </script>
 
