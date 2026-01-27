@@ -1,0 +1,16 @@
+# Tower Anime Production - LoRA Models
+models:
+
+  - name: "fixhand_working"
+    path: "/mnt/1TB-storage/models/loras/test/fixhand_working.safetensors"
+    type: "lora"
+    framework: "ltx"
+    civitai_version: "16907"
+    added: "2026-01-26T18:54:59+00:00"
+
+  - name: "ltx2_video_detailer"
+    path: "/mnt/1TB-storage/models/loras/ltx/ltx2_video_detailer.safetensors"
+    type: "lora"
+    framework: "ltx"
+    civitai_version: "2600627"
+    added: "2026-01-26T18:59:10+00:00"

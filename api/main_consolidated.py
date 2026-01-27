@@ -249,8 +249,6 @@ async def create_project(request: ProjectRequest):
         import uuid
         import asyncpg
 
-        project_id = str(uuid.uuid4())
-
         conn = await asyncpg.connect(
             host="localhost",
             database="anime_production",
@@ -259,10 +257,11 @@ async def create_project(request: ProjectRequest):
         )
 
         try:
-            await conn.execute(
-                """INSERT INTO projects (id, name, description, status, created_at)
-                   VALUES ($1, $2, $3, 'planning', $4)""",
-                project_id,
+            # Let database auto-generate the ID
+            project_id = await conn.fetchval(
+                """INSERT INTO projects (name, description, status, created_at)
+                   VALUES ($1, $2, 'planning', $3)
+                   RETURNING id""",
                 request.name,
                 request.description,
                 datetime.now()
@@ -358,14 +357,13 @@ async def create_episode(project_id: str, request: EpisodeRequest):
             episode_number = (max_episode or 0) + 1
 
             await conn.execute(
-                """INSERT INTO episodes (id, project_id, title, description, episode_number, duration, status, created_at)
-                   VALUES ($1, $2, $3, $4, $5, $6, 'draft', $7)""",
+                """INSERT INTO episodes (id, project_id, title, description, episode_number, status, created_at)
+                   VALUES ($1, $2, $3, $4, $5, 'draft', $6)""",
                 episode_id,
                 project_id_value,
                 request.title,
                 request.description,
                 episode_number,
-                request.duration,
                 datetime.now()
             )
 
@@ -373,13 +371,12 @@ async def create_episode(project_id: str, request: EpisodeRequest):
             for i, scene in enumerate(request.scenes):
                 scene_id = str(uuid.uuid4())
                 await conn.execute(
-                    """INSERT INTO scenes (id, episode_id, scene_number, description, duration)
-                       VALUES ($1, $2, $3, $4, $5)""",
+                    """INSERT INTO scenes (id, episode_id, scene_number, prompt)
+                       VALUES ($1, $2, $3, $4)""",
                     scene_id,
                     episode_id,
                     i + 1,
-                    scene.get("description", ""),
-                    scene.get("duration", 10)
+                    scene.get("description", "")
                 )
 
             return {
