@@ -7,6 +7,7 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',  // Listen on all network interfaces
     port: 5173,
+    allowedHosts: ['tower.local', '192.168.50.135', 'localhost', '.duckdns.org'],
     proxy: {
       '/api': {
         target: 'http://localhost:8328',

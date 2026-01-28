@@ -300,8 +300,11 @@ const filteredProjects = computed(() => {
 
 // Methods
 function connectWebSocket() {
-  const wsUrl = `ws://localhost:8328/ws/director-studio`
-  websocket.value = new WebSocket(wsUrl)
+  // Use proper nginx proxy route when in production
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  const host = window.location.hostname === 'localhost' ? 'localhost' : window.location.host
+  const finalWsUrl = `${protocol}//${host}/api/anime/ws`
+  websocket.value = new WebSocket(finalWsUrl)
   connectionStatus.value = 'connecting'
 
   websocket.value.onopen = () => {
@@ -403,7 +406,8 @@ async function loadCharacters(projectId) {
 async function loadScenes(projectId) {
   try {
     const response = await fetch(`${API_BASE}/episodes/${projectId}/scenes`)
-    scenes.value = await response.json()
+    const data = await response.json()
+    scenes.value = data.scenes || []
   } catch (error) {
     toast.add({ severity: 'error', summary: 'Error', detail: 'Failed to load scenes', life: 3000 })
   }
@@ -548,7 +552,8 @@ function formatDate(dateString) {
 
 // Initialize
 onMounted(async () => {
-  connectWebSocket()
+  // TODO: Implement WebSocket service on port 8330
+  // connectWebSocket()
   await loadProjects()
   await store.loadProjects()
 })

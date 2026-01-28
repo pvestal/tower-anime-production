@@ -189,7 +189,7 @@ async def add_episode_endpoints(app, get_db):
         """)
 
         result = db.execute(query, {"project_id": project_id})
-        scenes = [dict(row) for row in result]
+        scenes = [row._asdict() for row in result.fetchall()]
 
         return {"scenes": scenes}
 

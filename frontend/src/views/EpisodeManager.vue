@@ -139,11 +139,16 @@
 
 <script setup>
 import { ref, onMounted, computed } from 'vue'
-import { useRoute } from 'vue-router'
 import draggable from 'vuedraggable'
 import { useToast } from 'primevue/usetoast'
 
-const route = useRoute()
+const props = defineProps({
+  selectedProject: {
+    type: Object,
+    default: null
+  }
+})
+
 const toast = useToast()
 
 const showNotification = (message, severity = 'info') => {
@@ -156,7 +161,7 @@ const isGenerating = ref(false)
 const expandedEpisodes = ref(new Set())
 const generationQueue = ref([])
 
-const projectId = computed(() => route.params.projectId || route.query.projectId)
+const projectId = computed(() => props.selectedProject?.id)
 
 const getStatusClass = (status) => {
   const classes = {
