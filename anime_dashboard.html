@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tower Anime Production Studio</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1e1e2e 0%, #2d1b69 100%);
+            color: #fff;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            padding: 30px 0;
+            margin-bottom: 40px;
+            background: rgba(0,0,0,0.3);
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .header p {
+            color: #a0a0b0;
+            font-size: 1.1rem;
+        }
+
+        .nav-tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+            background: rgba(0,0,0,0.2);
+            padding: 10px;
+            border-radius: 10px;
+        }
+
+        .nav-tab {
+            padding: 12px 24px;
+            background: rgba(255,255,255,0.1);
+            border: none;
+            color: #fff;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: all 0.3s;
+        }
+
+        .nav-tab:hover {
+            background: rgba(255,255,255,0.2);
+        }
+
+        .nav-tab.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .tools-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .tool-card {
+            background: rgba(0,0,0,0.4);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 15px;
+            padding: 25px;
+            transition: transform 0.3s, box-shadow 0.3s;
+            cursor: pointer;
+        }
+
+        .tool-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
+        }
+
+        .tool-icon {
+            font-size: 2rem;
+            margin-bottom: 15px;
+        }
+
+        .tool-title {
+            font-size: 1.3rem;
+            margin-bottom: 10px;
+            color: #fff;
+        }
+
+        .tool-description {
+            color: #a0a0b0;
+            line-height: 1.5;
+            margin-bottom: 15px;
+        }
+
+        .tool-button {
+            display: inline-block;
+            padding: 10px 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            transition: opacity 0.3s;
+        }
+
+        .tool-button:hover {
+            opacity: 0.9;
+        }
+
+        .characters-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .character-card {
+            background: rgba(0,0,0,0.5);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 12px;
+            padding: 15px;
+            text-align: center;
+            transition: all 0.3s;
+        }
+
+        .character-card:hover {
+            transform: scale(1.05);
+            border-color: #667eea;
+        }
+
+        .character-name {
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .character-role {
+            color: #a0a0b0;
+            font-size: 0.9rem;
+            margin-bottom: 10px;
+        }
+
+        .character-status {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+        }
+
+        .status-ready {
+            background: rgba(63, 185, 80, 0.2);
+            color: #3fb950;
+        }
+
+        .status-training {
+            background: rgba(255, 166, 87, 0.2);
+            color: #ffa657;
+        }
+
+        .status-pending {
+            background: rgba(139, 148, 158, 0.2);
+            color: #8b949e;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+            justify-content: center;
+        }
+
+        .action-button {
+            padding: 8px 16px;
+            background: rgba(102, 126, 234, 0.2);
+            border: 1px solid #667eea;
+            color: #667eea;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-decoration: none;
+            font-size: 0.9rem;
+        }
+
+        .action-button:hover {
+            background: #667eea;
+            color: white;
+        }
+
+        .workflow-section {
+            background: rgba(0,0,0,0.3);
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 30px;
+        }
+
+        .workflow-steps {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 20px;
+            position: relative;
+        }
+
+        .workflow-step {
+            flex: 1;
+            text-align: center;
+            padding: 20px;
+            position: relative;
+        }
+
+        .workflow-step::after {
+            content: '→';
+            position: absolute;
+            right: -20px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 1.5rem;
+            color: #667eea;
+        }
+
+        .workflow-step:last-child::after {
+            display: none;
+        }
+
+        .step-number {
+            display: inline-block;
+            width: 40px;
+            height: 40px;
+            line-height: 40px;
+            background: #667eea;
+            border-radius: 50%;
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+
+        .step-title {
+            font-size: 1.1rem;
+            margin-bottom: 5px;
+        }
+
+        .step-description {
+            color: #a0a0b0;
+            font-size: 0.9rem;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: rgba(0,0,0,0.4);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .stat-label {
+            color: #a0a0b0;
+            margin-top: 5px;
+        }
+
+        .quick-actions {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .quick-action {
+            padding: 15px;
+            background: rgba(102, 126, 234, 0.1);
+            border: 1px solid #667eea;
+            border-radius: 10px;
+            color: white;
+            text-align: center;
+            text-decoration: none;
+            transition: all 0.3s;
+        }
+
+        .quick-action:hover {
+            background: rgba(102, 126, 234, 0.3);
+            transform: translateY(-2px);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🗼 Tower Anime Production Studio</h1>
+            <p>Complete pipeline for anime character generation, training, and production</p>
+        </div>
+
+        <div class="nav-tabs">
+            <button class="nav-tab active" onclick="showTab('overview')">Overview</button>
+            <button class="nav-tab" onclick="showTab('characters')">Characters</button>
+            <button class="nav-tab" onclick="showTab('generation')">Generation</button>
+            <button class="nav-tab" onclick="showTab('training')">Training</button>
+            <button class="nav-tab" onclick="showTab('feedback')">Feedback</button>
+        </div>
+
+        <!-- Overview Tab -->
+        <div id="overview-tab" class="tab-content active">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="total-characters">0</div>
+                    <div class="stat-label">Total Characters</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="trained-loras">0</div>
+                    <div class="stat-label">Trained LoRAs</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="images-generated">0</div>
+                    <div class="stat-label">Images Generated</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="active-projects">0</div>
+                    <div class="stat-label">Active Projects</div>
+                </div>
+            </div>
+
+            <div class="workflow-section">
+                <h2>Production Workflow</h2>
+                <div class="workflow-steps">
+                    <div class="workflow-step">
+                        <div class="step-number">1</div>
+                        <div class="step-title">Design Character</div>
+                        <div class="step-description">Create character prompts and attributes</div>
+                    </div>
+                    <div class="workflow-step">
+                        <div class="step-number">2</div>
+                        <div class="step-title">Generate Dataset</div>
+                        <div class="step-description">Create training images</div>
+                    </div>
+                    <div class="workflow-step">
+                        <div class="step-number">3</div>
+                        <div class="step-title">Train LoRA</div>
+                        <div class="step-description">Fine-tune character model</div>
+                    </div>
+                    <div class="workflow-step">
+                        <div class="step-number">4</div>
+                        <div class="step-title">Review & Feedback</div>
+                        <div class="step-description">Improve with feedback</div>
+                    </div>
+                    <div class="workflow-step">
+                        <div class="step-number">5</div>
+                        <div class="step-title">Production</div>
+                        <div class="step-description">Generate final content</div>
+                    </div>
+                </div>
+            </div>
+
+            <h2 style="margin-bottom: 20px;">Quick Access Tools</h2>
+            <div class="tools-grid">
+                <div class="tool-card" onclick="window.open('http://192.168.50.135:8405', '_blank')">
+                    <div class="tool-icon">🎯</div>
+                    <div class="tool-title">Smart Feedback System</div>
+                    <div class="tool-description">Review generated images, provide specific feedback, and improve character generation quality</div>
+                    <a href="http://192.168.50.135:8405" target="_blank" class="tool-button">Open Feedback</a>
+                </div>
+
+                <div class="tool-card" onclick="window.open('http://192.168.50.135:8188', '_blank')">
+                    <div class="tool-icon">🎨</div>
+                    <div class="tool-title">ComfyUI</div>
+                    <div class="tool-description">Visual workflow system for image generation with nodes and custom workflows</div>
+                    <a href="http://192.168.50.135:8188" target="_blank" class="tool-button">Open ComfyUI</a>
+                </div>
+
+                <div class="tool-card" onclick="showTab('training')">
+                    <div class="tool-icon">🧬</div>
+                    <div class="tool-title">LoRA Training</div>
+                    <div class="tool-description">Train character-specific models for consistent generation</div>
+                    <a href="#" onclick="event.preventDefault(); showTab('training')" class="tool-button">Start Training</a>
+                </div>
+
+                <div class="tool-card" onclick="window.open('/docs', '_blank')">
+                    <div class="tool-icon">📚</div>
+                    <div class="tool-title">API Documentation</div>
+                    <div class="tool-description">Complete API reference for all anime production endpoints</div>
+                    <a href="/docs" target="_blank" class="tool-button">View Docs</a>
+                </div>
+            </div>
+
+            <h2 style="margin-bottom: 20px;">Quick Actions</h2>
+            <div class="quick-actions">
+                <a href="#" class="quick-action" onclick="generateCharacterBatch()">
+                    🚀 Generate Character Batch
+                </a>
+                <a href="#" class="quick-action" onclick="reviewPendingImages()">
+                    ✅ Review Pending Images
+                </a>
+                <a href="#" class="quick-action" onclick="startTrainingQueue()">
+                    🔄 Process Training Queue
+                </a>
+                <a href="#" class="quick-action" onclick="exportProductionAssets()">
+                    📦 Export Production Assets
+                </a>
+            </div>
+        </div>
+
+        <!-- Characters Tab -->
+        <div id="characters-tab" class="tab-content">
+            <h2>Character Management</h2>
+            <div id="characters-grid" class="characters-grid">
+                <!-- Characters will load here -->
+            </div>
+        </div>
+
+        <!-- Generation Tab -->
+        <div id="generation-tab" class="tab-content">
+            <h2>Image Generation</h2>
+            <div class="workflow-section">
+                <h3>Generate New Images</h3>
+                <form id="generation-form" style="margin-top: 20px;">
+                    <div style="margin-bottom: 15px;">
+                        <label style="display: block; margin-bottom: 5px;">Character:</label>
+                        <select id="character-select" style="width: 100%; padding: 10px; background: rgba(0,0,0,0.5); border: 1px solid #667eea; color: white; border-radius: 8px;">
+                            <option value="">Loading characters...</option>
+                        </select>
+                    </div>
+                    <div style="margin-bottom: 15px;">
+                        <label style="display: block; margin-bottom: 5px;">Number of Images:</label>
+                        <input type="number" id="image-count" value="4" min="1" max="20" style="width: 100%; padding: 10px; background: rgba(0,0,0,0.5); border: 1px solid #667eea; color: white; border-radius: 8px;">
+                    </div>
+                    <div style="margin-bottom: 15px;">
+                        <label style="display: block; margin-bottom: 5px;">Additional Prompt (optional):</label>
+                        <textarea id="additional-prompt" rows="3" style="width: 100%; padding: 10px; background: rgba(0,0,0,0.5); border: 1px solid #667eea; color: white; border-radius: 8px; resize: vertical;" placeholder="Add specific pose, scene, or style details..."></textarea>
+                    </div>
+                    <button type="submit" style="padding: 12px 30px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border: none; color: white; border-radius: 8px; font-size: 1rem; cursor: pointer;">
+                        Generate Images
+                    </button>
+                </form>
+                <div id="generation-status" style="margin-top: 20px;"></div>
+            </div>
+        </div>
+
+        <!-- Training Tab -->
+        <div id="training-tab" class="tab-content">
+            <h2>LoRA Training Pipeline</h2>
+            <div class="workflow-section">
+                <h3>Start New Training</h3>
+                <form id="training-form" style="margin-top: 20px;">
+                    <div style="margin-bottom: 15px;">
+                        <label style="display: block; margin-bottom: 5px;">Select Character:</label>
+                        <select id="training-character-select" style="width: 100%; padding: 10px; background: rgba(0,0,0,0.5); border: 1px solid #667eea; color: white; border-radius: 8px;">
+                            <option value="">Loading characters...</option>
+                        </select>
+                    </div>
+                    <div style="margin-bottom: 15px;">
+                        <label style="display: block; margin-bottom: 5px;">Training Steps:</label>
+                        <input type="number" id="training-steps" value="2000" min="500" max="10000" step="500" style="width: 100%; padding: 10px; background: rgba(0,0,0,0.5); border: 1px solid #667eea; color: white; border-radius: 8px;">
+                    </div>
+                    <div style="margin-bottom: 15px;">
+                        <label style="display: block; margin-bottom: 5px;">LoRA Trigger Word:</label>
+                        <input type="text" id="lora-trigger" placeholder="e.g., kazuki_style" style="width: 100%; padding: 10px; background: rgba(0,0,0,0.5); border: 1px solid #667eea; color: white; border-radius: 8px;">
+                    </div>
+                    <button type="submit" style="padding: 12px 30px; background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); border: none; color: white; border-radius: 8px; font-size: 1rem; cursor: pointer;">
+                        Start Training
+                    </button>
+                </form>
+                <div id="training-status" style="margin-top: 20px;"></div>
+            </div>
+        </div>
+
+        <!-- Feedback Tab -->
+        <div id="feedback-tab" class="tab-content">
+            <h2>Review & Feedback</h2>
+            <div class="workflow-section">
+                <h3>Smart Feedback System</h3>
+                <p style="margin: 20px 0;">The feedback system helps improve character generation by capturing specific issues and learning from patterns.</p>
+                <div class="quick-actions">
+                    <a href="http://192.168.50.135:8405" target="_blank" class="quick-action">
+                        🎯 Open Feedback Interface
+                    </a>
+                    <a href="#" class="quick-action" onclick="loadFeedbackSummary()">
+                        📊 View Feedback Analytics
+                    </a>
+                    <a href="#" class="quick-action" onclick="applyFeedbackLearning()">
+                        🧠 Apply Learning Updates
+                    </a>
+                </div>
+                <div id="feedback-summary" style="margin-top: 30px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Tab switching
+        function showTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            document.querySelectorAll('.nav-tab').forEach(btn => {
+                btn.classList.remove('active');
+            });
+
+            document.getElementById(tabName + '-tab').classList.add('active');
+            event.target.classList.add('active');
+
+            // Load data for specific tabs
+            if (tabName === 'characters') {
+                loadCharacters();
+            }
+        }
+
+        // Load statistics
+        async function loadStats() {
+            try {
+                const response = await fetch('http://localhost:8328/api/anime/characters');
+                if (response.ok) {
+                    const data = await response.json();
+                    document.getElementById('total-characters').textContent = data.length || 0;
+
+                    // Count trained LoRAs
+                    const trained = data.filter(c => c.lora_path).length;
+                    document.getElementById('trained-loras').textContent = trained;
+                }
+            } catch (error) {
+                console.error('Failed to load stats:', error);
+            }
+        }
+
+        // Load characters
+        async function loadCharacters() {
+            try {
+                const response = await fetch('http://localhost:8328/api/anime/characters');
+                if (response.ok) {
+                    const characters = await response.json();
+                    const grid = document.getElementById('characters-grid');
+
+                    // Also populate select dropdowns
+                    const charSelect = document.getElementById('character-select');
+                    const trainSelect = document.getElementById('training-character-select');
+
+                    charSelect.innerHTML = '<option value="">Select a character</option>';
+                    trainSelect.innerHTML = '<option value="">Select a character</option>';
+
+                    grid.innerHTML = characters.map(char => {
+                        const status = char.lora_path ? 'ready' : (char.training_status === 'training' ? 'training' : 'pending');
+                        const statusClass = `status-${status}`;
+                        const statusText = status.charAt(0).toUpperCase() + status.slice(1);
+
+                        // Add to select dropdowns
+                        charSelect.innerHTML += `<option value="${char.id}">${char.name}</option>`;
+                        if (!char.lora_path) {
+                            trainSelect.innerHTML += `<option value="${char.id}">${char.name}</option>`;
+                        }
+
+                        return `
+                            <div class="character-card">
+                                <div class="character-name">${char.name}</div>
+                                <div class="character-role">${char.role || 'No role'}</div>
+                                <div class="character-status ${statusClass}">${statusText}</div>
+                                <div class="action-buttons">
+                                    <a href="#" class="action-button" onclick="generateImages(${char.id})">Generate</a>
+                                    ${!char.lora_path ? `<a href="#" class="action-button" onclick="trainLora(${char.id})">Train</a>` : ''}
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                }
+            } catch (error) {
+                console.error('Failed to load characters:', error);
+                document.getElementById('characters-grid').innerHTML = '<p>Failed to load characters. Check if the API is running.</p>';
+            }
+        }
+
+        // Generation form handler
+        document.getElementById('generation-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const characterId = document.getElementById('character-select').value;
+            const count = document.getElementById('image-count').value;
+            const additionalPrompt = document.getElementById('additional-prompt').value;
+
+            if (!characterId) {
+                alert('Please select a character');
+                return;
+            }
+
+            const statusDiv = document.getElementById('generation-status');
+            statusDiv.innerHTML = '<p>🔄 Starting generation...</p>';
+
+            try {
+                const response = await fetch(`http://localhost:8328/api/anime/characters/${characterId}/generate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        num_images: parseInt(count),
+                        additional_prompt: additionalPrompt
+                    })
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    statusDiv.innerHTML = `<p style="color: #3fb950;">✅ Generation started! Job ID: ${result.job_id}</p>`;
+                } else {
+                    statusDiv.innerHTML = `<p style="color: #f85149;">❌ Generation failed</p>`;
+                }
+            } catch (error) {
+                statusDiv.innerHTML = `<p style="color: #f85149;">❌ Error: ${error.message}</p>`;
+            }
+        });
+
+        // Training form handler
+        document.getElementById('training-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const characterId = document.getElementById('training-character-select').value;
+            const steps = document.getElementById('training-steps').value;
+            const trigger = document.getElementById('lora-trigger').value;
+
+            if (!characterId) {
+                alert('Please select a character');
+                return;
+            }
+
+            const statusDiv = document.getElementById('training-status');
+            statusDiv.innerHTML = '<p>🔄 Starting training...</p>';
+
+            // Training would be initiated here
+            statusDiv.innerHTML = '<p style="color: #ffa657;">⏳ Training queued. This will take approximately 30-60 minutes.</p>';
+        });
+
+        // Quick action handlers
+        function generateCharacterBatch() {
+            showTab('generation');
+        }
+
+        function reviewPendingImages() {
+            window.open('http://192.168.50.135:8405', '_blank');
+        }
+
+        function startTrainingQueue() {
+            showTab('training');
+        }
+
+        function exportProductionAssets() {
+            alert('Export functionality coming soon!');
+        }
+
+        async function loadFeedbackSummary() {
+            const summaryDiv = document.getElementById('feedback-summary');
+            summaryDiv.innerHTML = '<p>Loading feedback analytics...</p>';
+
+            try {
+                const response = await fetch('http://localhost:8405/api/feedback-summary');
+                if (response.ok) {
+                    const data = await response.json();
+                    summaryDiv.innerHTML = `
+                        <h3>Feedback Analytics</h3>
+                        <div class="stats-grid" style="margin-top: 20px;">
+                            ${data.summary.map(item => `
+                                <div class="stat-card">
+                                    <div class="stat-value">${item.avg_rating?.toFixed(1) || 'N/A'}</div>
+                                    <div class="stat-label">${item.character_name}</div>
+                                    <div style="font-size: 0.8rem; color: #a0a0b0; margin-top: 5px;">
+                                        ${item.feedback_count} reviews
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    `;
+                } else {
+                    summaryDiv.innerHTML = '<p>No feedback data available yet.</p>';
+                }
+            } catch (error) {
+                summaryDiv.innerHTML = '<p style="color: #f85149;">Failed to load feedback summary</p>';
+            }
+        }
+
+        function applyFeedbackLearning() {
+            alert('Echo Brain will analyze feedback patterns and update generation prompts.');
+        }
+
+        // Helper functions
+        function generateImages(characterId) {
+            document.getElementById('character-select').value = characterId;
+            showTab('generation');
+        }
+
+        function trainLora(characterId) {
+            document.getElementById('training-character-select').value = characterId;
+            showTab('training');
+        }
+
+        // Initial load
+        loadStats();
+        loadCharacters();
+
+        // Auto-refresh stats
+        setInterval(loadStats, 30000);
+    </script>
+</body>
+</html>

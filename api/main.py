@@ -77,6 +77,17 @@ async def health_check():
         "architecture": "modular"
     }
 
+@app.on_event("startup")
+async def startup_event():
+    """Initialize episode endpoints on startup"""
+    try:
+        from api.episode_endpoints import add_episode_endpoints
+        from api.core.database import get_db
+        await add_episode_endpoints(app, get_db)
+        logger.info("✅ Episode endpoints added successfully")
+    except Exception as e:
+        logger.error(f"Failed to add episode endpoints: {e}")
+
 
 @app.get("/api/anime/health")
 async def anime_health():
@@ -98,12 +109,16 @@ try:
     from api.routers import generation_router, projects_router
     from api.routers.anime_director import router as director_router
     from api.routers.video_ssot import router as video_ssot_router
+    from api.routers.music import router as music_router
+    from api.storyline_endpoints import router as storyline_router
 
     # Include all routers
     app.include_router(generation_router, tags=["Generation"])
     app.include_router(projects_router, tags=["Projects"])
     app.include_router(director_router, tags=["AI Director"])
     app.include_router(video_ssot_router, tags=["Video SSOT"])
+    app.include_router(music_router, tags=["Music Integration"])
+    app.include_router(storyline_router, tags=["Storylines"])
 
     logger.info("✅ All routers loaded successfully")
 except Exception as e:
@@ -122,6 +137,13 @@ except Exception as e:
         logger.info("✅ Projects router loaded")
     except Exception as e:
         logger.warning(f"Could not load Projects router: {e}")
+
+    try:
+        from api.routers.music import router as music_router
+        app.include_router(music_router, tags=["Music Integration"])
+        logger.info("✅ Music router loaded")
+    except Exception as e:
+        logger.warning(f"Could not load Music router: {e}")
 
 # Legacy endpoints for backward compatibility
 @app.get("/jobs/{job_id}")

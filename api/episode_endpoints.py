@@ -98,6 +98,101 @@ async def add_episode_endpoints(app, get_db):
 
         return scenes
 
+    @app.get("/api/anime/episodes/{project_id}")
+    async def get_project_episodes(project_id: int, db: Session = Depends(get_db)):
+        """Get all episodes for a specific project with their scenes"""
+
+        # Get episodes from the episodes table
+        episodes_query = text("""
+            SELECT
+                id,
+                title,
+                description,
+                status,
+                created_at,
+                :project_id as project_id,
+                1 as episode_number
+            FROM episodes
+            WHERE project_id = :project_id
+            ORDER BY created_at
+        """)
+
+        episodes_result = db.execute(episodes_query, {"project_id": project_id})
+        episodes = []
+
+        for row in episodes_result:
+            episode = {
+                'id': row[0],
+                'title': row[1],
+                'description': row[2],
+                'status': row[3],
+                'created_at': row[4],
+                'project_id': row[5],
+                'episode_number': row[6]
+            }
+
+            # Get scenes for this episode from episode_scenes table
+            scenes_query = text("""
+                SELECT
+                    id,
+                    episode_id,
+                    scene_number,
+                    scene_type,
+                    characters,
+                    description,
+                    duration_seconds,
+                    'pending' as status,
+                    created_at
+                FROM episode_scenes
+                WHERE episode_id = :episode_id
+                ORDER BY scene_number
+            """)
+
+            scenes_result = db.execute(scenes_query, {"episode_id": episode['id']})
+            episode['scenes'] = []
+            for scene_row in scenes_result:
+                episode['scenes'].append({
+                    'id': scene_row[0],
+                    'episode_id': scene_row[1],
+                    'scene_number': scene_row[2],
+                    'scene_type': scene_row[3],
+                    'characters': scene_row[4],
+                    'description': scene_row[5],
+                    'duration_seconds': scene_row[6],
+                    'status': scene_row[7],
+                    'created_at': scene_row[8]
+                })
+            episode['production_status'] = episode['status']
+            episodes.append(episode)
+
+        return {"episodes": episodes}
+
+    @app.get("/api/anime/episodes/{project_id}/scenes")
+    async def get_project_scenes(project_id: int, db: Session = Depends(get_db)):
+        """Get all scenes for a project across all episodes"""
+
+        query = text("""
+            SELECT
+                es.id,
+                es.episode_id,
+                es.scene_number,
+                es.scene_type,
+                es.characters,
+                es.description,
+                es.duration_seconds,
+                e.title as episode_title,
+                'pending' as status
+            FROM episode_scenes es
+            JOIN episodes e ON es.episode_id = e.id
+            WHERE e.project_id = :project_id
+            ORDER BY e.created_at, es.scene_number
+        """)
+
+        result = db.execute(query, {"project_id": project_id})
+        scenes = [dict(row) for row in result]
+
+        return {"scenes": scenes}
+
     @app.post("/api/anime/scenes/{scene_id}/generate")
     async def generate_scene(scene_id: int, db: Session = Depends(get_db)):
         """Generate video for a specific scene"""

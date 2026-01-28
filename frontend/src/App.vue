@@ -6,137 +6,202 @@
     <Toolbar style="background: #1a1a1a; border-bottom: 1px solid #333; padding: 0.5rem 1rem;">
       <template #start>
         <h2 style="margin: 0; font-size: 1.5rem; font-weight: 600;">
-          <i class="pi pi-video" style="margin-right: 0.5rem;"></i>
-          Anime Director Studio
-          <Tag v-if="isGuestMode" value="Guest Mode" severity="warning" style="margin-left: 1rem; font-size: 0.75rem;" />
+          <i class="pi pi-video" style="margin-right: 0.5rem; color: #ff8c00;"></i>
+          Tower Anime Production
         </h2>
       </template>
       <template #end>
-        <div v-if="isGuestMode" style="margin-right: 1rem;">
-          <small style="color: #999;">Viewing in guest mode - Some features disabled</small>
+        <div class="flex align-items-center gap-2">
+          <Tag v-if="connectionStatus === 'connected'"
+               value="Live" severity="success" icon="pi pi-circle-fill" />
+          <Tag v-else-if="connectionStatus === 'connecting'"
+               value="Connecting" severity="warning" icon="pi pi-spin pi-spinner" />
+          <Tag v-else
+               value="Offline" severity="danger" icon="pi pi-circle" />
+          <Button label="New Project" icon="pi pi-plus" @click="showNewProjectDialog = true"
+                  style="margin-left: 1rem;" />
         </div>
-        <Button label="New Project" icon="pi pi-plus" @click="showNewProjectDialog = true"
-                :disabled="isGuestMode" style="margin-right: 0.5rem;"
-                :title="isGuestMode ? 'Authentication required' : ''" />
-        <Button label="New Scene" icon="pi pi-file" @click="showNewSceneDialog = true"
-                :disabled="!selectedProject || isGuestMode" severity="secondary" style="margin-right: 0.5rem;"
-                :title="isGuestMode ? 'Authentication required' : ''" />
-        <Button label="Generate" icon="pi pi-play" @click="generateScene"
-                :disabled="!selectedScene || isGuestMode" severity="success"
-                :title="isGuestMode ? 'Authentication required' : ''" />
       </template>
     </Toolbar>
 
-    <Splitter style="height: calc(100vh - 60px);">
+    <!-- Main Content with Tabs -->
+    <div style="height: calc(100vh - 60px); display: flex;">
       <!-- Left Panel: Projects -->
-      <SplitterPanel :size="20" :minSize="15">
-        <div style="padding: 1rem; height: 100%; overflow-y: auto;">
-          <h3 style="margin-top: 0;">Projects</h3>
-          <InputText v-model="projectSearch" placeholder="Search projects..." style="width: 100%; margin-bottom: 1rem;" />
+      <div style="width: 250px; background: #111; border-right: 1px solid #333; overflow-y: auto;">
+        <div style="padding: 1rem;">
+          <h3 style="margin-top: 0; color: #ff8c00;">Projects</h3>
+          <InputText v-model="projectSearch" placeholder="Search projects..."
+                     style="width: 100%; margin-bottom: 1rem;" icon="pi pi-search" />
 
           <div v-for="project in filteredProjects" :key="project.id"
                @click="selectProject(project)"
                :class="['project-card', { 'selected': selectedProject?.id === project.id }]"
                style="padding: 0.75rem; margin-bottom: 0.5rem; border: 1px solid #333; border-radius: 6px; cursor: pointer; transition: all 0.2s;">
             <div style="font-weight: 600; margin-bottom: 0.25rem;">{{ project.name }}</div>
-            <Tag :value="project.status" :severity="getStatusSeverity(project.status)" style="font-size: 0.75rem;" />
-            <div style="font-size: 0.8rem; color: #999; margin-top: 0.25rem;">{{ formatDate(project.created_at) }}</div>
+            <div class="flex gap-1 mt-1">
+              <Tag :value="project.status" :severity="getStatusSeverity(project.status)" class="text-xs" />
+              <Tag v-if="qualityGates[project.name]" value="QG" severity="warning"
+                   class="text-xs" title="Quality Gate Configured" />
+            </div>
+            <div style="font-size: 0.75rem; color: #666; margin-top: 0.25rem;">{{ formatDate(project.created_at) }}</div>
+          </div>
+
+          <!-- Characters Section -->
+          <div v-if="selectedProject" class="mt-3">
+            <h4 style="color: #ff8c00;">Characters</h4>
+            <div v-if="charactersLoading" class="text-center p-2">
+              <ProgressSpinner style="width: 20px; height: 20px;" />
+            </div>
+            <div v-else-if="characters.length === 0" class="text-center text-500 p-2">
+              No characters
+            </div>
+            <div v-else>
+              <div v-for="char in characters" :key="char.id"
+                   @click="selectedCharacter = char.name"
+                   class="character-item p-2 mb-1"
+                   :class="{ 'selected': selectedCharacter === char.name }">
+                <div class="text-sm font-semibold">{{ char.name }}</div>
+                <div class="text-xs text-500">{{ char.role || 'No role' }}</div>
+              </div>
+            </div>
           </div>
         </div>
-      </SplitterPanel>
+      </div>
 
-      <!-- Center Panel: Scenes -->
-      <SplitterPanel :size="50" :minSize="30">
-        <div style="padding: 1rem; height: 100%; display: flex; flex-direction: column;">
-          <h3 style="margin-top: 0;">Scenes</h3>
+      <!-- Right Panel: Tab Content -->
+      <div style="flex: 1; display: flex; flex-direction: column;">
+        <!-- Tab Menu -->
+        <TabMenu v-model:activeIndex="activeTab" :model="tabItems"
+                 style="border-bottom: 1px solid #333;" />
 
-          <DataTable :value="scenes" v-model:selection="selectedScene" selectionMode="single"
-                     :paginator="true" :rows="10"
-                     style="flex: 1;"
-                     :rowHover="true"
-                     @row-select="onSceneSelect">
-            <Column field="scene_number" header="#" style="width: 60px;"></Column>
-            <Column field="description" header="Description" style="max-width: 300px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></Column>
-            <Column field="characters" header="Characters" style="max-width: 200px;">
-              <template #body="slotProps">
-                {{ slotProps.data.characters || 'None' }}
-              </template>
-            </Column>
-            <Column field="status" header="Status" style="width: 120px;">
-              <template #body="slotProps">
-                <Tag :value="slotProps.data.status" :severity="getStatusSeverity(slotProps.data.status)" />
-              </template>
-            </Column>
-            <Column header="Actions" style="width: 150px;">
-              <template #body="slotProps">
-                <Button icon="pi pi-play" @click="generateSceneById(slotProps.data.id)" size="small" severity="success" text />
-                <Button icon="pi pi-eye" v-if="slotProps.data.video_path" @click="viewVideo(slotProps.data.video_path)" size="small" text />
-              </template>
-            </Column>
-          </DataTable>
-        </div>
-      </SplitterPanel>
+        <!-- Tab Content -->
+        <div style="flex: 1; overflow-y: auto;">
+          <!-- Scenes Tab -->
+          <div v-if="activeTab === 0" style="padding: 1rem;">
 
-      <!-- Right Panel: Properties -->
-      <SplitterPanel :size="30" :minSize="20">
-        <div style="padding: 1rem; height: 100%; overflow-y: auto;">
-          <h3 style="margin-top: 0;">Properties</h3>
+            <div class="flex justify-content-between align-items-center mb-3">
+              <h3 class="m-0">Scenes</h3>
+              <Button label="New Scene" icon="pi pi-plus" @click="showNewSceneDialog = true"
+                      :disabled="!selectedProject" size="small" />
+            </div>
 
-          <div v-if="selectedProject && !selectedScene">
-            <Card style="background: #1a1a1a; border: 1px solid #333;">
-              <template #title>Project: {{ selectedProject.name }}</template>
-              <template #content>
-                <div style="margin-bottom: 1rem;">
-                  <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Description</label>
-                  <Textarea v-model="selectedProject.description" rows="4" style="width: 100%;" />
-                </div>
-                <div style="margin-bottom: 1rem;">
-                  <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Status</label>
-                  <InputText v-model="selectedProject.status" style="width: 100%;" />
-                </div>
-                <Button label="Save" icon="pi pi-save" @click="saveProject" style="width: 100%;" />
-              </template>
-            </Card>
+            <DataTable :value="scenes" v-model:selection="selectedScene" selectionMode="single"
+                       :paginator="true" :rows="10"
+                       :rowHover="true"
+                       @row-select="onSceneSelect">
+              <Column field="scene_number" header="#" style="width: 60px;"></Column>
+              <Column field="description" header="Description" style="max-width: 400px;"></Column>
+              <Column field="characters" header="Characters" style="max-width: 200px;">
+                <template #body="slotProps">
+                  {{ slotProps.data.characters || 'None' }}
+                </template>
+              </Column>
+              <Column field="status" header="Status" style="width: 120px;">
+                <template #body="slotProps">
+                  <Tag :value="slotProps.data.status" :severity="getStatusSeverity(slotProps.data.status)" />
+                </template>
+              </Column>
+              <Column header="Actions" style="width: 150px;">
+                <template #body="slotProps">
+                  <Button icon="pi pi-play" @click="generateSceneById(slotProps.data.id)"
+                          size="small" severity="success" text rounded />
+                  <Button icon="pi pi-eye" v-if="slotProps.data.video_path"
+                          @click="viewVideo(slotProps.data.video_path)" size="small" text rounded />
+                </template>
+              </Column>
+            </DataTable>
           </div>
 
-          <div v-if="selectedScene">
-            <Card style="background: #1a1a1a; border: 1px solid #333;">
-              <template #title>Scene {{ selectedScene.scene_number }}</template>
-              <template #content>
-                <div style="margin-bottom: 1rem;">
-                  <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Description</label>
-                  <Textarea v-model="selectedScene.description" rows="4" style="width: 100%;" />
-                </div>
-                <div style="margin-bottom: 1rem;">
-                  <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Characters</label>
-                  <InputText v-model="selectedScene.characters" style="width: 100%;" />
-                </div>
-                <div style="margin-bottom: 1rem;">
-                  <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Status</label>
-                  <Tag :value="selectedScene.status" :severity="getStatusSeverity(selectedScene.status)" />
-                </div>
-                <Button label="Save Scene" icon="pi pi-save" @click="saveScene" style="width: 100%; margin-bottom: 0.5rem;" />
-                <Button label="Generate Video" icon="pi pi-play" @click="generateScene" severity="success" style="width: 100%;" :loading="isGenerating" />
-                <div v-if="isGenerating" style="margin-top: 1rem;">
-                  <ProgressBar :value="generationProgress" :showValue="true" />
-                  <p style="text-align: center; margin-top: 0.5rem; font-size: 0.9rem;">Generating... {{ generationProgress }}%</p>
-                </div>
-                <div v-if="previewUrl" style="margin-top: 1rem;">
-                  <h4>Preview:</h4>
-                  <video v-if="previewUrl.endsWith('.mp4')" :src="previewUrl" controls style="width: 100%; border-radius: 8px;" />
-                  <img v-else :src="previewUrl" style="width: 100%; border-radius: 8px;" />
-                </div>
-              </template>
-            </Card>
+          <!-- Storylines Tab -->
+          <div v-if="activeTab === 1" style="padding: 1rem;">
+            <StorylineManager :selectedProject="selectedProject" />
           </div>
 
-          <div v-if="!selectedProject && !selectedScene" style="text-align: center; color: #666; margin-top: 2rem;">
-            <i class="pi pi-info-circle" style="font-size: 3rem; margin-bottom: 1rem;"></i>
-            <p>Select a project or scene to view properties</p>
+          <!-- Smart Feedback Tab -->
+          <div v-if="activeTab === 2" style="padding: 1rem;">
+            <SmartFeedback :selectedProject="selectedProject" :selectedCharacter="selectedCharacter" />
+          </div>
+
+          <!-- Episodes Tab -->
+          <div v-if="activeTab === 3" style="padding: 1rem;">
+            <EpisodeManager :selectedProject="selectedProject" />
+          </div>
+
+          <!-- Music Tab -->
+          <div v-if="activeTab === 4" style="padding: 1rem;">
+            <MusicManager :selectedProject="selectedProject" />
           </div>
         </div>
-      </SplitterPanel>
-    </Splitter>
+      </div>
+
+      <!-- Properties Panel (conditional) -->
+      <div v-if="showPropertiesPanel" style="width: 300px; background: #111; border-left: 1px solid #333; padding: 1rem; overflow-y: auto;">
+        <div class="flex justify-content-between align-items-center mb-3">
+          <h3 style="margin-top: 0; color: #ff8c00;">Properties</h3>
+          <Button icon="pi pi-times" @click="showPropertiesPanel = false"
+                  text rounded size="small" />
+        </div>
+
+        <div v-if="selectedProject && !selectedScene">
+          <Card style="background: #1a1a1a; border: 1px solid #333;">
+            <template #title>
+              <span class="text-sm">{{ selectedProject.name }}</span>
+            </template>
+            <template #content>
+              <div style="margin-bottom: 1rem;">
+                <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem;">Description</label>
+                <Textarea v-model="selectedProject.description" rows="3" style="width: 100%;" />
+              </div>
+              <div style="margin-bottom: 1rem;">
+                <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem;">Status</label>
+                <Dropdown v-model="selectedProject.status"
+                         :options="['active', 'planning', 'completed', 'archived']"
+                         style="width: 100%;" />
+              </div>
+              <Button label="Save" icon="pi pi-save" @click="saveProject" style="width: 100%;" size="small" />
+            </template>
+          </Card>
+        </div>
+
+        <div v-if="selectedScene">
+          <Card style="background: #1a1a1a; border: 1px solid #333;">
+            <template #title>
+              <span class="text-sm">Scene {{ selectedScene.scene_number }}</span>
+            </template>
+            <template #content>
+              <div style="margin-bottom: 1rem;">
+                <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem;">Description</label>
+                <Textarea v-model="selectedScene.description" rows="3" style="width: 100%;" />
+              </div>
+              <div style="margin-bottom: 1rem;">
+                <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem;">Characters</label>
+                <InputText v-model="selectedScene.characters" style="width: 100%;" />
+              </div>
+              <div style="margin-bottom: 1rem;">
+                <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem;">Status</label>
+                <Tag :value="selectedScene.status" :severity="getStatusSeverity(selectedScene.status)" />
+              </div>
+              <Button label="Save" icon="pi pi-save" @click="saveScene" style="width: 100%; margin-bottom: 0.5rem;" size="small" />
+              <Button label="Generate" icon="pi pi-play" @click="generateScene" severity="success" style="width: 100%;" :loading="isGenerating" size="small" />
+              <div v-if="isGenerating" style="margin-top: 1rem;">
+                <ProgressBar :value="generationProgress" :showValue="true" style="height: 20px;" />
+                <p style="text-align: center; margin-top: 0.5rem; font-size: 0.75rem;">{{ generationProgress }}%</p>
+              </div>
+              <div v-if="previewUrl" style="margin-top: 1rem;">
+                <label class="text-xs">Preview:</label>
+                <video v-if="previewUrl.endsWith('.mp4')" :src="previewUrl" controls style="width: 100%; border-radius: 4px;" />
+                <img v-else :src="previewUrl" style="width: 100%; border-radius: 4px;" />
+              </div>
+            </template>
+          </Card>
+        </div>
+
+        <div v-if="!selectedProject && !selectedScene" style="text-align: center; color: #666; margin-top: 2rem;">
+          <i class="pi pi-info-circle" style="font-size: 2rem; margin-bottom: 1rem;"></i>
+          <p class="text-sm">Select an item</p>
+        </div>
+      </div>
+    </div>
 
     <!-- New Project Dialog -->
     <Dialog v-model:visible="showNewProjectDialog" header="New Project" :modal="true" :style="{'width': '450px'}">
@@ -177,25 +242,50 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useToast } from 'primevue/usetoast'
+import { useAnimeStore } from './stores/anime'
+import StorylineManager from './components/StorylineManager.vue'
+import SmartFeedback from './components/SmartFeedback.vue'
+import EpisodeManager from './views/EpisodeManager.vue'
+import MusicManager from './components/MusicManager.vue'
 
 const toast = useToast()
+const store = useAnimeStore()
 const API_BASE = '/api/anime'
 
 // State
 const projects = ref([])
 const scenes = ref([])
+const characters = ref([])
 const selectedProject = ref(null)
 const selectedScene = ref(null)
+const selectedCharacter = ref(null)
 const projectSearch = ref('')
 const showNewProjectDialog = ref(false)
 const showNewSceneDialog = ref(false)
+const showPropertiesPanel = ref(true)
 const isGenerating = ref(false)
 const generationProgress = ref(0)
 const previewUrl = ref(null)
-const isGuestMode = ref(true) // Start in guest mode
-const systemStatus = ref(null)
+const charactersLoading = ref(false)
+
+// Tab state
+const activeTab = ref(0)
+const tabItems = ref([
+  { label: 'Scenes', icon: 'pi pi-video' },
+  { label: 'Storylines', icon: 'pi pi-book' },
+  { label: 'Smart Feedback', icon: 'pi pi-check-circle' },
+  { label: 'Episodes', icon: 'pi pi-list' },
+  { label: 'Music', icon: 'pi pi-volume-up' }
+])
+
+// WebSocket state
+const websocket = ref(null)
+const connectionStatus = ref('disconnected')
+
+// Quality gates from store
+const qualityGates = computed(() => store.qualityGates)
 
 const newProject = ref({ name: '', description: '' })
 const newScene = ref({ scene_number: 1, description: '', characters: '' })
@@ -209,16 +299,55 @@ const filteredProjects = computed(() => {
 })
 
 // Methods
-async function checkGuestStatus() {
-  try {
-    const response = await fetch(`${API_BASE}/guest-status`)
-    if (response.ok) {
-      systemStatus.value = await response.json()
-      // Try to determine if we're truly authenticated by making a test call
-      // We're in guest mode by default, this is just to get system capabilities
+function connectWebSocket() {
+  const wsUrl = `ws://localhost:8328/ws/director-studio`
+  websocket.value = new WebSocket(wsUrl)
+  connectionStatus.value = 'connecting'
+
+  websocket.value.onopen = () => {
+    connectionStatus.value = 'connected'
+    toast.add({ severity: 'success', summary: 'Connected', detail: 'Real-time updates enabled', life: 2000 })
+  }
+
+  websocket.value.onmessage = (event) => {
+    try {
+      const message = JSON.parse(event.data)
+      handleWebSocketMessage(message)
+    } catch (e) {
+      console.error('WebSocket message parse error:', e)
     }
-  } catch (error) {
-    console.log('Guest status check failed, continuing in guest mode')
+  }
+
+  websocket.value.onclose = () => {
+    connectionStatus.value = 'disconnected'
+    setTimeout(() => {
+      if (connectionStatus.value === 'disconnected') {
+        connectWebSocket()
+      }
+    }, 3000)
+  }
+
+  websocket.value.onerror = (error) => {
+    console.error('WebSocket error:', error)
+    connectionStatus.value = 'disconnected'
+  }
+}
+
+function handleWebSocketMessage(message) {
+  switch (message.type) {
+    case 'generation_update':
+      if (message.data) {
+        generationProgress.value = message.data.progress || 0
+        if (message.data.status === 'completed') {
+          isGenerating.value = false
+          loadScenes(selectedProject.value.id)
+          toast.add({ severity: 'success', summary: 'Complete', detail: message.data.message, life: 3000 })
+        }
+      }
+      break
+    case 'project_update':
+      loadProjects()
+      break
   }
 }
 
@@ -250,7 +379,25 @@ async function loadProjects() {
 async function selectProject(project) {
   selectedProject.value = project
   selectedScene.value = null
+  selectedCharacter.value = null
+  store.selectProject(project)
   await loadScenes(project.id)
+  await loadCharacters(project.id)
+}
+
+async function loadCharacters(projectId) {
+  charactersLoading.value = true
+  try {
+    const response = await fetch(`${API_BASE}/characters?project_id=${projectId}`)
+    if (response.ok) {
+      const data = await response.json()
+      characters.value = data.characters || []
+    }
+  } catch (error) {
+    console.error('Failed to load characters:', error)
+  } finally {
+    charactersLoading.value = false
+  }
 }
 
 async function loadScenes(projectId) {
@@ -267,15 +414,6 @@ function onSceneSelect(event) {
 }
 
 async function createProject() {
-  if (isGuestMode.value) {
-    toast.add({
-      severity: 'warn',
-      summary: 'Authentication Required',
-      detail: 'Please authenticate to create projects',
-      life: 5000
-    })
-    return
-  }
 
   try {
     const response = await fetch(`${API_BASE}/projects`, {
@@ -284,15 +422,6 @@ async function createProject() {
       body: JSON.stringify(newProject.value)
     })
 
-    if (response.status === 401) {
-      toast.add({
-        severity: 'error',
-        summary: 'Authentication Required',
-        detail: 'Please log in to create projects',
-        life: 5000
-      })
-      return
-    }
 
     const project = await response.json()
     projects.value.push(project)
@@ -307,16 +436,6 @@ async function createProject() {
 async function createScene() {
   if (!selectedProject.value) return
 
-  if (isGuestMode.value) {
-    toast.add({
-      severity: 'warn',
-      summary: 'Authentication Required',
-      detail: 'Please authenticate to create scenes',
-      life: 5000
-    })
-    return
-  }
-
   try {
     const response = await fetch(`${API_BASE}/episodes/${selectedProject.value.id}/scenes`, {
       method: 'POST',
@@ -324,15 +443,6 @@ async function createScene() {
       body: JSON.stringify(newScene.value)
     })
 
-    if (response.status === 401) {
-      toast.add({
-        severity: 'error',
-        summary: 'Authentication Required',
-        detail: 'Please log in to create scenes',
-        life: 5000
-      })
-      return
-    }
 
     const scene = await response.json()
     scenes.value.push(scene)
@@ -377,16 +487,6 @@ async function saveScene() {
 async function generateScene() {
   if (!selectedScene.value) return
 
-  if (isGuestMode.value) {
-    toast.add({
-      severity: 'warn',
-      summary: 'Authentication Required',
-      detail: 'Please authenticate to generate content. Guest mode only allows viewing.',
-      life: 5000
-    })
-    return
-  }
-
   isGenerating.value = true
   generationProgress.value = 0
   previewUrl.value = null
@@ -401,16 +501,6 @@ async function generateScene() {
       })
     })
 
-    if (response.status === 401) {
-      toast.add({
-        severity: 'error',
-        summary: 'Authentication Required',
-        detail: 'Please log in to generate content',
-        life: 5000
-      })
-      isGenerating.value = false
-      return
-    }
 
     const result = await response.json()
     toast.add({ severity: 'success', summary: 'Generation Started', detail: `Job ID: ${result.job_id}`, life: 5000 })
@@ -458,17 +548,14 @@ function formatDate(dateString) {
 
 // Initialize
 onMounted(async () => {
-  await checkGuestStatus()
+  connectWebSocket()
   await loadProjects()
+  await store.loadProjects()
+})
 
-  // Show a helpful welcome message for guest users
-  if (isGuestMode.value) {
-    toast.add({
-      severity: 'info',
-      summary: 'Welcome to Anime Director Studio',
-      detail: 'You\'re viewing in guest mode. You can browse projects and characters, but authentication is required for content creation.',
-      life: 8000
-    })
+onUnmounted(() => {
+  if (websocket.value) {
+    websocket.value.close()
   }
 })
 </script>
@@ -481,6 +568,48 @@ onMounted(async () => {
 
 .project-card.selected {
   background: #2a2a2a;
-  border-color: #667eea !important;
+  border-color: #ff8c00 !important;
+}
+
+.character-item {
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.character-item:hover {
+  background: #222;
+}
+
+.character-item.selected {
+  background: #2a2a2a;
+  border-color: #667eea;
+}
+
+:deep(.p-tabmenu) {
+  background: #1a1a1a;
+}
+
+:deep(.p-tabmenu .p-tabmenu-nav) {
+  background: transparent;
+  border: none;
+}
+
+:deep(.p-tabmenu .p-menuitem-link) {
+  background: transparent;
+  color: #999;
+}
+
+:deep(.p-tabmenu .p-menuitem-link:hover) {
+  background: #222;
+  color: #fff;
+}
+
+:deep(.p-tabmenu .p-menuitem-link.p-menuitem-link-active) {
+  background: #222;
+  color: #ff8c00;
+  border-bottom: 2px solid #ff8c00;
 }
 </style>

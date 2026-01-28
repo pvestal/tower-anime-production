@@ -284,5 +284,85 @@ class VideoGenerationService:
             return False
 
 
+async def generate_video_with_music_sync(generation_config: Dict[str, Any]) -> Dict[str, Any]:
+    """Generate video synchronized with music timing and BPM"""
+    try:
+        service = video_generation_service
+
+        # Extract music sync parameters
+        project_id = generation_config["project_id"]
+        bpm = generation_config["bpm"]
+        frames_per_beat = generation_config["frames_per_beat"]
+        fps = generation_config.get("fps", 24)
+        sync_mode = generation_config.get("sync_mode", "auto")
+
+        # Calculate timing parameters for music synchronization
+        beats_per_second = bpm / 60
+
+        # Generate scene prompt based on project
+        # This would normally fetch from the database
+        scene_prompt = f"anime scene, space adventure, {sync_mode} synchronized animation, dynamic movement"
+
+        # Modify AnimateDiff parameters for music sync
+        # Key insight: frame count should align with musical phrases
+        if sync_mode == "beat_sync":
+            # Sync to every beat
+            frame_count = int(frames_per_beat * 8)  # 8 beats = 2 musical bars
+        elif sync_mode == "auto":
+            # Sync to musical phrases (typically 4 beats)
+            frame_count = int(frames_per_beat * 4)
+        else:
+            # Manual mode - use standard 5 second duration
+            frame_count = fps * 5
+
+        # Ensure frame count is reasonable for AnimateDiff
+        frame_count = max(24, min(frame_count, 120))
+
+        # Calculate context overlap for smooth music sync
+        context_overlap = max(4, int(frames_per_beat / 2))
+
+        # Enhanced prompt for music synchronization
+        enhanced_prompt = f"{scene_prompt}, rhythmic motion at {bpm} BPM, synchronized animation"
+
+        # Generate the video with music-aware parameters
+        job_id = await service.generate_video_with_animatediff(
+            prompt=enhanced_prompt,
+            frame_count=frame_count,
+            context_overlap=context_overlap,
+            fps=fps,
+            # Additional parameters for better music sync
+            guidance_scale=7.5,  # More controlled generation
+            motion_scale=1.2,    # Enhanced motion for beat sync
+        )
+
+        if job_id:
+            # Store music sync metadata in database
+            try:
+                # This would update the generation record with music sync info
+                logger.info(f"Music-synced video generation started: {job_id}")
+                logger.info(f"BPM: {bpm}, Frames per beat: {frames_per_beat}, Total frames: {frame_count}")
+
+                return {
+                    "job_id": job_id,
+                    "status": "started",
+                    "music_sync_config": {
+                        "bpm": bpm,
+                        "frames_per_beat": frames_per_beat,
+                        "frame_count": frame_count,
+                        "fps": fps,
+                        "sync_mode": sync_mode
+                    }
+                }
+            except Exception as db_error:
+                logger.warning(f"Failed to store music sync metadata: {db_error}")
+                # Still return success since generation started
+                return {"job_id": job_id, "status": "started"}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to start music-synced generation")
+
+    except Exception as e:
+        logger.error(f"Music sync generation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 # Global service instance
 video_generation_service = VideoGenerationService()

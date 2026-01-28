@@ -1,17 +1,23 @@
 <template>
-  <TowerLayout title="Episode Manager">
-    <template #actions>
-      <div class="flex gap-2 items-center">
-        <TowerButton @click="generateAllScenes" :disabled="isGenerating">
-          {{ isGenerating ? 'Generating...' : '🎬 Generate All Scenes' }}
-        </TowerButton>
-        <TowerButton @click="refreshEpisodes">
-          🔄 Refresh
-        </TowerButton>
+  <div class="episode-manager">
+    <div class="flex justify-content-between align-items-center mb-4">
+      <h3 class="m-0">Episode Manager</h3>
+      <div class="flex gap-2">
+        <Button
+          @click="generateAllScenes"
+          :disabled="isGenerating"
+          icon="pi pi-video"
+          :label="isGenerating ? 'Generating...' : 'Generate All Scenes'"
+          size="small"
+        />
+        <Button
+          @click="refreshEpisodes"
+          icon="pi pi-refresh"
+          label="Refresh"
+          size="small"
+        />
       </div>
-    </template>
-
-    <TowerNotification />
+    </div>
 
     <div class="p-4">
       <!-- Episodes List -->
@@ -26,7 +32,8 @@
 
       <div v-else class="space-y-6">
         <!-- Episode Cards -->
-        <TowerCard v-for="episode in episodes" :key="episode.id" class="p-6">
+        <Card v-for="episode in episodes" :key="episode.id" style="background: #1a1a1a; border: 1px solid #333; margin-bottom: 1rem;">
+          <template #content>
           <div class="flex justify-between items-start mb-4">
             <div>
               <h3 class="text-xl font-semibold">
@@ -42,9 +49,13 @@
                 </span>
               </div>
             </div>
-            <TowerButton @click="toggleEpisode(episode.id)" size="sm">
-              {{ expandedEpisodes.has(episode.id) ? '▼' : '▶' }}
-            </TowerButton>
+            <Button
+              @click="toggleEpisode(episode.id)"
+              size="small"
+              text
+              rounded
+              :icon="expandedEpisodes.has(episode.id) ? 'pi pi-chevron-down' : 'pi pi-chevron-right'"
+            />
           </div>
 
           <!-- Scenes List (Expandable) -->
@@ -75,20 +86,22 @@
                       </div>
                     </div>
                     <div class="flex gap-2 ml-4">
-                      <TowerButton
+                      <Button
                         @click="generateScene(scene.id)"
                         :disabled="scene.status === 'generating'"
-                        size="sm"
-                      >
-                        {{ scene.status === 'generating' ? '⏳' : '🎬' }}
-                      </TowerButton>
-                      <TowerButton
+                        size="small"
+                        :icon="scene.status === 'generating' ? 'pi pi-spin pi-spinner' : 'pi pi-play'"
+                        text
+                        rounded
+                      />
+                      <Button
                         v-if="scene.video_path"
                         @click="viewVideo(scene.video_path)"
-                        size="sm"
-                      >
-                        👁️
-                      </TowerButton>
+                        size="small"
+                        icon="pi pi-eye"
+                        text
+                        rounded
+                      />
                     </div>
                   </div>
                 </div>
@@ -97,16 +110,17 @@
 
             <!-- Batch Actions -->
             <div class="mt-4 pt-4 border-t border-gray-700 flex justify-end gap-2">
-              <TowerButton
+              <Button
                 @click="generateEpisodeScenes(episode.id)"
                 :disabled="isGenerating"
-                size="sm"
-              >
-                Generate All Scenes in Episode
-              </TowerButton>
+                size="small"
+                label="Generate All Scenes in Episode"
+                icon="pi pi-video"
+              />
             </div>
           </div>
-        </TowerCard>
+          </template>
+        </Card>
       </div>
 
       <!-- Generation Progress -->
@@ -120,21 +134,21 @@
         </div>
       </div>
     </div>
-  </TowerLayout>
+  </div>
 </template>
 
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import draggable from 'vuedraggable'
-import TowerLayout from '../components/TowerLayout.vue'
-import TowerCard from '../components/TowerCard.vue'
-import TowerButton from '../components/TowerButton.vue'
-import TowerNotification from '../components/TowerNotification.vue'
-import { useNotification } from '../composables/useNotification'
+import { useToast } from 'primevue/usetoast'
 
 const route = useRoute()
-const { showNotification } = useNotification()
+const toast = useToast()
+
+const showNotification = (message, severity = 'info') => {
+  toast.add({ severity, summary: severity === 'error' ? 'Error' : 'Success', detail: message, life: 3000 })
+}
 
 const episodes = ref([])
 const loading = ref(true)

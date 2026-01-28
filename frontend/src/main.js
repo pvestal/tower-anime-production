@@ -1,4 +1,5 @@
 import { createApp } from 'vue'
+import { createPinia } from 'pinia'
 import PrimeVue from 'primevue/config'
 import App from './App.vue'
 import './style.css'
@@ -18,24 +19,24 @@ import Tag from 'primevue/tag'
 import Toast from 'primevue/toast'
 import ToastService from 'primevue/toastservice'
 import ProgressBar from 'primevue/progressbar'
+import TabMenu from 'primevue/tabmenu'
+import Dropdown from 'primevue/dropdown'
+import Badge from 'primevue/badge'
+import Divider from 'primevue/divider'
+import Image from 'primevue/image'
+import Rating from 'primevue/rating'
+import Paginator from 'primevue/paginator'
+import ProgressSpinner from 'primevue/progressspinner'
 import 'primeicons/primeicons.css'
 
 const app = createApp(App)
+const pinia = createPinia()
 
+app.use(pinia)
 app.use(PrimeVue, {
-  unstyled: true,
-  pt: {
-    global: {
-      css: `
-        .p-component {
-          font-family: var(--font-primary);
-          color: var(--text-primary);
-        }
-      `
-    }
-  }
+  unstyled: false,
+  ripple: true
 })
-
 app.use(ToastService)
 
 // Register all PrimeVue components
@@ -52,5 +53,13 @@ app.component('Card', Card)
 app.component('Tag', Tag)
 app.component('Toast', Toast)
 app.component('ProgressBar', ProgressBar)
+app.component('TabMenu', TabMenu)
+app.component('Dropdown', Dropdown)
+app.component('Badge', Badge)
+app.component('Divider', Divider)
+app.component('Image', Image)
+app.component('Rating', Rating)
+app.component('Paginator', Paginator)
+app.component('ProgressSpinner', ProgressSpinner)
 
 app.mount('#app')
