@@ -6,7 +6,7 @@ queue status, and semantic search.
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 import logging
 
 # Import from existing story engine modules
@@ -17,6 +17,7 @@ sys.path.insert(0, '/opt/tower-anime-production')
 from services.story_engine.story_manager import StoryManager
 from services.story_engine.change_propagation import ChangePropagator
 from services.story_engine.vector_store import StoryVectorStore
+from services.story_engine.orchestrator import SceneOrchestrator
 from services.story_engine.models import (
     CharacterCreate, EpisodeCreate, SceneCreate, StoryArcCreate,
 )
@@ -28,6 +29,7 @@ router = APIRouter(prefix="/api/story", tags=["Story Engine"])
 story_manager = StoryManager()
 propagator = ChangePropagator()
 vector_store = StoryVectorStore()
+orchestrator = SceneOrchestrator()
 
 
 # ── Health ────────────────────────────────────────────────────
