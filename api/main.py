@@ -578,6 +578,112 @@ async def download_video(filename: str):
 
     return {"error": "File not found", "filename": filename}
 
+# LoRA Training endpoints
+@app.get("/api/training/status")
+async def get_all_training_status():
+    """Get status of all training jobs"""
+    try:
+        from api.training_monitor import get_all_characters, check_training_status
+        characters = await get_all_characters()
+
+        statuses = []
+        for char in characters:
+            status = await check_training_status(char)
+            statuses.append(status)
+
+        return {
+            "training_jobs": statuses,
+            "total_characters": len(statuses),
+            "active_training": sum(1 for s in statuses if s["is_training"])
+        }
+    except Exception as e:
+        logger.error(f"Failed to get training status: {e}")
+        return {"error": str(e)}
+
+@app.get("/api/training/status/{character_name}")
+async def get_training_status(character_name: str):
+    """Get training status for a specific character"""
+    try:
+        from api.training_monitor import check_training_status, get_training_progress
+
+        status = await check_training_status(character_name)
+        progress = await get_training_progress(character_name)
+
+        if progress:
+            status["progress"] = progress
+
+        return status
+    except Exception as e:
+        logger.error(f"Failed to get training status for {character_name}: {e}")
+        return {"error": str(e)}
+
+@app.post("/api/training/deploy/{character_name}")
+async def deploy_lora(character_name: str):
+    """Deploy trained LoRA to ComfyUI"""
+    try:
+        from api.training_monitor import check_training_status, deploy_lora_to_comfyui
+        from fastapi import HTTPException
+
+        status = await check_training_status(character_name)
+
+        if not status["completed_loras"]:
+            raise HTTPException(status_code=400, detail="No completed LoRA found")
+
+        # Deploy the most recent one
+        latest = status["latest_lora"]
+        result = await deploy_lora_to_comfyui(latest["path"], character_name)
+
+        return {
+            "character_name": character_name,
+            "deployment": result,
+            "status": "success"
+        }
+    except Exception as e:
+        logger.error(f"Failed to deploy LoRA for {character_name}: {e}")
+        from fastapi import HTTPException
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/training/test/{character_name}")
+async def test_lora_generation(character_name: str, request_data: dict = None):
+    """Test LoRA generation with a character-specific prompt"""
+    try:
+        if request_data is None:
+            request_data = {}
+
+        prompt = request_data.get("prompt", f"{character_name}, anime character, high quality, detailed")
+
+        # Import test generation script
+        import sys
+        sys.path.append('/opt/tower-anime-production/scripts')
+
+        # We'll create this script next
+        return {
+            "character_name": character_name,
+            "prompt": prompt,
+            "status": "test_generation_started",
+            "message": "Test generation functionality will be implemented"
+        }
+    except Exception as e:
+        logger.error(f"Failed to test LoRA for {character_name}: {e}")
+        return {"error": str(e)}
+
+@app.post("/api/training/auto-deploy")
+async def auto_deploy_loras():
+    """Auto-deploy all completed LoRAs to ComfyUI"""
+    try:
+        from api.training_monitor import auto_deploy_completed_loras
+
+        deployed = await auto_deploy_completed_loras()
+
+        return {
+            "deployed_count": len(deployed),
+            "deployments": deployed,
+            "status": "success"
+        }
+    except Exception as e:
+        logger.error(f"Failed to auto-deploy LoRAs: {e}")
+        return {"error": str(e)}
+
 # Mount static files
 if os.path.exists(STATIC_DIR):
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

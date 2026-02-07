@@ -131,6 +131,11 @@
           <div v-if="activeTab === 4" style="padding: 1rem;">
             <MusicManager :selectedProject="selectedProject" />
           </div>
+
+          <!-- Training Tab -->
+          <div v-if="activeTab === 5" style="padding: 1rem;">
+            <CharacterTraining :selectedProject="selectedProject" />
+          </div>
         </div>
       </div>
 
@@ -249,6 +254,7 @@ import StorylineManager from './components/StorylineManager.vue'
 import SmartFeedback from './components/SmartFeedback.vue'
 import EpisodeManager from './views/EpisodeManager.vue'
 import MusicManager from './components/MusicManager.vue'
+import CharacterTraining from './components/CharacterTraining.vue'
 
 const toast = useToast()
 const store = useAnimeStore()
@@ -277,7 +283,8 @@ const tabItems = ref([
   { label: 'Storylines', icon: 'pi pi-book' },
   { label: 'Smart Feedback', icon: 'pi pi-check-circle' },
   { label: 'Episodes', icon: 'pi pi-list' },
-  { label: 'Music', icon: 'pi pi-volume-up' }
+  { label: 'Music', icon: 'pi pi-volume-up' },
+  { label: 'Training', icon: 'pi pi-cog' }
 ])
 
 // WebSocket state
