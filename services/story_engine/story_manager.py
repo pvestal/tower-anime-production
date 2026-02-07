@@ -65,7 +65,11 @@ class StoryManager:
             event.field_changed, event.old_value, event.new_value,
             event.change_type, scope, event.created_by,
         ))
-        return cursor.fetchone()[0]
+        result = cursor.fetchone()
+        if isinstance(result, dict):
+            return result["id"]
+        else:
+            return result[0]
 
     # ── Characters ────────────────────────────────────────────
 
