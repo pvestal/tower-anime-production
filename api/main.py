@@ -120,6 +120,14 @@ try:
     app.include_router(music_router, tags=["Music Integration"])
     app.include_router(storyline_router, tags=["Storylines"])
 
+    # Story Engine router
+    try:
+        from api.story_routes import router as story_router
+        app.include_router(story_router, tags=["Story Engine"])
+        logger.info("✅ Story Engine router loaded")
+    except ImportError as e:
+        logger.warning(f"Could not load Story Engine router: {e}")
+
     logger.info("✅ All routers loaded successfully")
 except Exception as e:
     logger.error(f"Failed to load routers: {e}")
