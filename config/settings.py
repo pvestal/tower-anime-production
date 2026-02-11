@@ -96,6 +96,30 @@ class EchoBrainConfig:
 
 
 @dataclass
+
+@dataclass
+class LoraStudioConfig:
+    """LoRA Studio service configuration."""
+
+    host: str = field(default_factory=lambda: os.getenv("LORA_STUDIO_HOST", "localhost"))
+    port: int = field(default_factory=lambda: int(os.getenv("LORA_STUDIO_PORT", "8401")))
+
+    @property
+    def base_url(self) -> str:
+        """Get LoRA Studio base URL."""
+        return f"http://{self.host}:{self.port}"
+
+    @property
+    def approval_url(self) -> str:
+        """Get dataset approval endpoint."""
+        return f"{self.base_url}/api/approval"
+
+    @property
+    def characters_url(self) -> str:
+        """Get characters endpoint."""
+        return f"{self.base_url}/api/approval/characters"
+
+
 class FramePackConfig:
     """FramePack video generation configuration."""
 
@@ -146,6 +170,7 @@ class Settings:
     redis: RedisConfig = field(default_factory=RedisConfig)
     comfyui: ComfyUIConfig = field(default_factory=ComfyUIConfig)
     echo_brain: EchoBrainConfig = field(default_factory=EchoBrainConfig)
+    lora_studio: LoraStudioConfig = field(default_factory=LoraStudioConfig)
     framepack: FramePackConfig = field(default_factory=FramePackConfig)
     api: APIConfig = field(default_factory=APIConfig)
 
