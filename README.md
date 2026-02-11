@@ -136,17 +136,71 @@ isort api/ services/ config/
 mypy api/ services/ config/
 ```
 
-## FramePack Setup
+## FramePack v2 Video Generation
+
+### Quick Start
 
 ```bash
-# Install in ComfyUI
+# System check
+cd /opt/tower-anime-production/workflows/framepack
+python3 tower_framepack_v2.py --check
+
+# Generate with project scene
+python3 tower_framepack_v2.py --project tdd --scene mei_office --seconds 5
+
+# Generate with custom prompt
+python3 tower_framepack_v2.py --prompt "anime girl walking in Tokyo rain" --seconds 3
+
+# Use F1 model (newer/better)
+python3 tower_framepack_v2.py --prompt "forest scene" --f1 --seconds 5
+
+# Image-to-video mode
+python3 tower_framepack_v2.py --image /path/to/image.png --prompt "gentle movement" --seconds 5
+```
+
+### Available Project Scenes
+
+| Project | Scene | Description |
+|---------|-------|-------------|
+| `tdd` | `mei_office` | Mei in Tokyo office with city view |
+| `tdd` | `kai_rooftop` | Kai on rooftop at night |
+| `tdd` | `tokyo_night_walk` | Rain-slicked Shinjuku streets |
+| `cgs` | `neon_alley` | Cyberpunk hooded figure |
+| `smg` | `galaxy_flight` | Cosmic flight scene |
+
+### Models Available
+
+- **FramePackI2V** (original): `FramePackI2V_HY_fp8_e4m3fn.safetensors`
+- **FramePack F1** (recommended): `FramePack_F1_I2V_HY_20250503_fp8_e4m3fn.safetensors`
+
+### Key Features
+
+- **HunyuanVideo Architecture**: Uses dual text encoders (LLAMA 4096d + CLIP-L 768d)
+- **FP8 Quantization**: Optimized for RTX 3060 12GB VRAM
+- **Both T2V and I2V**: Text-to-video and image-to-video modes
+- **Verified Output**: Validates generated content quality
+- **Automatic Assembly**: Handles VHS MP4 output or ffmpeg fallback
+
+### Installation
+
+```bash
+# Install ComfyUI node (already done)
 cd /opt/ComfyUI/custom_nodes
 git clone https://github.com/kijai/ComfyUI-FramePackWrapper.git
 
-# Download models to /mnt/1TB-storage/models/
-# - diffusion_models/FramePackI2V_HY_fp8_e4m3fn.safetensors
-# - text_encoders/clip_l.safetensors
-# - text_encoders/llava_llama3_fp16.safetensors
-# - clip_vision/sigclip_vision_patch14_384.safetensors
-# - vae/hunyuan_video_vae_bf16.safetensors
+# Models installed at /mnt/1TB-storage/models/:
+# ✅ diffusion_models/FramePackI2V_HY_fp8_e4m3fn.safetensors (15GB)
+# ✅ diffusion_models/FramePack_F1_I2V_HY_20250503_fp8_e4m3fn.safetensors (15GB)
+# ✅ text_encoders/clip_l.safetensors (235MB)
+# ✅ text_encoders/llava_llama3_fp16.safetensors (15GB)
+# ✅ clip_vision/sigclip_vision_patch14_384.safetensors (817MB)
+# ✅ vae/hunyuan_video_vae_bf16.safetensors (471MB)
 ```
+
+### Technical Details
+
+- **GPU Memory**: 6GB preservation setting for RTX 3060
+- **Frame Rate**: 30fps output
+- **Resolution**: 544x704 default (anime portrait)
+- **Sampling**: 20-30 steps recommended
+- **CFG**: 1.0 (FramePack optimized value)
