@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Configuration
 COMFYUI_URL = "http://127.0.0.1:8188"
-API_URL = "http://127.0.0.1:8328"
+API_URL = "http://127.0.0.1:8401"  # LoRA Studio (anime production archived 2026-02-12)
 TIMEOUT = 60  # Maximum time for a generation
 
 

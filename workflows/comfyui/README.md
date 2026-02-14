@@ -22,20 +22,32 @@ This directory contains the critical workflow files for generating 30-second ani
 
 ## Technical Details
 
+### FramePack Video Generation (Primary - as of 2026-02-14)
+- **Wrapper**: `ComfyUI-FramePackWrapper_Plus` only (old wrapper disabled)
+- **gpu_memory_preservation**: **6.0** required for RTX 3060 at 544x704+ (3.5 causes GPU OOM)
+- **Resolution**: 544x704 or nearest bucket (FramePackFindNearestBucket selects optimal)
+- **Output**: 30fps h264 MP4
+- **Generation Time**: ~20min for 2s, ~13min for 3s, ~25-30min for 5s at 544x704
+
+### Legacy AnimateDiff Workflows
 - **Frame Count**: 120 frames for 30 seconds at 4fps
-- **Resolution**: 1024x1024 (optimized for RTX 3060 12GB VRAM)
+- **Resolution**: 1024x1024
 - **Interpolation**: RIFE algorithm for smooth frame transitions
 - **Context Window**: Looped uniform context for temporal consistency
-- **Generation Time**: ~15-20 minutes on NVIDIA RTX 3060
+
+### ComfyUI Service Configuration
+- **systemd MemoryMax**: 64G (raised from 16G on 2026-02-14)
+- **systemd MemoryHigh**: 48G (raised from 12G)
+- **CPUQuota**: 200%
+- FramePack offload mode uses ~30-40GB CPU RAM for model tensors
 
 ## Requirements
 
 - ComfyUI running on Tower (192.168.50.135:8188)
 - NVIDIA RTX 3060 with 12GB VRAM
-- AnimateDiff-Evolved extension
-- RIFE extension for frame interpolation
+- ComfyUI-FramePackWrapper_Plus for video generation
 - Required models loaded in ComfyUI
 
 ## Output
 
-Generated videos are saved to `/mnt/1TB-storage/ComfyUI/output/` and can be accessed via Jellyfin at `/mnt/10TB2/Anime/AI_Generated/`.
+Generated videos are saved to `/opt/ComfyUI/output/` (FramePack: `framepack_*.mp4`).

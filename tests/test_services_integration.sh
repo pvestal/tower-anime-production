@@ -22,10 +22,10 @@ echo "========================================================"
 # ------- Service Health -------
 echo -e "\n--- Service Status ---"
 
-if systemctl is-active --quiet tower-anime-production; then
-    pass "tower-anime-production service: active"
+if systemctl is-active --quiet tower-anime-production 2>/dev/null; then
+    fail "tower-anime-production service: still active (should be disabled since 2026-02-12)"
 else
-    fail "tower-anime-production service: NOT running"
+    pass "tower-anime-production service: correctly disabled (archived)"
 fi
 
 if systemctl is-active --quiet tower-lora-studio; then
@@ -79,19 +79,19 @@ fi
 # ------- Direct API (bypass nginx) -------
 echo -e "\n--- Direct API Endpoints ---"
 
-resp=$(curl -s http://127.0.0.1:8328/api/anime/health 2>/dev/null)
+resp=$(curl -s http://127.0.0.1:8401/api/lora/health 2>/dev/null)
 if echo "$resp" | grep -q '"healthy"'; then
-    pass "Anime API health (port 8328): healthy"
+    pass "LoRA Studio health (port 8401): healthy"
 else
-    fail "Anime API health (port 8328): $resp"
+    fail "LoRA Studio health (port 8401): $resp"
 fi
 
-resp=$(curl -s http://127.0.0.1:8328/api/anime/projects 2>/dev/null)
+resp=$(curl -s http://127.0.0.1:8401/api/lora/projects 2>/dev/null)
 if echo "$resp" | grep -q '"name"'; then
     count=$(echo "$resp" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null)
-    pass "Anime API projects: $count projects returned"
+    pass "LoRA Studio projects: $count projects returned"
 else
-    fail "Anime API projects: no data"
+    fail "LoRA Studio projects: no data"
 fi
 
 resp=$(curl -s http://127.0.0.1:8401/api/lora/health 2>/dev/null)
@@ -126,18 +126,18 @@ fi
 # ------- Nginx Proxied Endpoints -------
 echo -e "\n--- Nginx Proxied API (HTTPS) ---"
 
-resp=$(curl -sk https://localhost/api/anime/health 2>/dev/null)
+resp=$(curl -sk https://localhost/api/lora/health 2>/dev/null)
 if echo "$resp" | grep -q '"healthy"'; then
-    pass "Nginx -> Anime API /api/anime/health"
+    pass "Nginx -> LoRA Studio /api/lora/health"
 else
-    fail "Nginx -> Anime API: $resp"
+    fail "Nginx -> LoRA Studio health: $resp (anime API archived 2026-02-12)"
 fi
 
-resp=$(curl -sk https://localhost/api/anime/projects 2>/dev/null)
+resp=$(curl -sk https://localhost/api/lora/projects 2>/dev/null)
 if echo "$resp" | grep -q '"name"'; then
-    pass "Nginx -> Anime API /api/anime/projects"
+    pass "Nginx -> LoRA Studio /api/lora/projects"
 else
-    fail "Nginx -> Anime API projects: no data"
+    fail "Nginx -> LoRA Studio projects: no data"
 fi
 
 resp=$(curl -sk https://localhost/api/lora/health 2>/dev/null)

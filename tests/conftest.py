@@ -179,7 +179,7 @@ def sample_generation_job():
         "output_path": None,
         "created_at": "2025-12-10T12:00:00",
         "workflow_params": {
-            "model": "AOM3A1B",
+            "model": "realcartoonPixar_v12",
             "steps": 15,
             "cfg_scale": 7.0,
             "seed": 42,
@@ -248,7 +248,7 @@ def sample_workflow():
 @pytest.fixture
 def api_base_url():
     """Base URL for API tests"""
-    return "http://localhost:8328/api/anime"
+    return "http://localhost:8401/api/lora"
 
 
 @pytest.fixture

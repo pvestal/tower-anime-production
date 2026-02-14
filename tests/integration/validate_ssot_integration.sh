@@ -5,7 +5,7 @@
 set -e  # Exit on any error
 
 # Configuration
-API_BASE_URL="http://localhost:8328"
+API_BASE_URL="http://localhost:8401"  # LoRA Studio (anime production archived 2026-02-12)
 DB_HOST="192.168.50.135"
 DB_USER="patrick"
 DB_NAME="tower_consolidated"
@@ -75,7 +75,7 @@ validate_phase1_ssot_bridge() {
     # Test 1: Generate image with decision tracking
     log_info "Testing image generation with SSOT tracking..."
 
-    response=$(curl -s -X POST "$API_BASE_URL/api/anime/generate/image" \
+    response=$(curl -s -X POST "$API_BASE_URL/api/lora/generate/test_char" \
         -H "Content-Type: application/json" \
         -d "{
             \"prompt\": \"test SSOT integration validation\",
@@ -122,7 +122,7 @@ validate_phase1_ssot_bridge() {
     # Test 2: Video generation tracking
     log_info "Testing video generation with SSOT tracking..."
 
-    video_response=$(curl -s -X POST "$API_BASE_URL/api/anime/generate/video" \
+    video_response=$(curl -s -X POST "$API_BASE_URL/api/lora/generate/framepack" \
         -H "Content-Type: application/json" \
         -d "{
             \"prompt\": \"test SSOT video integration\",
@@ -218,7 +218,7 @@ validate_phase3_echo_brain_integration() {
     # Test AI consultation capture
     log_info "Testing AI consultation capture..."
 
-    consultation_response=$(curl -s -X POST "$API_BASE_URL/api/anime/generate/image" \
+    consultation_response=$(curl -s -X POST "$API_BASE_URL/api/lora/generate/test_char" \
         -H "Content-Type: application/json" \
         -d "{
             \"prompt\": \"test AI consultation capture\",

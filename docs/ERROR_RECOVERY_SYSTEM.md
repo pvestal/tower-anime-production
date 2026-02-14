@@ -331,21 +331,21 @@ error_manager.cleanup_interval_hours = 6
 
 ### Health Check
 ```bash
-curl -X GET "http://localhost:8328/api/error-recovery/health"
+curl -X GET "http://localhost:8401/api/error-recovery/health"
 ```
 
 ### Detailed Statistics
 ```bash
-curl -X GET "http://localhost:8328/api/error-recovery/statistics/detailed"
+curl -X GET "http://localhost:8401/api/error-recovery/statistics/detailed"
 ```
 
 ### Emergency Procedures
 ```bash
 # Stop all jobs immediately
-curl -X POST "http://localhost:8328/api/error-recovery/emergency-stop"
+curl -X POST "http://localhost:8401/api/error-recovery/emergency-stop"
 
 # Clean up old recovery data
-curl -X DELETE "http://localhost:8328/api/error-recovery/cleanup?hours=24"
+curl -X DELETE "http://localhost:8401/api/error-recovery/cleanup?hours=24"
 ```
 
 ## Production Deployment

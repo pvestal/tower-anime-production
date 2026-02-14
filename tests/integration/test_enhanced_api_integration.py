@@ -20,7 +20,7 @@ sys.path.insert(0, '/opt/tower-anime-production/api')
 @pytest.fixture
 def api_url():
     """Base API URL for testing"""
-    return "http://localhost:8329"
+    return "http://localhost:8401"
 
 @pytest.fixture
 def mock_comfyui():

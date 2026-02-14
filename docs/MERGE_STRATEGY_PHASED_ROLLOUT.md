@@ -51,9 +51,9 @@ git push origin main --tags
 #### Post-Merge Validation
 ```bash
 # Verify Phase 1 in production
-curl -X POST https://192.168.50.135/api/anime/generate/image \
+curl -X POST https://192.168.50.135/api/lora/generate/rina_suzuki \
   -H "Content-Type: application/json" \
-  -d '{"prompt": "Phase 1 validation", "project_id": "phase1-prod-test"}'
+  -d '{"prompt": "Phase 1 validation test"}'
 
 # Verify database tracking
 psql -h 192.168.50.135 -U patrick -d tower_consolidated \
