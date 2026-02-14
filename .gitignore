@@ -88,3 +88,24 @@ output_*/
 *.bak
 *.old
 backups/
+
+# Training datasets and generated images
+datasets/
+training/datasets/
+training/lora-studio/datasets/
+training/lora-studio/.datasets_trash/
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.gif
+
+# Virtual environments (fix_venv was accidentally tracked)
+fix_venv/
+
+# Build artifacts
+training/lora-studio/dist/
+training/lora-studio/frontend/
+training/lora-studio/voice/
+frame_classifications.json
+training_jobs.json

@@ -59,7 +59,9 @@ MODELS = {
     "vae": "hunyuan_video_vae_bf16.safetensors",
 }
 
-# RTX 3060 12GB optimized defaults (from example workflow)
+# RTX 3060 12GB optimized defaults
+# gpu_memory_preservation=6.0 required for stable generation at 544x704+
+# 3.5 causes OOM on RTX 3060; 6.0 is proven stable (~20min for 2s clips)
 RTX3060_DEFAULTS = {
     "base_precision": "bf16",
     "quantization": "fp8_e4m3fn",
@@ -273,6 +275,9 @@ def build_workflow(
     width: int = 544,
     height: int = 704,
     guidance_scale: float = 10.0,
+    lora_name: str = None,
+    lora_strength: float = 1.0,
+    lora_fuse: bool = False,
 ) -> dict:
     """
     Build ComfyUI API workflow from verified node signatures.
@@ -307,18 +312,36 @@ def build_workflow(
     workflow = {}
     node_id = 1
 
+    # ─── Node: FramePackLoraSelect (optional) ────────────────
+    lora_ref = None
+    if lora_name and caps.get("has_lora_select"):
+        lora_node_id = str(node_id)
+        workflow[lora_node_id] = {
+            "class_type": "FramePackLoraSelect",
+            "inputs": {
+                "lora": lora_name,
+                "strength": lora_strength,
+                "fuse_lora": lora_fuse,
+            },
+        }
+        lora_ref = [lora_node_id, 0]
+        node_id += 1
+
     # ─── Node: Load FramePack Model ──────────────────────────
     model_node_id = str(node_id)
     if caps["has_load_model"]:
+        model_inputs = {
+            "model": model_file,
+            "base_precision": RTX3060_DEFAULTS["base_precision"],
+            "quantization": RTX3060_DEFAULTS["quantization"],
+            "load_device": RTX3060_DEFAULTS["load_device"],
+            "attention_mode": RTX3060_DEFAULTS["attention_mode"],
+        }
+        if lora_ref:
+            model_inputs["lora"] = lora_ref
         workflow[model_node_id] = {
             "class_type": "LoadFramePackModel",
-            "inputs": {
-                "model": model_file,
-                "base_precision": RTX3060_DEFAULTS["base_precision"],
-                "quantization": RTX3060_DEFAULTS["quantization"],
-                "load_device": RTX3060_DEFAULTS["load_device"],
-                "attention_mode": RTX3060_DEFAULTS["attention_mode"],
-            },
+            "inputs": model_inputs,
         }
     else:
         # Fallback to download node
@@ -791,6 +814,8 @@ def generate(args) -> bool:
     print(f"  Steps: {args.steps}")
     if args.image:
         print(f"  Source image: {args.image}")
+    if args.lora:
+        print(f"  LoRA: {args.lora} (strength {args.lora_strength})")
     print(f"  Prompt: {prompt_text[:80]}...")
     print(f"{'─' * 55}\n")
 
@@ -804,6 +829,9 @@ def generate(args) -> bool:
         seed=args.seed,
         width=args.width,
         height=args.height,
+        lora_name=args.lora,
+        lora_strength=args.lora_strength,
+        lora_fuse=args.lora_fuse,
     )
 
     if args.dump_workflow:
@@ -888,8 +916,17 @@ def main():
     parser.add_argument("--width", type=int, default=544, help="Video width")
     parser.add_argument("--height", type=int, default=704, help="Video height")
     parser.add_argument("--seed", type=int, default=None, help="Random seed")
+    parser.add_argument("--lora", help="LoRA model filename (e.g. rina_suzuki_lora.safetensors)")
+    parser.add_argument("--lora-strength", type=float, default=1.0, help="LoRA strength (default 1.0)")
+    parser.add_argument("--lora-fuse", action="store_true", help="Fuse LoRA into base model (slow but better quality; default: apply at inference)")
+    parser.add_argument("--gpu-memory", type=float, default=None,
+                        help="GPU memory preservation in GB (default 3.5, higher=slower but safer)")
     parser.add_argument("--dump-workflow", action="store_true", help="Save workflow JSON for debugging")
     args = parser.parse_args()
+
+    # Override gpu_memory_preservation if specified
+    if args.gpu_memory is not None:
+        RTX3060_DEFAULTS["gpu_memory_preservation"] = args.gpu_memory
 
     if args.list:
         for pid, proj in PROJECTS.items():
