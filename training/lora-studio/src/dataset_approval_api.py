@@ -156,6 +156,11 @@ class ApprovalRequest(BaseModel):
     feedback: Optional[str] = None
     edited_prompt: Optional[str] = None
 
+class ReassignRequest(BaseModel):
+    character_slug: str
+    image_name: str
+    target_character_slug: str
+
 class CharacterCreate(BaseModel):
     name: str
     description: Optional[str] = None
@@ -818,6 +823,61 @@ async def approve_image(approval: ApprovalRequest):
         "message": f"Image {approval.image_name} {'approved' if approval.approved else 'rejected'}",
         "regeneration_queued": regenerated,
         "design_prompt_updated": prompt_updated,
+    }
+
+
+@app.post("/api/lora/approval/reassign")
+async def reassign_image(req: ReassignRequest):
+    """Move an image from one character's dataset to another."""
+    import shutil
+
+    source_dir = BASE_PATH / req.character_slug
+    target_dir = BASE_PATH / req.target_character_slug
+
+    if not source_dir.exists():
+        raise HTTPException(status_code=404, detail=f"Source character not found: {req.character_slug}")
+    if not target_dir.exists():
+        # Auto-create target dataset directory
+        (target_dir / "images").mkdir(parents=True, exist_ok=True)
+
+    source_img = source_dir / "images" / req.image_name
+    if not source_img.exists():
+        raise HTTPException(status_code=404, detail=f"Image not found: {req.image_name}")
+
+    target_img = target_dir / "images" / req.image_name
+
+    # Move image and sidecar files (.txt caption, .meta.json)
+    shutil.move(str(source_img), str(target_img))
+    for ext in (".txt", ".meta.json"):
+        sidecar = source_img.with_suffix(ext)
+        if sidecar.exists():
+            shutil.move(str(sidecar), str(target_img.with_suffix(ext)))
+
+    # Update source approval_status.json — remove entry
+    source_approval_file = source_dir / "approval_status.json"
+    if source_approval_file.exists():
+        with open(source_approval_file) as f:
+            source_status = json.load(f)
+        source_status.pop(req.image_name, None)
+        with open(source_approval_file, "w") as f:
+            json.dump(source_status, f, indent=2)
+
+    # Update target approval_status.json — add as pending
+    target_approval_file = target_dir / "approval_status.json"
+    target_status = {}
+    if target_approval_file.exists():
+        with open(target_approval_file) as f:
+            target_status = json.load(f)
+    target_status[req.image_name] = "pending"
+    with open(target_approval_file, "w") as f:
+        json.dump(target_status, f, indent=2)
+
+    logger.info(f"Reassigned {req.image_name}: {req.character_slug} → {req.target_character_slug}")
+
+    return {
+        "message": f"Image {req.image_name} reassigned to {req.target_character_slug}",
+        "source": req.character_slug,
+        "target": req.target_character_slug,
     }
 
 

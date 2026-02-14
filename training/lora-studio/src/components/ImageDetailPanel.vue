@@ -69,6 +69,53 @@
             </div>
           </div>
 
+          <!-- LLaVA Assessment -->
+          <div v-if="meta?.llava_review" style="margin-bottom: 16px;">
+            <h4 style="font-size: 13px; font-weight: 500; margin-bottom: 8px; color: var(--text-secondary);">LLaVA Assessment</h4>
+            <div class="meta-grid">
+              <div class="meta-row">
+                <span class="meta-label">Character</span>
+                <span class="meta-value">
+                  <span :style="{ color: qualityColor(meta.llava_review.character_match / 10) }">{{ meta.llava_review.character_match }}/10</span>
+                </span>
+              </div>
+              <div class="meta-row">
+                <span class="meta-label">Solo</span>
+                <span class="meta-value" :style="{ color: meta.llava_review.solo ? 'var(--status-success)' : 'var(--status-error)' }">
+                  {{ meta.llava_review.solo ? 'Yes' : 'No — multi-character' }}
+                </span>
+              </div>
+              <div class="meta-row">
+                <span class="meta-label">Clarity</span>
+                <span class="meta-value">
+                  <span :style="{ color: qualityColor(meta.llava_review.clarity / 10) }">{{ meta.llava_review.clarity }}/10</span>
+                </span>
+              </div>
+              <div class="meta-row">
+                <span class="meta-label">Completeness</span>
+                <span class="meta-value">{{ meta.llava_review.completeness }}</span>
+              </div>
+              <div class="meta-row">
+                <span class="meta-label">Training Value</span>
+                <span class="meta-value">
+                  <span :style="{ color: qualityColor(meta.llava_review.training_value / 10) }">{{ meta.llava_review.training_value }}/10</span>
+                </span>
+              </div>
+            </div>
+            <div v-if="meta.llava_review.issues?.length" style="margin-top: 6px; display: flex; gap: 4px; flex-wrap: wrap;">
+              <span
+                v-for="issue in meta.llava_review.issues"
+                :key="issue"
+                style="font-size: 10px; padding: 2px 6px; border-radius: 2px; background: rgba(160,120,80,0.15); color: var(--status-warning); border: 1px solid var(--status-warning);"
+              >
+                {{ issue }}
+              </span>
+            </div>
+            <div v-if="meta.llava_review.caption" style="margin-top: 8px; font-size: 11px; padding: 6px 8px; background: var(--bg-primary); border: 1px solid var(--border-primary); border-radius: 3px; line-height: 1.4; color: var(--text-secondary);">
+              {{ meta.llava_review.caption }}
+            </div>
+          </div>
+
           <!-- Full prompt (expandable) -->
           <div style="margin-bottom: 16px;">
             <h4 style="font-size: 13px; font-weight: 500; margin-bottom: 6px; color: var(--text-secondary);">Full Prompt</h4>
@@ -153,6 +200,9 @@
             <button class="btn btn-danger" style="flex: 1;" @click="$emit('approve', image, false)" :disabled="actionDisabled">
               Reject
             </button>
+            <button class="btn" style="flex: 0; padding: 6px 12px; white-space: nowrap;" @click="$emit('reassign', image)" :disabled="actionDisabled" title="Move to different character">
+              &#8644; Reassign
+            </button>
           </div>
         </div>
       </div>
@@ -173,6 +223,7 @@ const props = defineProps<{
 defineEmits<{
   close: []
   approve: [image: PendingImage, approved: boolean]
+  reassign: [image: PendingImage]
 }>()
 
 const meta = ref<ImageMetadata | null>(null)

@@ -46,9 +46,16 @@
           Edit the caption for this image. This will update the training caption file.
         </p>
         <textarea
+          ref="editPromptEl"
           v-model="editPromptText"
+          @keydown.ctrl.enter="submitEditedApproval"
+          @keydown.meta.enter="submitEditedApproval"
           style="width: 100%; min-height: 80px; font-size: 12px; padding: 8px; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border-primary); border-radius: 3px; resize: vertical; font-family: var(--font-primary); line-height: 1.5;"
         ></textarea>
+        <div style="display: flex; justify-content: space-between; margin-top: 2px;">
+          <span style="font-size: 10px; color: var(--text-muted);">{{ editPromptText.length }} chars</span>
+          <span style="font-size: 10px; color: var(--text-muted);">Ctrl+Enter to submit</span>
+        </div>
 
         <!-- Structured rejection reasons (only show on reject) -->
         <div v-if="editingAction === 'reject'" style="margin-top: 10px;">
@@ -92,6 +99,40 @@
             {{ editingAction === 'approve' ? 'Approve' : 'Reject' }} (no changes)
           </button>
           <button class="btn" @click="editingImage = null">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Reassign character modal -->
+    <div v-if="reassigningImage" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); z-index: 998; display: flex; align-items: center; justify-content: center;" @click.self="reassigningImage = null">
+      <div class="card" style="min-width: 400px; max-width: 500px;">
+        <h4 style="font-size: 14px; font-weight: 500; margin-bottom: 8px;">
+          Reassign Image
+        </h4>
+        <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 12px;">
+          Move <strong>{{ reassigningImage.name }}</strong> from <strong>{{ reassigningImage.character_name }}</strong> to:
+        </p>
+        <select
+          v-model="reassignTarget"
+          style="width: 100%; padding: 8px; font-size: 13px; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border-primary); border-radius: 3px; font-family: var(--font-primary);"
+        >
+          <option value="" disabled>Select character...</option>
+          <option
+            v-for="char in availableReassignTargets"
+            :key="char.slug"
+            :value="char.slug"
+          >{{ char.name }} ({{ char.project_name }})</option>
+        </select>
+        <div style="display: flex; gap: 8px; margin-top: 12px;">
+          <button
+            class="btn"
+            style="flex: 1; background: var(--accent-primary); color: var(--bg-primary);"
+            :disabled="!reassignTarget || reassigning"
+            @click="submitReassign"
+          >
+            {{ reassigning ? 'Moving...' : 'Reassign' }}
+          </button>
+          <button class="btn" @click="reassigningImage = null">Cancel</button>
         </div>
       </div>
     </div>
@@ -199,6 +240,16 @@
               <button class="btn" style="font-size: 12px; padding: 4px 10px;" @click="selectAllProject(projectGroup)">
                 Select All
               </button>
+              <button
+                class="btn llava-btn"
+                :class="{ 'llava-active': llavaReviewing === `project:${projectName}` }"
+                style="font-size: 12px; padding: 4px 10px;"
+                @click.stop="runLlavaReviewProject(projectName, projectGroup)"
+                :disabled="!!llavaReviewing"
+              >
+                <span v-if="llavaReviewing === `project:${projectName}`" class="spinner" style="width: 10px; height: 10px; display: inline-block; vertical-align: middle; margin-right: 4px; border-width: 2px;"></span>
+                {{ llavaReviewing === `project:${projectName}` ? 'Analyzing...' : 'LLaVA Review All' }}
+              </button>
               <button class="btn btn-success" style="font-size: 12px; padding: 4px 10px;" @click="approveAllProject(projectName, projectGroup)">
                 Approve All
               </button>
@@ -218,6 +269,16 @@
               <button class="btn" style="font-size: 11px; padding: 3px 8px;" @click="selectAll(charImages)">
                 Select
               </button>
+              <button
+                class="btn llava-btn"
+                :class="{ 'llava-active': llavaReviewing === charName }"
+                style="font-size: 11px; padding: 3px 8px;"
+                @click.stop="runLlavaReview(charName, charImages)"
+                :disabled="!!llavaReviewing"
+              >
+                <span v-if="llavaReviewing === charName" class="spinner" style="width: 10px; height: 10px; display: inline-block; vertical-align: middle; margin-right: 4px; border-width: 2px;"></span>
+                {{ llavaReviewing === charName ? 'Analyzing...' : 'LLaVA Review' }}
+              </button>
               <button class="btn btn-success" style="font-size: 11px; padding: 3px 8px;" @click="approveGroup(charName, charImages)">
                 Approve All
               </button>
@@ -236,6 +297,7 @@
                   expanded: expandedImage === image.id,
                   'flash-approve': flashState[image.id] === 'approve',
                   'flash-reject': flashState[image.id] === 'reject',
+                  'llava-reviewed': !!image.metadata?.llava_review,
                 }"
                 @click="toggleExpand(image)"
               >
@@ -263,6 +325,19 @@
                     </span>
                     <span v-if="image.metadata?.quality_score != null" class="context-tag" :style="{ color: qualityColor(image.metadata.quality_score), borderColor: qualityColor(image.metadata.quality_score) }">
                       Q:{{ (image.metadata.quality_score * 100).toFixed(0) }}%
+                    </span>
+                  </div>
+
+                  <!-- LLaVA review inline indicators -->
+                  <div v-if="image.metadata?.llava_review" style="display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 4px;">
+                    <span class="context-tag" :style="{ color: image.metadata.llava_review.solo ? 'var(--status-success)' : 'var(--status-error)', borderColor: image.metadata.llava_review.solo ? 'var(--status-success)' : 'var(--status-error)' }">
+                      {{ image.metadata.llava_review.solo ? 'Solo' : 'Multi' }}
+                    </span>
+                    <span class="context-tag" style="color: var(--text-muted); border-color: var(--border-primary);">
+                      {{ image.metadata.llava_review.completeness }}
+                    </span>
+                    <span v-for="issue in (image.metadata.llava_review.issues || []).slice(0, 2)" :key="issue" class="context-tag" style="color: var(--status-warning); border-color: var(--status-warning);">
+                      {{ issue.length > 30 ? issue.slice(0, 27) + '...' : issue }}
                     </span>
                   </div>
 
@@ -297,6 +372,15 @@
                     <button
                       class="btn"
                       style="font-size: 11px; padding: 4px 6px; white-space: nowrap;"
+                      title="Reassign to different character"
+                      @click.stop="openReassign(image)"
+                      :disabled="approvalStore.loading"
+                    >
+                      &#8644;
+                    </button>
+                    <button
+                      class="btn"
+                      style="font-size: 11px; padding: 4px 6px; white-space: nowrap;"
                       @click.stop="detailImage = image"
                       title="Full details + regeneration controls"
                     >
@@ -317,6 +401,7 @@
       :action-disabled="approvalStore.loading"
       @close="detailImage = null"
       @approve="onDetailApprove"
+      @reassign="(img) => { detailImage = null; openReassign(img) }"
     />
   </div>
 </template>
@@ -340,12 +425,28 @@ const toasts = ref<{ id: number; message: string; type: 'approve' | 'reject' | '
 const batchProgress = ref<{ action: string; done: number; total: number } | null>(null)
 const detailImage = ref<PendingImage | null>(null)
 
+// LLaVA review state
+const llavaReviewing = ref<string | null>(null)
+
 // Inline editor state
 const editingImage = ref<PendingImage | null>(null)
 const editingAction = ref<'approve' | 'reject'>('approve')
 const editPromptText = ref('')
 const editFeedbackText = ref('')
 const selectedReasons = ref<Set<string>>(new Set())
+
+// Reassign state
+const reassigningImage = ref<PendingImage | null>(null)
+const reassignTarget = ref('')
+const reassigning = ref(false)
+
+const availableReassignTargets = computed(() => {
+  if (!reassigningImage.value) return []
+  const currentSlug = reassigningImage.value.character_slug
+  return charactersStore.characters
+    .filter(c => c.slug !== currentSlug)
+    .sort((a, b) => a.name.localeCompare(b.name))
+})
 
 // Structured rejection reason categories (IDs match backend REJECTION_NEGATIVE_MAP)
 const rejectionReasons = [
@@ -437,12 +538,12 @@ function onImageError(event: Event) {
   img.style.display = 'none'
 }
 
-function showToast(message: string, type: 'approve' | 'reject' | 'regen') {
+function showToast(message: string, type: 'approve' | 'reject' | 'regen', durationMs = 3000) {
   const id = ++toastId
   toasts.value.push({ id, message, type })
   setTimeout(() => {
     toasts.value = toasts.value.filter(t => t.id !== id)
-  }, 3000)
+  }, durationMs)
 }
 
 function toggleExpand(image: PendingImage) {
@@ -472,6 +573,38 @@ function selectAllProject(projectGroup: ProjectGroup) {
     }
   }
   selectedImages.value = new Set(selectedImages.value)
+}
+
+function openReassign(image: PendingImage) {
+  reassigningImage.value = image
+  reassignTarget.value = ''
+  // Ensure characters are loaded for dropdown
+  if (charactersStore.characters.length === 0) {
+    charactersStore.fetchCharacters()
+  }
+}
+
+async function submitReassign() {
+  if (!reassigningImage.value || !reassignTarget.value) return
+  reassigning.value = true
+  const image = reassigningImage.value
+  const target = reassignTarget.value
+
+  try {
+    await api.reassignImage({
+      character_slug: image.character_slug,
+      image_name: image.name,
+      target_character_slug: target,
+    })
+    const targetChar = charactersStore.characters.find(c => c.slug === target)
+    showToast(`Moved ${image.name} → ${targetChar?.name || target}`, 'regen')
+    reassigningImage.value = null
+    await approvalStore.fetchPendingImages()
+  } catch (e: any) {
+    showToast(`Reassign failed: ${e.message}`, 'reject')
+  } finally {
+    reassigning.value = false
+  }
 }
 
 function openApprovalEditor(image: PendingImage, action: 'approve' | 'reject') {
@@ -579,6 +712,65 @@ function qualityColor(score: number): string {
 async function onDetailApprove(image: PendingImage, approved: boolean) {
   await doApprove(image, approved)
   detailImage.value = null
+}
+
+async function runLlavaReviewProject(projectName: string, projectGroup: ProjectGroup) {
+  if (llavaReviewing.value) return
+  llavaReviewing.value = `project:${projectName}`
+  const totalImages = projectGroup.total
+
+  const est = totalImages * 8
+  showToast(`LLaVA reviewing ${totalImages} images across ${Object.keys(projectGroup.characters).length} characters (~${est}s)...`, 'regen', est * 1000)
+
+  try {
+    const result = await api.llavaReview({ project_name: projectName, max_images: totalImages })
+
+    const parts = [`${result.reviewed} reviewed`]
+    if (result.auto_approved) parts.push(`${result.auto_approved} auto-approved`)
+    if (result.auto_rejected) parts.push(`${result.auto_rejected} auto-rejected`)
+    if (result.regen_queued) parts.push(`${result.regen_queued} regen queued`)
+    const still = result.results.filter(r => r.action === 'pending').length
+    if (still) parts.push(`${still} need manual review`)
+
+    showToast(`${projectName}: ${parts.join(', ')}`, 'regen', 8000)
+
+    await approvalStore.fetchPendingImages()
+  } catch (err) {
+    showToast(`LLaVA review failed for ${projectName}`, 'reject')
+    console.error('LLaVA project review failed:', err)
+  } finally {
+    llavaReviewing.value = null
+  }
+}
+
+async function runLlavaReview(charName: string, images: PendingImage[]) {
+  if (llavaReviewing.value) return
+  llavaReviewing.value = charName
+  const slug = images[0]?.character_slug
+  if (!slug) { llavaReviewing.value = null; return }
+
+  const est = images.length * 8
+  showToast(`LLaVA reviewing ${images.length} ${charName} images (~${est}s)...`, 'regen', est * 1000)
+
+  try {
+    const result = await api.llavaReview({ character_slug: slug, max_images: images.length })
+
+    const parts = [`${result.reviewed} reviewed`]
+    if (result.auto_approved) parts.push(`${result.auto_approved} auto-approved`)
+    if (result.auto_rejected) parts.push(`${result.auto_rejected} auto-rejected`)
+    if (result.regen_queued) parts.push(`${result.regen_queued} regen queued`)
+    const still = result.results.filter(r => r.action === 'pending').length
+    if (still) parts.push(`${still} need manual review`)
+
+    showToast(`${charName}: ${parts.join(', ')}`, 'regen', 8000)
+
+    await approvalStore.fetchPendingImages()
+  } catch (err) {
+    showToast(`LLaVA review failed for ${charName}`, 'reject')
+    console.error('LLaVA review failed:', err)
+  } finally {
+    llavaReviewing.value = null
+  }
 }
 
 async function batchApprove(approved: boolean) {
@@ -706,6 +898,28 @@ async function batchApprove(approved: boolean) {
   border-color: var(--status-warning);
   color: var(--status-warning);
   font-weight: 500;
+}
+
+.llava-btn {
+  color: var(--accent-primary);
+  transition: all 200ms ease;
+}
+.llava-btn:hover:not(:disabled) {
+  background: rgba(80, 120, 200, 0.15);
+  border-color: var(--accent-primary);
+}
+.llava-active {
+  background: rgba(80, 120, 200, 0.12) !important;
+  border-color: var(--accent-primary) !important;
+  animation: llava-pulse 1.5s ease-in-out infinite;
+}
+@keyframes llava-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.image-card.llava-reviewed {
+  border-left: 3px solid var(--accent-primary);
 }
 
 .rejection-chip {

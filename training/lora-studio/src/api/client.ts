@@ -1,4 +1,4 @@
-import type { Character, DatasetImage, PendingImage, TrainingJob, ApprovalRequest, TrainingRequest, CharacterUpdate, ImageMetadata, RegenerateRequest, GalleryImage, GenerateParams, GenerateResponse, GenerationStatus, EchoChatResponse, EchoEnhanceResponse } from '@/types'
+import type { Character, DatasetImage, PendingImage, TrainingJob, ApprovalRequest, TrainingRequest, CharacterUpdate, ImageMetadata, RegenerateRequest, GalleryImage, GenerateParams, GenerateResponse, GenerationStatus, EchoChatResponse, EchoEnhanceResponse, Project, CheckpointFile, ProjectCreate, ProjectUpdate, StorylineUpsert, StyleUpdate, NarrateRequest, NarrateResponse, LlavaReviewResponse, FramePackParams, FramePackResponse } from '@/types'
 
 const API_BASE = '/api/lora'
 
@@ -46,6 +46,20 @@ export const api = {
     return request('/approval/approve', {
       method: 'POST',
       body: JSON.stringify(approval),
+    })
+  },
+
+  async reassignImage(params: { character_slug: string; image_name: string; target_character_slug: string }): Promise<{ message: string; source: string; target: string }> {
+    return request('/approval/reassign', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    })
+  },
+
+  async llavaReview(params: { character_slug?: string; project_name?: string; update_captions?: boolean; max_images?: number }): Promise<LlavaReviewResponse> {
+    return request('/approval/llava-review', {
+      method: 'POST',
+      body: JSON.stringify(params),
     })
   },
 
@@ -160,6 +174,38 @@ export const api = {
     return request('/ingest/scan-comfyui', { method: 'POST' })
   },
 
+  // Voice extraction
+  async ingestVoice(url: string, projectName: string, minDuration: number = 0.5, maxDuration: number = 30): Promise<{
+    segments_extracted: number; project: string; voice_dir: string;
+    segments: Array<{ filename: string; start: number; end: number; duration: number }>
+  }> {
+    return request('/ingest/voice', {
+      method: 'POST',
+      body: JSON.stringify({ url, project_name: projectName, min_duration: minDuration, max_duration: maxDuration }),
+    })
+  },
+
+  async listVoiceSegments(projectName: string): Promise<{
+    project: string; total_segments: number; source_url?: string;
+    segments: Array<{ filename: string; start: number; end: number; duration: number; size_kb?: number }>
+  }> {
+    return request(`/voice/${encodeURIComponent(projectName)}`)
+  },
+
+  voiceSegmentUrl(projectName: string, filename: string): string {
+    return `${API_BASE}/voice/${encodeURIComponent(projectName)}/segment/${encodeURIComponent(filename)}`
+  },
+
+  async transcribeVoice(projectName: string, model: string = 'base'): Promise<{
+    project: string; total: number; transcribed: number; characters_matched: number;
+    transcriptions: Array<{ filename: string; text: string; language: string; matched_character: string | null }>
+  }> {
+    return request(`/voice/${encodeURIComponent(projectName)}/transcribe`, {
+      method: 'POST',
+      body: JSON.stringify({ model }),
+    })
+  },
+
   // Image URL helper
   imageUrl(characterSlug: string, imageName: string): string {
     return `${API_BASE}/dataset/${encodeURIComponent(characterSlug)}/image/${encodeURIComponent(imageName)}`
@@ -180,6 +226,24 @@ export const api = {
 
   async clearStuckGenerations(): Promise<{ message: string; cancelled: number }> {
     return request('/generate/clear-stuck', { method: 'POST' })
+  },
+
+  // --- FramePack Video ---
+
+  async generateFramePack(slug: string, params: FramePackParams): Promise<FramePackResponse> {
+    return request('/generate/framepack', {
+      method: 'POST',
+      body: JSON.stringify({ character_slug: slug, ...params }),
+    })
+  },
+
+  async getFramePackStatus(promptId: string): Promise<GenerationStatus> {
+    return request(`/generate/framepack/${encodeURIComponent(promptId)}/status`)
+  },
+
+  comfyWsUrl(): string {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
+    return `${proto}//${location.host}/comfyui/ws`
   },
 
   // --- Gallery ---
@@ -208,7 +272,52 @@ export const api = {
     })
   },
 
+  async echoNarrate(payload: NarrateRequest): Promise<NarrateResponse> {
+    return request('/echo/narrate', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
   async echoStatus(): Promise<{ status: string }> {
     return request('/echo/status')
+  },
+
+  // --- Project Configuration ---
+
+  async getProjectDetail(projectId: number): Promise<{ project: Project }> {
+    return request(`/projects/${projectId}`)
+  },
+
+  async createProject(data: ProjectCreate): Promise<{ project_id: number; style_name: string; message: string }> {
+    return request('/projects', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  },
+
+  async updateProject(projectId: number, data: ProjectUpdate): Promise<{ message: string }> {
+    return request(`/projects/${projectId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+  },
+
+  async upsertStoryline(projectId: number, data: StorylineUpsert): Promise<{ message: string }> {
+    return request(`/projects/${projectId}/storyline`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+  },
+
+  async updateStyle(projectId: number, data: StyleUpdate): Promise<{ message: string }> {
+    return request(`/projects/${projectId}/style`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+  },
+
+  async getCheckpoints(): Promise<{ checkpoints: CheckpointFile[] }> {
+    return request('/checkpoints')
   },
 }
