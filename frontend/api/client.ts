@@ -10,7 +10,7 @@
  *   import { echoApi }     from '@/api/echo'
  *
  * Shared helpers:
- *   import { API_BASE, ApiError, request, fetchApi } from '@/api/base'
+ *   import { ApiError, createRequest } from '@/api/base'
  */
 
 import { storyApi } from './story'
@@ -22,8 +22,8 @@ import { learningApi } from './learning'
 import { voiceApi } from './voice'
 import { episodesApi } from './episodes'
 
-// Re-export shared infrastructure so `import { fetchApi } from '@/api/client'` works
-export { API_BASE, ApiError, request, fetchApi } from './base'
+// Re-export shared infrastructure
+export { ApiError, createRequest } from './base'
 
 // Re-export domain APIs for granular imports
 export { storyApi } from './story'

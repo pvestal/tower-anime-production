@@ -1,6 +1,6 @@
 """Voice pipeline — diarization, speaker assignment, sample approval, training, synthesis.
 
-All 20 voice API endpoints under /api/lora/voice/.
+All 20 voice API endpoints under /api/voice/.
 """
 
 import json
@@ -31,7 +31,7 @@ from packages.voice_pipeline.synthesis import (
 )
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/voice", tags=["voice-pipeline"])
+router = APIRouter()
 
 VOICE_BASE = BASE_PATH.parent
 VOICE_DATASETS = VOICE_BASE / "voice_datasets"

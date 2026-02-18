@@ -6,17 +6,17 @@ from unittest.mock import AsyncMock, patch
 
 @pytest.mark.unit
 async def test_health(app_client):
-    resp = await app_client.get("/api/lora/health")
+    resp = await app_client.get("/api/system/health")
     assert resp.status_code == 200
     data = resp.json()
     assert data["status"] == "healthy"
     assert data["service"] == "tower-anime-studio"
-    assert data["version"] == "3.1"
+    assert data["version"] == "3.3"
 
 
 @pytest.mark.unit
 async def test_events_stats(app_client):
-    resp = await app_client.get("/api/lora/events/stats")
+    resp = await app_client.get("/api/system/events/stats")
     assert resp.status_code == 200
     data = resp.json()
     assert "registered_events" in data
@@ -38,7 +38,7 @@ async def test_learning_stats(app_client):
         new_callable=AsyncMock,
         return_value=mock_result,
     ):
-        resp = await app_client.get("/api/lora/learning/stats")
+        resp = await app_client.get("/api/system/learning/stats")
         assert resp.status_code == 200
         data = resp.json()
         assert "generation_history" in data
@@ -58,7 +58,7 @@ async def test_learning_suggest(app_client):
         new_callable=AsyncMock,
         return_value=mock_params,
     ):
-        resp = await app_client.get("/api/lora/learning/suggest/luigi")
+        resp = await app_client.get("/api/system/learning/suggest/luigi")
         assert resp.status_code == 200
         data = resp.json()
         assert data["character_slug"] == "luigi"
@@ -73,7 +73,7 @@ async def test_learning_suggest_insufficient_data(app_client):
         new_callable=AsyncMock,
         return_value={},
     ):
-        resp = await app_client.get("/api/lora/learning/suggest/unknown_char")
+        resp = await app_client.get("/api/system/learning/suggest/unknown_char")
         assert resp.status_code == 200
         data = resp.json()
         assert data["suggestions"] is None
@@ -91,7 +91,7 @@ async def test_learning_rejections(app_client):
         new_callable=AsyncMock,
         return_value=mock_patterns,
     ):
-        resp = await app_client.get("/api/lora/learning/rejections/luigi")
+        resp = await app_client.get("/api/system/learning/rejections/luigi")
         assert resp.status_code == 200
         data = resp.json()
         assert data["character_slug"] == "luigi"
@@ -110,7 +110,7 @@ async def test_learning_trend(app_client):
         new_callable=AsyncMock,
         return_value=mock_trend,
     ):
-        resp = await app_client.get("/api/lora/learning/trend?character_slug=luigi")
+        resp = await app_client.get("/api/system/learning/trend?character_slug=luigi")
         assert resp.status_code == 200
         data = resp.json()
         assert data["character_slug"] == "luigi"
@@ -120,7 +120,7 @@ async def test_learning_trend(app_client):
 
 @pytest.mark.unit
 async def test_learning_trend_missing_params(app_client):
-    resp = await app_client.get("/api/lora/learning/trend")
+    resp = await app_client.get("/api/system/learning/trend")
     assert resp.status_code == 200
     data = resp.json()
     assert "error" in data
@@ -139,7 +139,7 @@ async def test_replenishment_status(app_client):
         new_callable=AsyncMock,
         return_value=mock_status,
     ):
-        resp = await app_client.get("/api/lora/replenishment/status")
+        resp = await app_client.get("/api/system/replenishment/status")
         assert resp.status_code == 200
         data = resp.json()
         assert "enabled" in data
@@ -158,7 +158,7 @@ async def test_correction_stats(app_client):
         new_callable=AsyncMock,
         return_value=mock_stats,
     ):
-        resp = await app_client.get("/api/lora/correction/stats")
+        resp = await app_client.get("/api/system/correction/stats")
         assert resp.status_code == 200
         data = resp.json()
         assert "total_corrections" in data

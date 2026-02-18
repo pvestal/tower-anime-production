@@ -12,7 +12,7 @@ async def test_get_pending_approvals_empty(app_client):
     mock_base = MagicMock()
     mock_base.exists.return_value = False
     with patch("packages.lora_training.router.BASE_PATH", mock_base):
-        resp = await app_client.get("/api/lora/approval/pending")
+        resp = await app_client.get("/api/training/approval/pending")
         assert resp.status_code == 200
         data = resp.json()
         assert data["pending_images"] == []
@@ -37,7 +37,7 @@ async def test_get_pending_approvals_with_images(app_client, mock_filesystem):
         "packages.lora_training.router.BASE_PATH",
         mock_filesystem,
     ):
-        resp = await app_client.get("/api/lora/approval/pending")
+        resp = await app_client.get("/api/training/approval/pending")
         assert resp.status_code == 200
         data = resp.json()
         assert isinstance(data["pending_images"], list)
@@ -54,7 +54,7 @@ async def test_approve_image(app_client, mock_filesystem):
     with patch("packages.lora_training.router.BASE_PATH", mock_filesystem), \
          patch("packages.lora_training.router.record_rejection"), \
          patch("packages.lora_training.router.queue_regeneration"):
-        resp = await app_client.post("/api/lora/approval/approve", json={
+        resp = await app_client.post("/api/training/approval/approve", json={
             "character_name": "Luigi",
             "character_slug": "luigi",
             "image_name": "gen_luigi_test_001.png",
@@ -76,7 +76,7 @@ async def test_reject_image_queues_regeneration(app_client, mock_filesystem):
     with patch("packages.lora_training.router.BASE_PATH", mock_filesystem), \
          patch("packages.lora_training.router.record_rejection") as mock_record, \
          patch("packages.lora_training.router.queue_regeneration") as mock_regen:
-        resp = await app_client.post("/api/lora/approval/approve", json={
+        resp = await app_client.post("/api/training/approval/approve", json={
             "character_name": "Luigi",
             "character_slug": "luigi",
             "image_name": "gen_luigi_test_001.png",
@@ -97,7 +97,7 @@ async def test_get_feedback(app_client, mock_filesystem):
         "packages.lora_training.training_router.BASE_PATH",
         mock_filesystem,
     ):
-        resp = await app_client.get("/api/lora/feedback/luigi")
+        resp = await app_client.get("/api/training/feedback/luigi")
         assert resp.status_code == 200
         data = resp.json()
         assert data["character"] == "luigi"
@@ -111,7 +111,7 @@ async def test_get_feedback_no_file(app_client, tmp_path):
         "packages.lora_training.training_router.BASE_PATH",
         tmp_path,
     ):
-        resp = await app_client.get("/api/lora/feedback/nonexistent")
+        resp = await app_client.get("/api/training/feedback/nonexistent")
         assert resp.status_code == 200
         data = resp.json()
         assert data["character"] == "nonexistent"
@@ -122,7 +122,7 @@ async def test_get_feedback_no_file(app_client, tmp_path):
 @pytest.mark.unit
 async def test_get_dataset_info(app_client, mock_filesystem):
     with patch("packages.lora_training.router.BASE_PATH", mock_filesystem):
-        resp = await app_client.get("/api/lora/dataset/luigi")
+        resp = await app_client.get("/api/training/dataset/luigi")
         assert resp.status_code == 200
         data = resp.json()
         assert data["character"] == "luigi"
@@ -135,7 +135,7 @@ async def test_get_dataset_info(app_client, mock_filesystem):
 @pytest.mark.unit
 async def test_get_dataset_info_missing_character(app_client, tmp_path):
     with patch("packages.lora_training.router.BASE_PATH", tmp_path):
-        resp = await app_client.get("/api/lora/dataset/nonexistent")
+        resp = await app_client.get("/api/training/dataset/nonexistent")
         assert resp.status_code == 200
         data = resp.json()
         assert data["images"] == []

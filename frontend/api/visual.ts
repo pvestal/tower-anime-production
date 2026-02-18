@@ -1,5 +1,6 @@
 /**
  * Visual domain: image generation, FramePack video, gallery, vision review.
+ * Backend: /api/visual/*
  */
 import type {
   GenerateParams,
@@ -10,7 +11,11 @@ import type {
   GalleryImage,
   VisionReviewResponse,
 } from '@/types'
-import { API_BASE, request } from './base'
+import { createRequest } from './base'
+
+const request = createRequest('/api/visual')
+const sceneRequest = createRequest('/api')
+const VISUAL_BASE = '/api/visual'
 
 export const visualApi = {
   // --- Generation ---
@@ -26,21 +31,17 @@ export const visualApi = {
     return request(`/generate/${encodeURIComponent(promptId)}/status`)
   },
 
-  async clearStuckGenerations(): Promise<{ message: string; cancelled: number }> {
-    return request('/generate/clear-stuck', { method: 'POST' })
-  },
-
-  // --- FramePack Video ---
+  // --- FramePack Video (on scene_router → /api/generate/framepack) ---
 
   async generateFramePack(slug: string, params: FramePackParams): Promise<FramePackResponse> {
-    return request('/generate/framepack', {
+    return sceneRequest('/generate/framepack', {
       method: 'POST',
       body: JSON.stringify({ character_slug: slug, ...params }),
     })
   },
 
   async getFramePackStatus(promptId: string): Promise<GenerationStatus> {
-    return request(`/generate/framepack/${encodeURIComponent(promptId)}/status`)
+    return sceneRequest(`/generate/framepack/${encodeURIComponent(promptId)}/status`)
   },
 
   comfyWsUrl(): string {
@@ -55,7 +56,7 @@ export const visualApi = {
   },
 
   galleryImageUrl(filename: string): string {
-    return `${API_BASE}/gallery/image/${encodeURIComponent(filename)}`
+    return `${VISUAL_BASE}/gallery/image/${encodeURIComponent(filename)}`
   },
 
   // --- Vision Review ---

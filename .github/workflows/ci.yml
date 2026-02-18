@@ -16,7 +16,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Check Python syntax
-        run: python -m py_compile src/app.py && find packages/ -name '*.py' -exec python -m py_compile {} +
+        run: python -m py_compile server/app.py && find packages/ -name '*.py' -exec python -m py_compile {} +
 
   frontend-build:
     name: Frontend Build (vue-tsc + vite)

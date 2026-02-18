@@ -1,5 +1,6 @@
 /**
  * Scene Builder domain: scene CRUD, shot CRUD, generation, assembly, audio.
+ * Backend: /api/scenes/* (scene_router mounted at /api with /scenes prefix in decorators)
  */
 import type {
   BuilderScene,
@@ -10,8 +11,10 @@ import type {
   AppleMusicTrack,
   AppleMusicPlaylist,
 } from '@/types'
-import { API_BASE, request } from './base'
+import { createRequest } from './base'
 
+const request = createRequest('/api')
+const SCENES_BASE = '/api'
 const MUSIC_API = '/api/music'
 
 export const scenesApi = {
@@ -64,11 +67,11 @@ export const scenesApi = {
   },
 
   sceneVideoUrl(sceneId: string): string {
-    return `${API_BASE}/scenes/${sceneId}/video`
+    return `${SCENES_BASE}/scenes/${sceneId}/video`
   },
 
   shotVideoUrl(sceneId: string, shotId: string): string {
-    return `${API_BASE}/scenes/${sceneId}/shots/${shotId}/video`
+    return `${SCENES_BASE}/scenes/${sceneId}/shots/${shotId}/video`
   },
 
   async getApprovedImagesForScene(sceneId: string, projectId: number): Promise<ApprovedImagesResponse> {
@@ -126,7 +129,6 @@ export const scenesApi = {
       throw new Error(err.detail || `Playlists failed (${resp.status})`)
     }
     const raw = await resp.json()
-    // Apple Music returns { data: [{ id, attributes: { name, description } }] } — normalize
     const data = (raw.data || []).map((pl: { id: string; attributes?: { name?: string; description?: { standard?: string } } }) => ({
       id: pl.id,
       name: pl.attributes?.name || 'Untitled',

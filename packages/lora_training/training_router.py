@@ -165,14 +165,14 @@ async def regenerate_character(character_slug: str, count: int = 1,
 # Training endpoints
 # ===================================================================
 
-@training_router.get("/training/jobs")
+@training_router.get("/jobs")
 async def get_training_jobs_endpoint():
     """Get all training jobs."""
     jobs = load_training_jobs()
     return {"training_jobs": jobs}
 
 
-@training_router.post("/training/start")
+@training_router.post("/start")
 async def start_training(training: TrainingRequest):
     """Start a LoRA training job for a character."""
     safe_name = re.sub(r'[^a-z0-9_-]', '', training.character_name.lower().replace(' ', '_'))
@@ -298,7 +298,7 @@ async def start_training(training: TrainingRequest):
     }
 
 
-@training_router.get("/training/jobs/{job_id}")
+@training_router.get("/jobs/{job_id}")
 async def get_training_job(job_id: str):
     """Get status of a specific training job."""
     jobs = load_training_jobs()
@@ -323,7 +323,7 @@ async def get_training_log(job_id: str, tail: int = 50):
     }
 
 
-@training_router.post("/training/jobs/{job_id}/cancel")
+@training_router.post("/jobs/{job_id}/cancel")
 async def cancel_training_job(job_id: str):
     """Cancel a running training job by sending SIGTERM then SIGKILL."""
     import signal as sig
@@ -359,7 +359,7 @@ async def cancel_training_job(job_id: str):
     raise HTTPException(status_code=404, detail="Job not found")
 
 
-@training_router.delete("/training/jobs/{job_id}")
+@training_router.delete("/jobs/{job_id}")
 async def delete_training_job(job_id: str):
     """Remove a finished job from the jobs list."""
     jobs = load_training_jobs()
@@ -376,7 +376,7 @@ async def delete_training_job(job_id: str):
     raise HTTPException(status_code=404, detail="Job not found")
 
 
-@training_router.post("/training/jobs/clear-finished")
+@training_router.post("/jobs/clear-finished")
 async def clear_finished_jobs(days: int = 7):
     """Remove all completed/failed/invalidated jobs older than N days."""
     jobs = load_training_jobs()
@@ -397,7 +397,7 @@ async def clear_finished_jobs(days: int = 7):
     return {"message": f"Removed {removed} finished jobs older than {days} days", "removed": removed, "remaining": len(kept)}
 
 
-@training_router.post("/training/jobs/{job_id}/retry")
+@training_router.post("/jobs/{job_id}/retry")
 async def retry_training_job(job_id: str):
     """Re-launch training with the same parameters as a failed/invalidated job."""
     jobs = load_training_jobs()
@@ -415,7 +415,7 @@ async def retry_training_job(job_id: str):
     raise HTTPException(status_code=404, detail="Job not found")
 
 
-@training_router.post("/training/jobs/{job_id}/invalidate")
+@training_router.post("/jobs/{job_id}/invalidate")
 async def invalidate_training_job(job_id: str, delete_lora: bool = False):
     """Mark a completed job as invalidated (trained on bad data). Optionally delete the LoRA file."""
     jobs = load_training_jobs()
@@ -437,14 +437,14 @@ async def invalidate_training_job(job_id: str, delete_lora: bool = False):
     raise HTTPException(status_code=404, detail="Job not found")
 
 
-@training_router.post("/training/reconcile")
+@training_router.post("/reconcile")
 async def reconcile_training_jobs_endpoint():
     """Run stale job detection on demand."""
     count = reconcile_training_jobs()
     return {"message": f"Reconciled {count} stale job(s)", "reconciled": count}
 
 
-@training_router.get("/training/loras")
+@training_router.get("/loras")
 async def list_trained_loras():
     """List all trained LoRA files on disk with metadata."""
     lora_dir = Path("/opt/ComfyUI/models/loras")
@@ -472,7 +472,7 @@ async def list_trained_loras():
     return {"loras": loras}
 
 
-@training_router.delete("/training/loras/{slug}")
+@training_router.delete("/loras/{slug}")
 async def delete_trained_lora(slug: str):
     """Delete a LoRA .safetensors file from disk."""
     lora_path = Path(f"/opt/ComfyUI/models/loras/{slug}_lora.safetensors")

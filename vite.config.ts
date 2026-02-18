@@ -7,7 +7,7 @@ export default defineConfig({
   base: '/anime-studio/',
   resolve: {
     alias: {
-      '@': resolve(__dirname, 'src')
+      '@': resolve(__dirname, 'frontend')
     }
   },
   server: {

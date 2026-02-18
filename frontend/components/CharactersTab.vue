@@ -507,7 +507,7 @@ function startProgressPolling() {
   stopProgressPolling()
   progressPollTimer = setInterval(async () => {
     try {
-      const resp = await fetch('/api/lora/ingest/progress')
+      const resp = await fetch('/api/training/ingest/progress')
       const data = await resp.json()
       ingestProgress.value = data
       // Auto-stop polling when job is done
@@ -538,7 +538,7 @@ onMounted(async () => {
   await loadMoviesList()
   // Resume polling if an ingestion is already running (navigated away and back)
   try {
-    const resp = await fetch('/api/lora/ingest/progress')
+    const resp = await fetch('/api/training/ingest/progress')
     const data = await resp.json()
     if (data.active) {
       ingestProgress.value = data

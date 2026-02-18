@@ -46,7 +46,7 @@ async def test_list_scenes(app_client):
         new_callable=AsyncMock,
         return_value=mock_conn,
     ):
-        resp = await app_client.get("/api/lora/scenes?project_id=1")
+        resp = await app_client.get("/api/scenes?project_id=1")
         assert resp.status_code == 200
         data = resp.json()
         assert "scenes" in data
@@ -70,7 +70,7 @@ async def test_create_scene(app_client):
         new_callable=AsyncMock,
         return_value=mock_conn,
     ):
-        resp = await app_client.post("/api/lora/scenes", json={
+        resp = await app_client.post("/api/scenes", json={
             "project_id": 1,
             "title": "Chase Scene",
             "description": "A high speed chase",
@@ -113,7 +113,7 @@ async def test_get_scene_status(app_client):
         new_callable=AsyncMock,
         return_value=mock_conn,
     ):
-        resp = await app_client.get(f"/api/lora/scenes/{SCENE_UUID}/status")
+        resp = await app_client.get(f"/api/scenes/{SCENE_UUID}/status")
         assert resp.status_code == 200
         data = resp.json()
         assert data["generation_status"] == "generating"
@@ -132,7 +132,7 @@ async def test_get_scene_status_not_found(app_client):
         new_callable=AsyncMock,
         return_value=mock_conn,
     ):
-        resp = await app_client.get(f"/api/lora/scenes/{SCENE_UUID}/status")
+        resp = await app_client.get(f"/api/scenes/{SCENE_UUID}/status")
         assert resp.status_code == 404
 
 
@@ -146,7 +146,7 @@ async def test_delete_scene(app_client):
         new_callable=AsyncMock,
         return_value=mock_conn,
     ):
-        resp = await app_client.delete(f"/api/lora/scenes/{SCENE_UUID}")
+        resp = await app_client.delete(f"/api/scenes/{SCENE_UUID}")
         assert resp.status_code == 200
         data = resp.json()
         assert data["message"] == "Scene deleted"

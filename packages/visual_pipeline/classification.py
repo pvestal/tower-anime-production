@@ -9,7 +9,7 @@ from packages.core.config import VISION_MODEL, BASE_PATH, OLLAMA_URL
 logger = logging.getLogger(__name__)
 
 # Resolve script dir for bible path lookups
-_SCRIPT_DIR = Path(__file__).resolve().parent.parent.parent / "src"
+_SCRIPT_DIR = Path(__file__).resolve().parent.parent.parent / "server"
 
 
 # DEPRECATED: Hardcoded roster kept as fallback for callers that don't pass project_name.

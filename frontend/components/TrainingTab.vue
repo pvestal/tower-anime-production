@@ -306,7 +306,7 @@ function elapsed(iso: string): string {
 async function fetchLog(jobId: string) {
   logLoading.value = true
   try {
-    const resp = await fetch(`/api/lora/training/jobs/${encodeURIComponent(jobId)}/log?tail=100`)
+    const resp = await fetch(`/api/training/jobs/${encodeURIComponent(jobId)}/log?tail=100`)
     if (resp.ok) { const data = await resp.json(); logLines.value = data.lines || [] }
     else logLines.value = ['(Log not available)']
   } catch { logLines.value = ['(Failed to fetch log)'] }

@@ -20,7 +20,7 @@ async def test_echo_status_connected(app_client):
     health_data = {"status": "ok", "version": "2.0", "vectors": 54000}
     mock_resp = _make_urlopen_response(health_data)
     with patch("packages.echo_integration.router._ur.urlopen", return_value=mock_resp):
-        resp = await app_client.get("/api/lora/echo/status")
+        resp = await app_client.get("/api/echo/status")
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "connected"
@@ -33,7 +33,7 @@ async def test_echo_status_offline(app_client):
         "packages.echo_integration.router._ur.urlopen",
         side_effect=Exception("Connection refused"),
     ):
-        resp = await app_client.get("/api/lora/echo/status")
+        resp = await app_client.get("/api/echo/status")
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "offline"
@@ -59,7 +59,7 @@ async def test_echo_chat_success(app_client):
         new_callable=AsyncMock,
         return_value={},
     ):
-        resp = await app_client.post("/api/lora/echo/chat", json={
+        resp = await app_client.post("/api/echo/chat", json={
             "message": "Tell me about Luigi",
         })
         assert resp.status_code == 200
@@ -93,7 +93,7 @@ async def test_echo_chat_with_character_context(app_client):
         new_callable=AsyncMock,
         return_value=mock_char_map,
     ):
-        resp = await app_client.post("/api/lora/echo/chat", json={
+        resp = await app_client.post("/api/echo/chat", json={
             "message": "How should I generate Luigi?",
             "character_slug": "luigi",
         })
@@ -114,7 +114,7 @@ async def test_echo_chat_unavailable(app_client):
         new_callable=AsyncMock,
         return_value={},
     ):
-        resp = await app_client.post("/api/lora/echo/chat", json={
+        resp = await app_client.post("/api/echo/chat", json={
             "message": "Hello",
         })
         assert resp.status_code == 502

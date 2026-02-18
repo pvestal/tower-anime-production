@@ -72,7 +72,6 @@ datasets/
 
 # Build artifacts
 dist/
-frontend/
 frame_classifications.json
 training_jobs.json
 

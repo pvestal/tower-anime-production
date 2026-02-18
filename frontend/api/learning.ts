@@ -1,5 +1,7 @@
 /**
  * Learning & Autonomy domain: quality insights, drift detection, recommendations.
+ * Backend: /api/system/* (inline endpoints in app.py)
+ *          /api/training/dataset-stats (cross-domain call to training router)
  */
 import type {
   LearningStats,
@@ -13,7 +15,10 @@ import type {
   ReplenishmentStatus,
   ReadinessResponse,
 } from '@/types'
-import { request } from './base'
+import { createRequest } from './base'
+
+const request = createRequest('/api/system')
+const trainingRequest = createRequest('/api/training')
 
 export interface DatasetCharacterStats {
   slug: string
@@ -32,11 +37,11 @@ export interface DatasetStatsResponse {
 }
 
 export const learningApi = {
-  // --- Dataset Stats (real filesystem counts) ---
+  // --- Dataset Stats (from training router — /api/training/dataset-stats) ---
 
   async getDatasetStats(projectName?: string): Promise<DatasetStatsResponse> {
     const qs = projectName ? `?project_name=${encodeURIComponent(projectName)}` : ''
-    return request(`/dataset-stats${qs}`)
+    return trainingRequest(`/dataset-stats${qs}`)
   },
 
   // --- Learning System ---
@@ -86,6 +91,27 @@ export const learningApi = {
 
   async getEventStats(): Promise<EventBusStats> {
     return request('/events/stats')
+  },
+
+  // --- Auto-Correction & Quality Gates ---
+
+  async getCorrectionStats(): Promise<Record<string, unknown>> {
+    return request('/correction/stats')
+  },
+
+  async toggleAutoCorrection(enabled: boolean): Promise<{ auto_correction_enabled: boolean }> {
+    return request(`/correction/toggle?enabled=${enabled}`, { method: 'POST' })
+  },
+
+  async getQualityGates(): Promise<{ gates: Record<string, unknown>[] }> {
+    return request('/quality/gates')
+  },
+
+  async updateQualityGate(gateName: string, threshold?: number, isActive?: boolean): Promise<{ gate_name: string; updated: boolean }> {
+    const qs = new URLSearchParams()
+    if (threshold !== undefined) qs.set('threshold', String(threshold))
+    if (isActive !== undefined) qs.set('is_active', String(isActive))
+    return request(`/quality/gates/${encodeURIComponent(gateName)}?${qs}`, { method: 'PUT' })
   },
 
   // --- Replenishment Loop ---

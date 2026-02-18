@@ -144,7 +144,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         )
 
         # Health and GPU status endpoints always open
-        if request.url.path in ("/api/lora/health", "/api/lora/gpu/status"):
+        if request.url.path in ("/api/system/health", "/api/system/gpu/status"):
             return await call_next(request)
 
         # Local network — bypass auth

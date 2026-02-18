@@ -1,5 +1,6 @@
 /**
  * Echo Brain domain: chat, prompt enhancement, narrator assist, status.
+ * Backend: /api/echo/* (echo_router mounted at /api with /echo prefix in decorators)
  */
 import type {
   EchoChatResponse,
@@ -7,7 +8,9 @@ import type {
   NarrateRequest,
   NarrateResponse,
 } from '@/types'
-import { request } from './base'
+import { createRequest } from './base'
+
+const request = createRequest('/api')
 
 export const echoApi = {
   async echoChat(message: string, characterSlug?: string): Promise<EchoChatResponse> {

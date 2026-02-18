@@ -1,5 +1,6 @@
 /**
- * Training domain: datasets, approvals, feedback, training jobs, ingestion, voice, content reconstruction.
+ * Training domain: datasets, approvals, feedback, training jobs, ingestion, voice extraction.
+ * Backend: /api/training/* (main), /api/audio/* (voice extraction endpoints)
  */
 import type {
   DatasetImage,
@@ -15,7 +16,11 @@ import type {
   LoraFile,
   IdentifyResult,
 } from '@/types'
-import { API_BASE, ApiError, request } from './base'
+import { createRequest, ApiError } from './base'
+
+const request = createRequest('/api/training')
+const audioRequest = createRequest('/api/audio')
+const TRAINING_BASE = '/api/training'
 
 export const trainingApi = {
   // --- Dataset ---
@@ -29,7 +34,7 @@ export const trainingApi = {
   },
 
   imageUrl(characterSlug: string, imageName: string): string {
-    return `${API_BASE}/dataset/${encodeURIComponent(characterSlug)}/image/${encodeURIComponent(imageName)}`
+    return `${TRAINING_BASE}/dataset/${encodeURIComponent(characterSlug)}/image/${encodeURIComponent(imageName)}`
   },
 
   async identifyCharacter(characterSlug: string, imageName: string): Promise<IdentifyResult> {
@@ -140,49 +145,55 @@ export const trainingApi = {
     return request(`/feedback/${encodeURIComponent(characterSlug)}`, { method: 'DELETE' })
   },
 
-  // --- Training Jobs ---
+  // --- Training Jobs (paths stripped: /training/jobs → /jobs since mount provides /api/training) ---
 
   async getTrainingJobs(): Promise<{ training_jobs: TrainingJob[] }> {
-    return request('/training/jobs')
+    return request('/jobs')
   },
 
   async startTraining(training: TrainingRequest): Promise<{ message: string; job_id: string; approved_images: number }> {
-    return request('/training/start', {
+    return request('/start', {
       method: 'POST',
       body: JSON.stringify(training),
     })
   },
 
   async cancelTrainingJob(jobId: string): Promise<{ message: string }> {
-    return request(`/training/jobs/${encodeURIComponent(jobId)}/cancel`, { method: 'POST' })
+    return request(`/jobs/${encodeURIComponent(jobId)}/cancel`, { method: 'POST' })
   },
 
   async deleteTrainingJob(jobId: string): Promise<{ message: string }> {
-    return request(`/training/jobs/${encodeURIComponent(jobId)}`, { method: 'DELETE' })
+    return request(`/jobs/${encodeURIComponent(jobId)}`, { method: 'DELETE' })
   },
 
   async retryTrainingJob(jobId: string): Promise<{ message: string; job_id: string }> {
-    return request(`/training/jobs/${encodeURIComponent(jobId)}/retry`, { method: 'POST' })
+    return request(`/jobs/${encodeURIComponent(jobId)}/retry`, { method: 'POST' })
   },
 
   async invalidateTrainingJob(jobId: string, deleteLora: boolean = false): Promise<{ message: string; lora_deleted: boolean }> {
-    return request(`/training/jobs/${encodeURIComponent(jobId)}/invalidate?delete_lora=${deleteLora}`, { method: 'POST' })
+    return request(`/jobs/${encodeURIComponent(jobId)}/invalidate?delete_lora=${deleteLora}`, { method: 'POST' })
   },
 
   async clearFinishedJobs(days: number = 7): Promise<{ message: string; removed: number; remaining: number }> {
-    return request(`/training/jobs/clear-finished?days=${days}`, { method: 'POST' })
+    return request(`/jobs/clear-finished?days=${days}`, { method: 'POST' })
   },
 
   async reconcileJobs(): Promise<{ message: string; reconciled: number }> {
-    return request('/training/reconcile', { method: 'POST' })
+    return request('/reconcile', { method: 'POST' })
   },
 
   async getTrainedLoras(): Promise<{ loras: LoraFile[] }> {
-    return request('/training/loras')
+    return request('/loras')
   },
 
   async deleteTrainedLora(slug: string): Promise<{ message: string }> {
-    return request(`/training/loras/${encodeURIComponent(slug)}`, { method: 'DELETE' })
+    return request(`/loras/${encodeURIComponent(slug)}`, { method: 'DELETE' })
+  },
+
+  // --- Clear stuck generations (in training/ingest router) ---
+
+  async clearStuckGenerations(): Promise<{ message: string; cancelled: number }> {
+    return request('/generate/clear-stuck', { method: 'POST' })
   },
 
   // --- Ingestion ---
@@ -206,7 +217,7 @@ export const trainingApi = {
   async ingestImage(file: File, characterSlug: string): Promise<{ image: string; character: string }> {
     const formData = new FormData()
     formData.append('file', file)
-    const response = await fetch(`${API_BASE}/ingest/image?character_slug=${encodeURIComponent(characterSlug)}`, {
+    const response = await fetch(`${TRAINING_BASE}/ingest/image?character_slug=${encodeURIComponent(characterSlug)}`, {
       method: 'POST',
       body: formData,
     })
@@ -217,7 +228,7 @@ export const trainingApi = {
   async ingestVideo(file: File, characterSlug: string, fps: number = 0.5): Promise<{ frames_extracted: number; character: string }> {
     const formData = new FormData()
     formData.append('file', file)
-    const response = await fetch(`${API_BASE}/ingest/video?character_slug=${encodeURIComponent(characterSlug)}&fps=${fps}`, {
+    const response = await fetch(`${TRAINING_BASE}/ingest/video?character_slug=${encodeURIComponent(characterSlug)}&fps=${fps}`, {
       method: 'POST',
       body: formData,
     })
@@ -252,7 +263,7 @@ export const trainingApi = {
   }> {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest()
-      xhr.open('POST', `${API_BASE}/ingest/movie-upload?project_name=${encodeURIComponent(projectName)}`)
+      xhr.open('POST', `${TRAINING_BASE}/ingest/movie-upload?project_name=${encodeURIComponent(projectName)}`)
 
       if (onProgress) {
         xhr.upload.addEventListener('progress', (e) => {
@@ -302,13 +313,13 @@ export const trainingApi = {
     return request(`/ingest/text/${encodeURIComponent(projectName)}`)
   },
 
-  // --- Voice ---
+  // --- Audio/Voice extraction (audio_composition package → /api/audio) ---
 
   async ingestVoice(url: string, projectName: string, minDuration: number = 0.5, maxDuration: number = 30): Promise<{
     segments_extracted: number; project: string; voice_dir: string;
     segments: Array<{ filename: string; start: number; end: number; duration: number }>
   }> {
-    return request('/ingest/voice', {
+    return audioRequest('/ingest/voice', {
       method: 'POST',
       body: JSON.stringify({ url, project_name: projectName, min_duration: minDuration, max_duration: maxDuration }),
     })
@@ -318,18 +329,18 @@ export const trainingApi = {
     project: string; total_segments: number; source_url?: string;
     segments: Array<{ filename: string; start: number; end: number; duration: number; size_kb?: number }>
   }> {
-    return request(`/voice/${encodeURIComponent(projectName)}`)
+    return audioRequest(`/voice/${encodeURIComponent(projectName)}`)
   },
 
   voiceSegmentUrl(projectName: string, filename: string): string {
-    return `${API_BASE}/voice/${encodeURIComponent(projectName)}/segment/${encodeURIComponent(filename)}`
+    return `/api/audio/voice/${encodeURIComponent(projectName)}/segment/${encodeURIComponent(filename)}`
   },
 
   async transcribeVoice(projectName: string, model: string = 'base'): Promise<{
     project: string; total: number; transcribed: number; characters_matched: number;
     transcriptions: Array<{ filename: string; text: string; language: string; matched_character: string | null }>
   }> {
-    return request(`/voice/${encodeURIComponent(projectName)}/transcribe`, {
+    return audioRequest(`/voice/${encodeURIComponent(projectName)}/transcribe`, {
       method: 'POST',
       body: JSON.stringify({ model }),
     })

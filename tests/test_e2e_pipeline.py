@@ -21,7 +21,11 @@ import httpx
 import pytest
 
 BASE_URL = "http://localhost:8401"
-API = f"{BASE_URL}/api/lora"
+# Domain-specific API prefixes (v3.3 restructure)
+API_SYSTEM = f"{BASE_URL}/api/system"
+API_STORY = f"{BASE_URL}/api/story"
+API_TRAINING = f"{BASE_URL}/api/training"
+API_VISUAL = f"{BASE_URL}/api/visual"
 
 # DB connection config (matches what the service uses via Vault/env)
 DB_CONFIG = {
@@ -71,7 +75,7 @@ class StepResult:
 async def step_health(client: httpx.AsyncClient) -> StepResult:
     """Step 1: Health check."""
     t0 = time.monotonic()
-    resp = await client.get(f"{API}/health")
+    resp = await client.get(f"{API_SYSTEM}/health")
     dt = time.monotonic() - t0
     if resp.status_code != 200:
         return StepResult("Health check", False, dt, detail=f"status={resp.status_code}")
@@ -85,7 +89,7 @@ async def step_create_project(client: httpx.AsyncClient) -> StepResult:
     """Step 2: Create test project."""
     global _created_project_id
     t0 = time.monotonic()
-    resp = await client.post(f"{API}/projects", json={
+    resp = await client.post(f"{API_STORY}/projects", json={
         "name": TEST_PROJECT_NAME,
         "description": "Temporary project for e2e testing",
         "genre": "test",
@@ -111,7 +115,7 @@ async def step_create_project(client: httpx.AsyncClient) -> StepResult:
 async def step_verify_project(client: httpx.AsyncClient) -> StepResult:
     """Step 3: Verify project appears in project list."""
     t0 = time.monotonic()
-    resp = await client.get(f"{API}/projects")
+    resp = await client.get(f"{API_STORY}/projects")
     dt = time.monotonic() - t0
     if resp.status_code != 200:
         return StepResult("Verify project listed", False, dt,
@@ -128,7 +132,7 @@ async def step_create_character(client: httpx.AsyncClient) -> StepResult:
     """Step 4: Create test character via API (also links to project + creates dataset dir)."""
     global _created_character_id
     t0 = time.monotonic()
-    resp = await client.post(f"{API}/characters", json={
+    resp = await client.post(f"{API_STORY}/characters", json={
         "name": TEST_CHARACTER_NAME,
         "project_name": TEST_PROJECT_NAME,
         "description": "E2E test character — will be deleted after test",
@@ -192,7 +196,7 @@ async def step_ingest_image(client: httpx.AsyncClient) -> tuple[StepResult, str]
     files = {"file": ("e2e_test.png", image_bytes, "image/png")}
 
     resp = await client.post(
-        f"{API}/ingest/image",
+        f"{API_TRAINING}/ingest/image",
         files=files,
         params={"character_slug": TEST_CHARACTER_SLUG},
     )
@@ -216,7 +220,7 @@ async def step_ingest_image(client: httpx.AsyncClient) -> tuple[StepResult, str]
 async def step_verify_pending(client: httpx.AsyncClient, image_name: str) -> StepResult:
     """Step 6: Verify the ingested image appears in pending list."""
     t0 = time.monotonic()
-    resp = await client.get(f"{API}/approval/pending")
+    resp = await client.get(f"{API_TRAINING}/approval/pending")
     dt = time.monotonic() - t0
     if resp.status_code != 200:
         return StepResult("Verify image pending", False, dt,
@@ -246,7 +250,7 @@ async def step_verify_pending(client: httpx.AsyncClient, image_name: str) -> Ste
 async def step_vision_review(client: httpx.AsyncClient) -> StepResult:
     """Step 7: Run vision model review on the test character's pending images."""
     t0 = time.monotonic()
-    resp = await client.post(f"{API}/approval/llava-review", json={
+    resp = await client.post(f"{API_VISUAL}/approval/vision-review", json={
         "character_slug": TEST_CHARACTER_SLUG,
         "max_images": 1,
         "auto_reject_threshold": 0.0,   # Don't auto-reject our test image
@@ -278,7 +282,7 @@ async def step_vision_review(client: httpx.AsyncClient) -> StepResult:
 async def step_manual_approve(client: httpx.AsyncClient, image_name: str) -> StepResult:
     """Step 8: Manually approve the test image."""
     t0 = time.monotonic()
-    resp = await client.post(f"{API}/approval/approve", json={
+    resp = await client.post(f"{API_TRAINING}/approval/approve", json={
         "character_name": TEST_CHARACTER_NAME,
         "character_slug": TEST_CHARACTER_SLUG,
         "image_name": image_name,
@@ -324,7 +328,7 @@ async def step_generate_image(client: httpx.AsyncClient) -> tuple[StepResult, st
         return (StepResult("Generate image via ComfyUI", True, dt,
                            skipped=True, detail="ComfyUI unreachable"), "")
 
-    resp = await client.post(f"{API}/generate/{TEST_CHARACTER_SLUG}", json={
+    resp = await client.post(f"{API_VISUAL}/generate/{TEST_CHARACTER_SLUG}", json={
         "generation_type": "image",
     }, timeout=30.0)
     dt = time.monotonic() - t0
@@ -359,7 +363,7 @@ async def step_check_generation(client: httpx.AsyncClient, prompt_id: str) -> St
     poll_interval = 2.0
 
     while (time.monotonic() - t0) < max_wait:
-        resp = await client.get(f"{API}/generate/{prompt_id}/status", timeout=10.0)
+        resp = await client.get(f"{API_VISUAL}/generate/{prompt_id}/status", timeout=10.0)
         if resp.status_code != 200:
             dt = time.monotonic() - t0
             return StepResult("Check generation status", True, dt,
@@ -496,13 +500,13 @@ async def run_e2e():
             # ensure the cache is fully rebuilt before we query pending images.
             # Hit the characters endpoint which calls get_char_project_map(), rebuilding cache.
             await asyncio.sleep(0.5)  # Brief pause to ensure DB commit is visible
-            chars_resp = await client.get(f"{API}/characters")
+            chars_resp = await client.get(f"{API_STORY}/characters")
             if chars_resp.status_code == 200:
                 char_slugs = [c.get("slug") for c in chars_resp.json().get("characters", [])]
                 if TEST_CHARACTER_SLUG not in char_slugs:
                     # Cache may still be stale — wait for TTL and retry
                     await asyncio.sleep(1.0)
-                    await client.get(f"{API}/characters")
+                    await client.get(f"{API_STORY}/characters")
 
             # Step 5: Ingest image
             r, image_name = await step_ingest_image(client)
@@ -587,7 +591,7 @@ def test_e2e_pipeline():
 
 if __name__ == "__main__":
     print("=" * 60)
-    print("LoRA Studio E2E Pipeline Test")
+    print("Anime Studio E2E Pipeline Test")
     print("=" * 60)
     print(f"Target: {BASE_URL}")
     print()

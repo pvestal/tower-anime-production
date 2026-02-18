@@ -1,8 +1,12 @@
 /**
  * Episode Assembly API — episode CRUD, scene assignment, assembly, publishing.
+ * Backend: /api/episodes/* (episode_router mounted at /api with /episodes prefix in decorators)
  */
 import type { Episode, EpisodeCreateRequest } from '@/types'
-import { API_BASE, request } from './base'
+import { createRequest } from './base'
+
+const request = createRequest('/api')
+const EPISODES_BASE = '/api'
 
 export const episodesApi = {
   async listEpisodes(projectId: number): Promise<{ episodes: Episode[] }> {
@@ -51,7 +55,7 @@ export const episodesApi = {
   },
 
   episodeVideoUrl(episodeId: string): string {
-    return `${API_BASE}/episodes/${episodeId}/video`
+    return `${EPISODES_BASE}/episodes/${episodeId}/video`
   },
 
   async publishEpisode(episodeId: string, season: number = 1): Promise<{

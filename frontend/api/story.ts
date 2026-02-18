@@ -1,5 +1,6 @@
 /**
  * Story domain: projects, characters, storylines, styles, world settings, checkpoints.
+ * Backend: /api/story/*
  */
 import type {
   Character,
@@ -14,7 +15,9 @@ import type {
   WorldSettingsUpsert,
   CheckpointFile,
 } from '@/types'
-import { request } from './base'
+import { createRequest } from './base'
+
+const request = createRequest('/api/story')
 
 export const storyApi = {
   // --- Characters ---

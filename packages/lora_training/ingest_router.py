@@ -760,7 +760,7 @@ async def extract_movie(req: MovieExtractRequest):
         "file_size_mb": file_size_mb,
         "project": req.project_name,
         "characters": len(project_slugs),
-        "message": "Extraction started. Poll GET /api/lora/ingest/progress for status.",
+        "message": "Extraction started. Poll GET /api/training/ingest/progress for status.",
     }
 
 

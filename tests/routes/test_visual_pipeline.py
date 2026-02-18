@@ -12,7 +12,7 @@ async def test_generate_character_not_found(app_client):
         return_value={},
     ):
         resp = await app_client.post(
-            "/api/lora/generate/nonexistent",
+            "/api/visual/generate/nonexistent",
             json={"generation_type": "image"},
         )
         assert resp.status_code == 404
@@ -35,7 +35,7 @@ async def test_generate_no_checkpoint(app_client):
         return_value=mock_char_map,
     ):
         resp = await app_client.post(
-            "/api/lora/generate/luigi",
+            "/api/visual/generate/luigi",
             json={"generation_type": "image"},
         )
         assert resp.status_code == 400
@@ -85,7 +85,7 @@ async def test_generate_success(app_client):
     ) as mock_bus:
         mock_bus.emit = AsyncMock()
         resp = await app_client.post(
-            "/api/lora/generate/luigi",
+            "/api/visual/generate/luigi",
             json={"generation_type": "image"},
         )
         assert resp.status_code == 200
@@ -107,7 +107,7 @@ async def test_get_generation_status(app_client):
         "packages.visual_pipeline.router.get_comfyui_progress",
         return_value=mock_progress,
     ):
-        resp = await app_client.get("/api/lora/generate/test-prompt-id/status")
+        resp = await app_client.get("/api/visual/generate/test-prompt-id/status")
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "generating"
@@ -121,7 +121,7 @@ async def test_gallery_empty(app_client):
         new=MagicMock(),
     ) as mock_dir:
         mock_dir.exists.return_value = False
-        resp = await app_client.get("/api/lora/gallery")
+        resp = await app_client.get("/api/visual/gallery")
         assert resp.status_code == 200
         data = resp.json()
         assert data["images"] == []
@@ -130,7 +130,7 @@ async def test_gallery_empty(app_client):
 @pytest.mark.unit
 async def test_vision_review_missing_params(app_client):
     resp = await app_client.post(
-        "/api/lora/approval/vision-review",
+        "/api/visual/approval/vision-review",
         json={},
     )
     assert resp.status_code == 400
@@ -145,7 +145,7 @@ async def test_vision_review_character_not_found(app_client):
         return_value={},
     ):
         resp = await app_client.post(
-            "/api/lora/approval/vision-review",
+            "/api/visual/approval/vision-review",
             json={"character_slug": "nonexistent"},
         )
         assert resp.status_code == 404

@@ -17,7 +17,7 @@ async def test_get_projects(app_client):
         new_callable=AsyncMock,
         return_value=mock_conn,
     ):
-        resp = await app_client.get("/api/lora/projects")
+        resp = await app_client.get("/api/story/projects")
         assert resp.status_code == 200
         data = resp.json()
         assert "projects" in data
@@ -37,7 +37,7 @@ async def test_create_project(app_client):
         new_callable=AsyncMock,
         return_value=mock_conn,
     ):
-        resp = await app_client.post("/api/lora/projects", json={
+        resp = await app_client.post("/api/story/projects", json={
             "name": "New Project",
             "description": "A test project",
             "genre": "sci-fi",
@@ -78,7 +78,7 @@ async def test_get_characters(app_client):
         mock_base.__truediv__ = MagicMock(return_value=mock_path)
         mock_path.__truediv__ = MagicMock(return_value=mock_path)
 
-        resp = await app_client.get("/api/lora/characters")
+        resp = await app_client.get("/api/story/characters")
         assert resp.status_code == 200
         data = resp.json()
         assert "characters" in data
@@ -123,7 +123,7 @@ async def test_create_character(app_client):
             return MagicMock()
         mock_char_path.__truediv__ = MagicMock(side_effect=div_side_effect)
 
-        resp = await app_client.post("/api/lora/characters", json={
+        resp = await app_client.post("/api/story/characters", json={
             "name": "Toad",
             "project_name": "Mario Galaxy",
             "design_prompt": "small mushroom character",
@@ -144,7 +144,7 @@ async def test_create_character_project_not_found(app_client):
         new_callable=AsyncMock,
         return_value=mock_conn,
     ):
-        resp = await app_client.post("/api/lora/characters", json={
+        resp = await app_client.post("/api/story/characters", json={
             "name": "Ghost",
             "project_name": "Nonexistent Project",
         })
@@ -167,7 +167,7 @@ async def test_get_checkpoints(app_client):
     mock_dir.iterdir.return_value = [mock_file1]
 
     with patch("packages.story.router.CHECKPOINTS_DIR", mock_dir):
-        resp = await app_client.get("/api/lora/checkpoints")
+        resp = await app_client.get("/api/story/checkpoints")
         assert resp.status_code == 200
         data = resp.json()
         assert "checkpoints" in data

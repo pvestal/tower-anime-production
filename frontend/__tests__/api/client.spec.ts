@@ -1,5 +1,5 @@
 /**
- * Tests for the API client (src/api/client.ts).
+ * Tests for the API client (frontend/api/client.ts).
  * Mocks global fetch to verify request URLs, methods, and bodies.
  */
 
@@ -27,7 +27,7 @@ beforeEach(() => {
 })
 
 describe('generateForCharacter', () => {
-  it('POSTs to /api/lora/generate/{slug} with JSON body', async () => {
+  it('POSTs to /api/visual/generate/{slug} with JSON body', async () => {
     const responseData = {
       prompt_id: 'abc-123',
       character: 'mario',
@@ -45,7 +45,7 @@ describe('generateForCharacter', () => {
 
     expect(mockFetch).toHaveBeenCalledOnce()
     const [url, options] = mockFetch.mock.calls[0]
-    expect(url).toBe('/api/lora/generate/mario')
+    expect(url).toBe('/api/visual/generate/mario')
     expect(options.method).toBe('POST')
     const body = JSON.parse(options.body)
     expect(body.generation_type).toBe('image')
@@ -55,14 +55,14 @@ describe('generateForCharacter', () => {
 })
 
 describe('getGenerationStatus', () => {
-  it('GETs /api/lora/generate/{promptId}/status', async () => {
+  it('GETs /api/visual/generate/{promptId}/status', async () => {
     const responseData = { status: 'completed', progress: 1.0, images: ['out.png'] }
     mockFetch.mockResolvedValueOnce(mockResponse(responseData))
 
     const result = await api.getGenerationStatus('abc-123')
 
     const [url, options] = mockFetch.mock.calls[0]
-    expect(url).toBe('/api/lora/generate/abc-123/status')
+    expect(url).toBe('/api/visual/generate/abc-123/status')
     expect(options.method).toBeUndefined() // GET is default
     expect(result.status).toBe('completed')
   })
@@ -76,14 +76,14 @@ describe('getGallery', () => {
     await api.getGallery(10)
 
     const [url] = mockFetch.mock.calls[0]
-    expect(url).toBe('/api/lora/gallery?limit=10')
+    expect(url).toBe('/api/visual/gallery?limit=10')
   })
 })
 
 describe('galleryImageUrl', () => {
   it('returns correct URL string', () => {
     const url = api.galleryImageUrl('test_image.png')
-    expect(url).toBe('/api/lora/gallery/image/test_image.png')
+    expect(url).toBe('/api/visual/gallery/image/test_image.png')
   })
 
   it('encodes special characters', () => {
@@ -100,7 +100,7 @@ describe('echoChat', () => {
     await api.echoChat('Tell me about Mario', 'mario')
 
     const [url, options] = mockFetch.mock.calls[0]
-    expect(url).toBe('/api/lora/echo/chat')
+    expect(url).toBe('/api/echo/chat')
     expect(options.method).toBe('POST')
     const body = JSON.parse(options.body)
     expect(body.message).toBe('Tell me about Mario')
@@ -118,7 +118,7 @@ describe('echoChat', () => {
 })
 
 describe('echoNarrate', () => {
-  it('POSTs to /api/lora/echo/narrate with context_type and payload', async () => {
+  it('POSTs to /api/echo/narrate with context_type and payload', async () => {
     const responseData = {
       suggestion: 'An epic adventure in the stars...',
       confidence: 0.85,
@@ -136,7 +136,7 @@ describe('echoNarrate', () => {
     })
 
     const [url, options] = mockFetch.mock.calls[0]
-    expect(url).toBe('/api/lora/echo/narrate')
+    expect(url).toBe('/api/echo/narrate')
     expect(options.method).toBe('POST')
     const body = JSON.parse(options.body)
     expect(body.context_type).toBe('storyline')
@@ -203,13 +203,13 @@ describe('error handling', () => {
 })
 
 describe('clearStuckGenerations', () => {
-  it('POSTs to /api/lora/generate/clear-stuck', async () => {
+  it('POSTs to /api/training/generate/clear-stuck', async () => {
     mockFetch.mockResolvedValueOnce(mockResponse({ message: 'Cleared 0', cancelled: 0 }))
 
     const result = await api.clearStuckGenerations()
 
     const [url, options] = mockFetch.mock.calls[0]
-    expect(url).toBe('/api/lora/generate/clear-stuck')
+    expect(url).toBe('/api/training/generate/clear-stuck')
     expect(options.method).toBe('POST')
     expect(result.cancelled).toBe(0)
   })
@@ -218,7 +218,7 @@ describe('clearStuckGenerations', () => {
 // --- Project Configuration API tests ---
 
 describe('getProjectDetail', () => {
-  it('GETs /api/lora/projects/{id}', async () => {
+  it('GETs /api/story/projects/{id}', async () => {
     const responseData = {
       project: {
         id: 41, name: 'Test Project', description: 'desc', genre: 'anime',
@@ -232,14 +232,14 @@ describe('getProjectDetail', () => {
     const result = await api.getProjectDetail(41)
 
     const [url] = mockFetch.mock.calls[0]
-    expect(url).toBe('/api/lora/projects/41')
+    expect(url).toBe('/api/story/projects/41')
     expect(result.project.id).toBe(41)
     expect(result.project.style?.checkpoint_model).toBe('test.safetensors')
   })
 })
 
 describe('createProject', () => {
-  it('POSTs to /api/lora/projects with JSON body', async () => {
+  it('POSTs to /api/story/projects with JSON body', async () => {
     const responseData = { project_id: 99, style_name: 'my_project_style', message: 'Created' }
     mockFetch.mockResolvedValueOnce(mockResponse(responseData))
 
@@ -250,7 +250,7 @@ describe('createProject', () => {
     })
 
     const [url, options] = mockFetch.mock.calls[0]
-    expect(url).toBe('/api/lora/projects')
+    expect(url).toBe('/api/story/projects')
     expect(options.method).toBe('POST')
     const body = JSON.parse(options.body)
     expect(body.name).toBe('My Project')
@@ -261,13 +261,13 @@ describe('createProject', () => {
 })
 
 describe('updateProject', () => {
-  it('PUTs to /api/lora/projects/{id}', async () => {
+  it('PUTs to /api/story/projects/{id}', async () => {
     mockFetch.mockResolvedValueOnce(mockResponse({ message: 'Updated' }))
 
     await api.updateProject(41, { name: 'Renamed', description: 'New desc' })
 
     const [url, options] = mockFetch.mock.calls[0]
-    expect(url).toBe('/api/lora/projects/41')
+    expect(url).toBe('/api/story/projects/41')
     expect(options.method).toBe('PUT')
     const body = JSON.parse(options.body)
     expect(body.name).toBe('Renamed')
@@ -276,13 +276,13 @@ describe('updateProject', () => {
 })
 
 describe('upsertStoryline', () => {
-  it('PUTs to /api/lora/projects/{id}/storyline', async () => {
+  it('PUTs to /api/story/projects/{id}/storyline', async () => {
     mockFetch.mockResolvedValueOnce(mockResponse({ message: 'Saved' }))
 
     await api.upsertStoryline(41, { title: 'Epic Story', summary: 'A great tale' })
 
     const [url, options] = mockFetch.mock.calls[0]
-    expect(url).toBe('/api/lora/projects/41/storyline')
+    expect(url).toBe('/api/story/projects/41/storyline')
     expect(options.method).toBe('PUT')
     const body = JSON.parse(options.body)
     expect(body.title).toBe('Epic Story')
@@ -291,13 +291,13 @@ describe('upsertStoryline', () => {
 })
 
 describe('updateStyle', () => {
-  it('PUTs to /api/lora/projects/{id}/style', async () => {
+  it('PUTs to /api/story/projects/{id}/style', async () => {
     mockFetch.mockResolvedValueOnce(mockResponse({ message: 'Updated' }))
 
     await api.updateStyle(41, { checkpoint_model: 'new.safetensors', steps: 40, cfg_scale: 8.5 })
 
     const [url, options] = mockFetch.mock.calls[0]
-    expect(url).toBe('/api/lora/projects/41/style')
+    expect(url).toBe('/api/story/projects/41/style')
     expect(options.method).toBe('PUT')
     const body = JSON.parse(options.body)
     expect(body.checkpoint_model).toBe('new.safetensors')
@@ -307,7 +307,7 @@ describe('updateStyle', () => {
 })
 
 describe('visionReview', () => {
-  it('POSTs to /api/lora/approval/vision-review with params', async () => {
+  it('POSTs to /api/visual/approval/vision-review with params', async () => {
     const responseData = {
       reviewed: 3,
       character_slug: 'mario',
@@ -323,7 +323,7 @@ describe('visionReview', () => {
     const result = await api.visionReview({ character_slug: 'mario', max_images: 5 })
 
     const [url, options] = mockFetch.mock.calls[0]
-    expect(url).toBe('/api/lora/approval/vision-review')
+    expect(url).toBe('/api/visual/approval/vision-review')
     expect(options.method).toBe('POST')
     const body = JSON.parse(options.body)
     expect(body.character_slug).toBe('mario')
@@ -346,7 +346,7 @@ describe('visionReview', () => {
 })
 
 describe('getCheckpoints', () => {
-  it('GETs /api/lora/checkpoints', async () => {
+  it('GETs /api/story/checkpoints', async () => {
     const responseData = {
       checkpoints: [
         { filename: 'cyberrealistic_v9.safetensors', size_mb: 2048 },
@@ -358,7 +358,7 @@ describe('getCheckpoints', () => {
     const result = await api.getCheckpoints()
 
     const [url] = mockFetch.mock.calls[0]
-    expect(url).toBe('/api/lora/checkpoints')
+    expect(url).toBe('/api/story/checkpoints')
     expect(result.checkpoints).toHaveLength(2)
     expect(result.checkpoints[0].filename).toBe('cyberrealistic_v9.safetensors')
   })
@@ -367,7 +367,7 @@ describe('getCheckpoints', () => {
 // --- FramePack Video Generation API tests ---
 
 describe('generateFramePack', () => {
-  it('POSTs to /api/lora/generate/framepack with character_slug and params', async () => {
+  it('POSTs to /api/generate/framepack with character_slug and params', async () => {
     const responseData = {
       prompt_id: 'fp-uuid-123',
       character: 'rina_suzuki',
@@ -387,7 +387,7 @@ describe('generateFramePack', () => {
 
     expect(mockFetch).toHaveBeenCalledOnce()
     const [url, options] = mockFetch.mock.calls[0]
-    expect(url).toBe('/api/lora/generate/framepack')
+    expect(url).toBe('/api/generate/framepack')
     expect(options.method).toBe('POST')
     const body = JSON.parse(options.body)
     expect(body.character_slug).toBe('rina_suzuki')
@@ -453,7 +453,7 @@ describe('generateFramePack', () => {
 })
 
 describe('getFramePackStatus', () => {
-  it('GETs /api/lora/generate/framepack/{promptId}/status', async () => {
+  it('GETs /api/generate/framepack/{promptId}/status', async () => {
     const responseData = {
       status: 'running',
       progress: 0.5,
@@ -463,7 +463,7 @@ describe('getFramePackStatus', () => {
     const result = await api.getFramePackStatus('fp-uuid-123')
 
     const [url, options] = mockFetch.mock.calls[0]
-    expect(url).toBe('/api/lora/generate/framepack/fp-uuid-123/status')
+    expect(url).toBe('/api/generate/framepack/fp-uuid-123/status')
     expect(options.method).toBeUndefined() // GET is default
     expect(result.status).toBe('running')
     expect(result.progress).toBe(0.5)
@@ -489,7 +489,7 @@ describe('getFramePackStatus', () => {
     await api.getFramePackStatus('id with spaces')
 
     const [url] = mockFetch.mock.calls[0]
-    expect(url).toBe('/api/lora/generate/framepack/id%20with%20spaces/status')
+    expect(url).toBe('/api/generate/framepack/id%20with%20spaces/status')
   })
 })
 
