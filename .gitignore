@@ -36,7 +36,7 @@ secrets/
 *.log
 logs/
 
-# Database
+# Database files
 *.db
 *.sqlite
 *.sqlite3
@@ -45,43 +45,53 @@ logs/
 .coverage
 .pytest_cache/
 
-# Media files (large)
+# Media files (large binary)
 *.mp4
 *.mp3
 *.wav
-data/music/
-data/videos/
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.gif
+
+# Generated content & output
 output/
 outputs/
 frames/
+generated_videos/
+generated_images/
+exports/
+renders/
+output_*/
+staged_frames/
+
+# Training datasets & data
+datasets/
+.datasets_trash/
+
+# Build artifacts
+dist/
+frontend/
+frame_classifications.json
+training_jobs.json
 
 # Temporary
 tmp/
 temp/
 cache/
 
-# Development and experimental files
-*_test.py
-*_testing.py
-test_*.py
-FINAL_*.py
-FUCKING_*.py
-WORKING_*.py
-*_now.py
-*_debug.py
-*_scratch.py
-experimental/
-playground/
-scratch/
-debug/
-testing/
+# Voice & source analysis data
+voice/
+source_analysis/
 
-# Generated content directories
-generated_videos/
-generated_images/
-exports/
-renders/
-output_*/
+# Archive (legacy code graveyard)
+archive/
+archived/
+
+# Legacy paths (no longer used)
+training/
+static/
 
 # Backup files
 *.backup*
@@ -89,23 +99,5 @@ output_*/
 *.old
 backups/
 
-# Training datasets and generated images
-datasets/
-training/datasets/
-training/lora-studio/datasets/
-training/lora-studio/.datasets_trash/
-*.png
-*.jpg
-*.jpeg
-*.webp
-*.gif
-
-# Virtual environments (fix_venv was accidentally tracked)
-fix_venv/
-
-# Build artifacts
-training/lora-studio/dist/
-training/lora-studio/frontend/
-training/lora-studio/voice/
-frame_classifications.json
-training_jobs.json
+# Pre-commit (legacy, not active)
+.pre-commit-config.yaml

@@ -1,0 +1,227 @@
+"""ComfyUI interaction helpers — workflow building, submission, progress tracking."""
+
+import json
+import logging
+from pathlib import Path
+
+from packages.core.config import COMFYUI_URL, COMFYUI_OUTPUT_DIR, BASE_PATH
+
+logger = logging.getLogger(__name__)
+
+
+def build_comfyui_workflow(
+    design_prompt: str,
+    checkpoint_model: str,
+    cfg_scale: float = 7.0,
+    steps: int = 25,
+    sampler: str = "dpmpp_2m",
+    scheduler: str = "karras",
+    width: int = 512,
+    height: int = 768,
+    negative_prompt: str = "worst quality, low quality, blurry, deformed",
+    generation_type: str = "image",
+    seed: int | None = None,
+    character_slug: str = "output",
+) -> dict:
+    """Build a ComfyUI workflow dict for image or video generation."""
+    import random as _random
+    if seed is None:
+        seed = _random.randint(1, 2**31)
+
+    batch_size = 1
+    if generation_type == "video":
+        batch_size = 16
+        width = min(width, 512)
+        height = min(height, 512)
+
+    workflow = {
+        "3": {
+            "inputs": {
+                "seed": seed,
+                "steps": steps,
+                "cfg": cfg_scale,
+                "sampler_name": sampler,
+                "scheduler": scheduler,
+                "denoise": 1,
+                "model": ["4", 0],
+                "positive": ["6", 0],
+                "negative": ["7", 0],
+                "latent_image": ["5", 0],
+            },
+            "class_type": "KSampler",
+        },
+        "4": {
+            "inputs": {"ckpt_name": checkpoint_model},
+            "class_type": "CheckpointLoaderSimple",
+        },
+        "5": {
+            "inputs": {"width": width, "height": height, "batch_size": batch_size},
+            "class_type": "EmptyLatentImage",
+        },
+        "6": {
+            "inputs": {"text": design_prompt, "clip": ["4", 1]},
+            "class_type": "CLIPTextEncode",
+        },
+        "7": {
+            "inputs": {"text": negative_prompt, "clip": ["4", 1]},
+            "class_type": "CLIPTextEncode",
+        },
+        "8": {
+            "inputs": {"samples": ["3", 0], "vae": ["4", 2]},
+            "class_type": "VAEDecode",
+        },
+    }
+
+    import time as _time
+    ts = int(_time.time())
+    prefix = f"lora_{character_slug}_{ts}"
+
+    # Inject LoraLoader if a trained LoRA exists for this character
+    lora_path = Path("/opt/ComfyUI/models/loras") / f"{character_slug}_lora.safetensors"
+    if lora_path.exists():
+        workflow["10"] = {
+            "inputs": {
+                "lora_name": lora_path.name,
+                "strength_model": 0.8,
+                "strength_clip": 0.8,
+                "model": ["4", 0],
+                "clip": ["4", 1],
+            },
+            "class_type": "LoraLoader",
+            "_meta": {"title": "LoRA Loader"},
+        }
+        # Rewire: KSampler model -> LoraLoader
+        workflow["3"]["inputs"]["model"] = ["10", 0]
+        # Rewire: CLIP text encoders -> LoraLoader CLIP
+        workflow["6"]["inputs"]["clip"] = ["10", 1]
+        workflow["7"]["inputs"]["clip"] = ["10", 1]
+        logger.info(f"LoRA injected: {lora_path.name} for {character_slug}")
+
+    # Inject IP-Adapter if reference images exist for this character
+    ref_dir = BASE_PATH / character_slug / "reference_images"
+    ipadapter_model = Path("/opt/ComfyUI/models/ipadapter/ip-adapter-plus_sd15.safetensors")
+    clip_vision_model = Path("/opt/ComfyUI/models/clip_vision/CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors")
+    if ref_dir.exists() and ipadapter_model.exists() and clip_vision_model.exists():
+        ref_images = sorted(ref_dir.glob("*.png")) + sorted(ref_dir.glob("*.jpg"))
+        if ref_images:
+            import random as _rand
+            ref_img = _rand.choice(ref_images)
+            # Copy reference to ComfyUI input if not already there
+            comfyui_input = Path("/opt/ComfyUI/input")
+            ref_dest = comfyui_input / f"ref_{character_slug}.png"
+            if not ref_dest.exists() or ref_dest.stat().st_mtime < ref_img.stat().st_mtime:
+                import shutil
+                shutil.copy2(ref_img, ref_dest)
+
+            # Determine which node provides the model (LoRA or checkpoint)
+            model_source = ["10", 0] if lora_path.exists() else ["4", 0]
+
+            # Load CLIP Vision
+            workflow["20"] = {
+                "inputs": {"clip_name": clip_vision_model.name},
+                "class_type": "CLIPVisionLoader",
+            }
+            # Load reference image
+            workflow["21"] = {
+                "inputs": {"image": ref_dest.name, "upload": "image"},
+                "class_type": "LoadImage",
+            }
+            # IP-Adapter Unified Loader
+            workflow["22"] = {
+                "inputs": {
+                    "preset": "PLUS (high strength)",
+                    "model": model_source,
+                },
+                "class_type": "IPAdapterUnifiedLoader",
+            }
+            # IP-Adapter Apply
+            workflow["23"] = {
+                "inputs": {
+                    "weight": 0.95,
+                    "weight_type": "linear",
+                    "combine_embeds": "concat",
+                    "start_at": 0.0,
+                    "end_at": 0.85,
+                    "embeds_scaling": "K+V",
+                    "model": ["22", 0],
+                    "ipadapter": ["22", 1],
+                    "image": ["21", 0],
+                },
+                "class_type": "IPAdapterAdvanced",
+            }
+            # Rewire KSampler to use IP-Adapter output model
+            workflow["3"]["inputs"]["model"] = ["23", 0]
+            logger.info(f"IP-Adapter injected: ref={ref_img.name} for {character_slug}")
+
+    if generation_type == "video":
+        workflow["9"] = {
+            "inputs": {
+                "frame_rate": 8,
+                "loop_count": 0,
+                "filename_prefix": prefix,
+                "format": "video/h264-mp4",
+                "pingpong": False,
+                "save_output": True,
+                "images": ["8", 0],
+            },
+            "class_type": "VHS_VideoCombine",
+        }
+    else:
+        workflow["9"] = {
+            "inputs": {"filename_prefix": prefix, "images": ["8", 0]},
+            "class_type": "SaveImage",
+        }
+
+    return workflow
+
+
+def submit_comfyui_workflow(workflow: dict) -> str:
+    """Submit a workflow to ComfyUI and return the prompt_id."""
+    import urllib.request
+    payload = json.dumps({"prompt": workflow}).encode()
+    req = urllib.request.Request(
+        f"{COMFYUI_URL}/prompt",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+    )
+    resp = urllib.request.urlopen(req, timeout=30)
+    result = json.loads(resp.read())
+    return result.get("prompt_id", "")
+
+
+def get_comfyui_progress(prompt_id: str) -> dict:
+    """Check ComfyUI generation progress for a given prompt_id."""
+    import urllib.request
+    try:
+        req = urllib.request.Request(f"{COMFYUI_URL}/queue")
+        resp = urllib.request.urlopen(req, timeout=10)
+        queue_data = json.loads(resp.read())
+
+        for job in queue_data.get("queue_running", []):
+            if prompt_id in str(job):
+                return {"status": "running", "progress": 0.5}
+
+        for job in queue_data.get("queue_pending", []):
+            if prompt_id in str(job):
+                return {"status": "pending", "progress": 0.1}
+
+        # Check history for completion
+        req = urllib.request.Request(f"{COMFYUI_URL}/history/{prompt_id}")
+        resp = urllib.request.urlopen(req, timeout=10)
+        history = json.loads(resp.read())
+
+        if prompt_id in history:
+            outputs = history[prompt_id].get("outputs", {})
+            images = []
+            for node_output in outputs.values():
+                images.extend(node_output.get("images", []))
+            return {
+                "status": "completed",
+                "progress": 1.0,
+                "images": [img.get("filename") for img in images],
+            }
+
+        return {"status": "unknown", "progress": 0.0}
+    except Exception as e:
+        logger.warning(f"ComfyUI progress check failed: {e}")
+        return {"status": "error", "progress": 0.0, "error": str(e)}

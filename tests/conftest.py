@@ -1,324 +1,286 @@
-"""
-Pytest configuration and fixtures for Tower Anime Production tests
+"""Shared test fixtures and mocks for the Anime Studio test suite.
+
+Provides:
+- mock_db_pool: AsyncMock of asyncpg connection pool
+- mock_comfyui: Patches urllib.request for ComfyUI HTTP calls
+- mock_ollama: Patches urllib.request for Ollama vision model calls
+- mock_filesystem: tmp_path-based dataset directory
+- event_bus_spy: Fresh EventBus with captured events
+- sample_char_map: Dict matching get_char_project_map() output shape
+- app_client: httpx.AsyncClient wrapping the FastAPI app
 """
 
 import asyncio
 import json
-from unittest.mock import AsyncMock, Mock
+import sys
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
 
-import numpy as np
 import pytest
 
-# Configure pytest-asyncio
-pytest_plugins = ("pytest_asyncio",)
+# Ensure the project root is on sys.path so `packages.*` imports resolve
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 
-# Register custom markers
+# ---------------------------------------------------------------------------
+# Markers
+# ---------------------------------------------------------------------------
+
 def pytest_configure(config):
-    """Register custom markers"""
-    config.addinivalue_line(
-        "markers", "performance: mark test as a performance benchmark"
-    )
-    config.addinivalue_line("markers", "e2e: mark test as an end-to-end test")
-    config.addinivalue_line("markers", "slow: mark test as slow running")
+    config.addinivalue_line("markers", "e2e: live integration test (requires running services)")
+    config.addinivalue_line("markers", "slow: test takes > 5 seconds")
+    config.addinivalue_line("markers", "unit: fast unit test")
 
 
-# ============= Mock Services =============
+# ---------------------------------------------------------------------------
+# Mock DB Pool
+# ---------------------------------------------------------------------------
 
+@pytest.fixture
+def mock_conn():
+    """A single mock asyncpg connection with fetch/fetchrow/fetchval/execute."""
+    conn = AsyncMock()
+    conn.fetch = AsyncMock(return_value=[])
+    conn.fetchrow = AsyncMock(return_value=None)
+    conn.fetchval = AsyncMock(return_value=0)
+    conn.execute = AsyncMock()
+    return conn
+
+
+class _MockAsyncCtx:
+    """Async context manager that yields a fixed value."""
+    def __init__(self, value):
+        self._value = value
+
+    async def __aenter__(self):
+        return self._value
+
+    async def __aexit__(self, *args):
+        return False
+
+
+@pytest.fixture
+def mock_db_pool(mock_conn):
+    """AsyncMock of asyncpg connection pool.
+
+    Usage in tests:
+        async with pool.acquire() as conn:
+            conn.fetch.return_value = [...]
+    """
+    pool = MagicMock()
+    pool.acquire.return_value = _MockAsyncCtx(mock_conn)
+    return pool
+
+
+@pytest.fixture
+def patch_get_pool(mock_db_pool):
+    """Patch get_pool everywhere it's imported to return the mock pool.
+
+    Modules import get_pool via `from .db import get_pool`, so we must
+    patch at every usage site, not just the definition.
+    """
+    targets = [
+        "packages.core.db.get_pool",
+        "packages.core.audit.get_pool",
+        "packages.core.learning.get_pool",
+        "packages.core.model_selector.get_pool",
+        "packages.core.auto_correction.get_pool",
+        "packages.core.replenishment.get_pool",
+    ]
+    patches = [patch(t, new_callable=AsyncMock, return_value=mock_db_pool) for t in targets]
+    for p in patches:
+        p.start()
+    yield mock_db_pool
+    for p in patches:
+        p.stop()
+
+
+# ---------------------------------------------------------------------------
+# Mock ComfyUI
+# ---------------------------------------------------------------------------
 
 @pytest.fixture
 def mock_comfyui():
-    """Mock ComfyUI API client"""
-    mock = Mock()
-    mock.url = "http://localhost:8188"
+    """Patches urllib.request.urlopen for ComfyUI HTTP calls.
 
-    # Mock workflow execution
-    mock.queue_prompt.return_value = "test-prompt-123"
+    Returns a MagicMock whose .return_value.read() can be configured per test.
+    """
+    mock_resp = MagicMock()
+    mock_resp.read.return_value = json.dumps({"prompt_id": "test-prompt-123"}).encode()
+    mock_resp.__enter__ = MagicMock(return_value=mock_resp)
+    mock_resp.__exit__ = MagicMock(return_value=False)
 
-    # Mock status checking
-    mock.get_status.side_effect = [
-        {"status": "queued", "progress": 0},
-        {"status": "processing", "progress": 25},
-        {"status": "processing", "progress": 50},
-        {"status": "processing", "progress": 75},
-        {"status": "completed", "progress": 100, "output": "/path/to/output.png"},
-    ]
+    with patch("urllib.request.urlopen", return_value=mock_resp) as m:
+        m._mock_resp = mock_resp  # expose for per-test configuration
+        yield m
 
-    # Mock history
-    mock.get_history.return_value = {
-        "test-prompt-123": {
-            "outputs": {"9": {"images": [{"filename": "test_output.png"}]}}
-        }
-    }
 
-    return mock
-
+# ---------------------------------------------------------------------------
+# Mock Ollama
+# ---------------------------------------------------------------------------
 
 @pytest.fixture
-def mock_database():
-    """Mock database connection"""
-    mock_db = Mock()
+def mock_ollama():
+    """Patches urllib.request.urlopen for Ollama vision model HTTP calls."""
+    mock_resp = MagicMock()
+    mock_resp.read.return_value = json.dumps({
+        "response": json.dumps({
+            "character_match": 8,
+            "is_human": True,
+            "solo": True,
+            "clarity": 9,
+            "completeness": "full",
+            "training_value": 8,
+            "caption": "Test character in standing pose",
+            "issues": [],
+        })
+    }).encode()
+    mock_resp.__enter__ = MagicMock(return_value=mock_resp)
+    mock_resp.__exit__ = MagicMock(return_value=False)
 
-    # Mock query results
-    mock_query = Mock()
-    mock_query.filter.return_value = mock_query
-    mock_query.first.return_value = None
-    mock_query.all.return_value = []
-    mock_query.offset.return_value = mock_query
-    mock_query.limit.return_value = mock_query
-
-    mock_db.query.return_value = mock_query
-    mock_db.add = Mock()
-    mock_db.commit = Mock()
-    mock_db.refresh = Mock()
-    mock_db.delete = Mock()
-    mock_db.rollback = Mock()
-
-    return mock_db
+    with patch("urllib.request.urlopen", return_value=mock_resp) as m:
+        m._mock_resp = mock_resp
+        yield m
 
 
-@pytest.fixture
-def mock_echo_brain():
-    """Mock Echo Brain service"""
-    mock = AsyncMock()
-    mock.url = "http://localhost:8309"
-
-    # Mock query responses
-    mock.query.return_value = {
-        "response": "Generated story content",
-        "confidence": 0.95,
-        "model": "qwen2.5-coder:32b",
-    }
-
-    # Mock quality assessment
-    mock.assess_quality.return_value = {
-        "score": 0.88,
-        "feedback": "Good consistency, minor artifacts detected",
-    }
-
-    return mock
-
+# ---------------------------------------------------------------------------
+# Mock Filesystem
+# ---------------------------------------------------------------------------
 
 @pytest.fixture
-def mock_apple_music():
-    """Mock Apple Music service"""
-    mock = Mock()
-    mock.url = "http://localhost:8315"
+def mock_filesystem(tmp_path):
+    """Create a temporary dataset directory structure with sample data.
 
-    # Mock BPM analysis
-    mock.analyze_video_tempo.return_value = 120.0
+    Layout:
+        tmp_path/
+        └── luigi/
+            ├── images/
+            │   └── gen_luigi_test_001.png  (1x1 white PNG)
+            ├── approval_status.json
+            └── feedback.json
+    """
+    char_dir = tmp_path / "luigi" / "images"
+    char_dir.mkdir(parents=True)
 
-    # Mock track search
-    mock.search_by_bpm.return_value = [
-        {"id": "track1", "name": "Test Track", "bpm": 120, "artist": "Test Artist"},
-        {
-            "id": "track2",
-            "name": "Another Track",
-            "bpm": 118,
-            "artist": "Another Artist",
+    # Minimal valid PNG (1x1 white pixel)
+    import struct
+    import zlib
+    sig = b"\x89PNG\r\n\x1a\n"
+    ihdr_data = struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)
+    ihdr_crc = struct.pack(">I", zlib.crc32(b"IHDR" + ihdr_data) & 0xFFFFFFFF)
+    ihdr = struct.pack(">I", 13) + b"IHDR" + ihdr_data + ihdr_crc
+    raw = zlib.compress(b"\x00\xff\xff\xff")
+    idat_crc = struct.pack(">I", zlib.crc32(b"IDAT" + raw) & 0xFFFFFFFF)
+    idat = struct.pack(">I", len(raw)) + b"IDAT" + raw + idat_crc
+    iend_crc = struct.pack(">I", zlib.crc32(b"IEND") & 0xFFFFFFFF)
+    iend = struct.pack(">I", 0) + b"IEND" + iend_crc
+    png_bytes = sig + ihdr + idat + iend
+
+    test_img = char_dir / "gen_luigi_test_001.png"
+    test_img.write_bytes(png_bytes)
+
+    approval_status = {"gen_luigi_test_001.png": "pending"}
+    (tmp_path / "luigi" / "approval_status.json").write_text(json.dumps(approval_status))
+
+    feedback = {"rejections": [], "rejection_count": 0, "negative_additions": []}
+    (tmp_path / "luigi" / "feedback.json").write_text(json.dumps(feedback))
+
+    return tmp_path
+
+
+# ---------------------------------------------------------------------------
+# EventBus Spy
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def event_bus_spy():
+    """Fresh EventBus instance per test with captured events list."""
+    from packages.core.events import EventBus
+
+    bus = EventBus()
+    captured = []
+
+    async def _capture(data):
+        captured.append(data)
+
+    bus._captured = captured
+    bus._capture_handler = _capture
+    return bus
+
+
+# ---------------------------------------------------------------------------
+# Sample Character Map
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def sample_char_map():
+    """Dict matching get_char_project_map() output shape."""
+    return {
+        "luigi": {
+            "name": "Luigi",
+            "slug": "luigi",
+            "project_name": "Super Mario Galaxy Anime Adventure",
+            "design_prompt": "tall thin man in green cap with letter L, green shirt, blue overalls",
+            "appearance_data": {"species": "human", "key_colors": {"cap": "green", "overalls": "blue"}},
+            "default_style": "mario_galaxy_style",
+            "checkpoint_model": "realcartoonPixar_v12.safetensors",
+            "cfg_scale": 8.5,
+            "steps": 40,
+            "sampler": "DPM++ 2M Karras",
+            "scheduler": "karras",
+            "width": 512,
+            "height": 768,
+            "resolution": "512x768",
+            "positive_prompt_template": "masterpiece, best quality, Illumination 3D CGI",
+            "negative_prompt_template": "worst quality, low quality, blurry, deformed",
+            "style_preamble": "Illumination Studios style, Pixar 3D render",
         },
-    ]
-
-    # Mock sync
-    mock.sync_to_video.return_value = "/path/to/synced_video.mp4"
-
-    return mock
-
-
-# ============= Sample Data =============
-
-
-@pytest.fixture
-def sample_project():
-    """Sample project data"""
-    return {
-        "id": 1,
-        "name": "Test Anime Project",
-        "description": "Automated test project",
-        "type": "series",
-        "bible": {
-            "genre": "shounen",
-            "themes": ["friendship", "adventure"],
-            "target_audience": "13-18",
-        },
-        "status": "active",
-        "created_at": "2025-12-10T00:00:00",
-    }
-
-
-@pytest.fixture
-def sample_character():
-    """Sample character data"""
-    return {
-        "id": 1,
-        "name": "Kai Nakamura",
-        "project_id": 1,
-        "description": "Main protagonist",
-        "personality_traits": ["brave", "determined", "kind"],
-        "visual_description": "Spiky black hair, blue eyes, athletic build",
-        "reference_image": "/path/to/reference.png",
-        "embedding_data": [0.1] * 512,
-        "color_palette": {
-            "hair": [30, 30, 35],
-            "eyes": [100, 150, 200],
-            "skin": [250, 220, 190],
+        "bowser": {
+            "name": "Bowser",
+            "slug": "bowser",
+            "project_name": "Super Mario Galaxy Anime Adventure",
+            "design_prompt": "massive turtle-dragon with spiky green shell, horns, fangs",
+            "appearance_data": {
+                "species": "dragon-turtle (NOT human)",
+                "key_colors": {"shell": "green", "skin": "yellow-orange"},
+                "common_errors": ["depicted as child"],
+            },
+            "default_style": "mario_galaxy_style",
+            "checkpoint_model": "realcartoonPixar_v12.safetensors",
+            "cfg_scale": 8.5,
+            "steps": 40,
+            "sampler": "DPM++ 2M Karras",
+            "scheduler": "karras",
+            "width": 512,
+            "height": 768,
+            "resolution": "512x768",
+            "positive_prompt_template": "masterpiece, best quality, Illumination 3D CGI",
+            "negative_prompt_template": "worst quality, low quality, blurry, deformed",
+            "style_preamble": None,
         },
     }
 
 
-@pytest.fixture
-def sample_generation_job():
-    """Sample generation job data"""
-    return {
-        "id": 123,
-        "project_id": 1,
-        "prompt": "anime character in action scene",
-        "status": "processing",
-        "progress": 45,
-        "comfyui_prompt_id": "test-prompt-123",
-        "output_path": None,
-        "created_at": "2025-12-10T12:00:00",
-        "workflow_params": {
-            "model": "realcartoonPixar_v12",
-            "steps": 15,
-            "cfg_scale": 7.0,
-            "seed": 42,
-        },
-    }
-
+# ---------------------------------------------------------------------------
+# FastAPI App Client
+# ---------------------------------------------------------------------------
 
 @pytest.fixture
-def sample_image():
-    """Create a sample image array"""
-    np.random.seed(42)
-    return np.random.randint(0, 255, (512, 512, 3), dtype=np.uint8)
+async def app_client(patch_get_pool):
+    """httpx.AsyncClient wrapping the FastAPI app for endpoint tests.
 
+    The DB pool is mocked — no real database needed.
+    """
+    import httpx
+    from src.app import app
 
-@pytest.fixture
-def sample_embedding():
-    """Generate a sample embedding vector"""
-    np.random.seed(42)
-    return np.random.randn(512).tolist()
+    # Skip startup event (it tries to connect to real DB)
+    app.router.on_startup.clear()
 
-
-# ============= File System =============
-
-
-@pytest.fixture
-def temp_project_dir(tmp_path):
-    """Create temporary project directory structure"""
-    project_dir = tmp_path / "projects" / "test_project"
-    project_dir.mkdir(parents=True)
-
-    # Create subdirectories
-    (project_dir / "characters").mkdir()
-    (project_dir / "scenes").mkdir()
-    (project_dir / "output").mkdir()
-
-    return project_dir
-
-
-@pytest.fixture
-def sample_workflow():
-    """Sample ComfyUI workflow"""
-    return {
-        "prompt": {
-            "3": {
-                "class_type": "KSampler",
-                "inputs": {
-                    "seed": 42,
-                    "steps": 15,
-                    "cfg": 7.0,
-                    "sampler_name": "euler",
-                    "scheduler": "normal",
-                    "denoise": 1.0,
-                    "model": ["4", 0],
-                    "positive": ["6", 0],
-                    "negative": ["7", 0],
-                    "latent_image": ["5", 0],
-                },
-            }
-        }
-    }
-
-
-# ============= API Client =============
-
-
-@pytest.fixture
-def api_base_url():
-    """Base URL for API tests"""
-    return "http://localhost:8401/api/lora"
-
-
-@pytest.fixture
-def auth_headers():
-    """Authentication headers for protected endpoints"""
-    return {
-        "Authorization": "Bearer test_token_12345",
-        "Content-Type": "application/json",
-    }
-
-
-# ============= Async Support =============
-
-
-@pytest.fixture
-def event_loop():
-    """Create an instance of the default event loop for the test session"""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
-
-
-# ============= Performance Testing =============
-
-
-@pytest.fixture
-def benchmark_timer():
-    """Simple benchmark timer"""
-    import time
-
-    class Timer:
-        def __init__(self):
-            self.times = []
-
-        def __enter__(self):
-            self.start = time.time()
-            return self
-
-        def __exit__(self, *args):
-            self.times.append(time.time() - self.start)
-
-        @property
-        def average(self):
-            return sum(self.times) / len(self.times) if self.times else 0
-
-        @property
-        def total(self):
-            return sum(self.times)
-
-    return Timer()
-
-
-# ============= WebSocket Testing =============
-
-
-@pytest.fixture
-async def mock_websocket():
-    """Mock WebSocket connection"""
-    ws = AsyncMock()
-    ws.send = AsyncMock()
-    ws.recv = AsyncMock()
-    ws.close = AsyncMock()
-
-    # Mock receiving progress updates
-    ws.recv.side_effect = [
-        json.dumps({"type": "progress", "progress": 0}),
-        json.dumps({"type": "progress", "progress": 25}),
-        json.dumps({"type": "progress", "progress": 50}),
-        json.dumps({"type": "progress", "progress": 75}),
-        json.dumps({"type": "progress", "progress": 100, "status": "completed"}),
-    ]
-
-    return ws
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        yield client

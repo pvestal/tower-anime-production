@@ -1,247 +1,235 @@
-# Tower Anime Production
+# Anime Studio v3.2
 
-Anime video production system with ComfyUI generation, LoRA character training, and Echo Brain AI integration.
+End-to-end anime production pipeline: project management, character design, dataset approval, LoRA training, image/video generation, scene assembly, episode composition, and Jellyfin publishing.
 
-## Services
+**Stack**: FastAPI (Python) + Vue 3 (TypeScript) + PostgreSQL + ComfyUI + Qdrant + Ollama
+**Port**: 8401 (systemd: `tower-anime-studio.service`)
+**URL**: `http://192.168.50.135/anime-studio/`
+**API**: 101+ endpoints under `/api/lora/*`
+**Entry**: `src/app.py` (modular router mounts)
 
-| Service | Port | URL | Purpose |
-|---------|------|-----|---------|
-| **LoRA Studio API** | 8401 | `https://<host>/api/lora/` | All anime production: generation, approval, training, gallery, Echo Brain |
-| **LoRA Studio Frontend** | 443 | `https://<host>/lora-studio/` | 7-tab production UI |
-| ComfyUI | 8188 | `http://<host>:8188` | Image/video generation backend |
-| Echo Brain | 8309 | `http://<host>:8309` | AI memory & context (54,000+ vectors) |
-| PostgreSQL | 5432 | - | Database (`anime_production`) |
+## Tabs
 
-> **Consolidation note (2026-02-12):** The standalone Anime Production API (port 8328) has been archived. All functionality is now in LoRA Studio. The `/anime/` route redirects to `/lora-studio/`.
-
-## Quick Start
-
-```bash
-# Check service status
-sudo systemctl status tower-lora-studio nginx
-
-# Restart LoRA Studio
-sudo systemctl restart tower-lora-studio
-
-# View logs
-journalctl -u tower-lora-studio -f
-
-# Database
-psql -h localhost -U patrick -d anime_production
-```
-
-API docs: `http://localhost:8401/docs`
+| # | Tab | Purpose |
+|---|-----|---------|
+| 1 | **Project** | Create/select projects, configure checkpoint models, generation styles |
+| 2 | **Story & World** | Storyline, world settings, art direction, cinematography, Echo Brain narration assist |
+| 3 | **Characters** | Character roster, design prompts, YouTube/video/image ingestion |
+| 4 | **Approve** | Human-in-the-loop image approval with Gemma3 auto-triage, species validation, replenishment loop controls |
+| 5 | **Train** | Launch LoRA training jobs, monitor epochs/loss |
+| 6 | **Generate** | Generate images (Stable Diffusion) or videos (FramePack I2V) per character |
+| 7 | **Scenes** | Scene Builder + Episodes: compose multi-shot scenes with motion presets, dialogue, continuity chaining; assemble into episodes; publish to Jellyfin |
+| 8 | **Gallery** | Browse generated outputs |
+| — | **Echo Brain** | AI chat with project context, prompt enhancement |
 
 ## Architecture
 
-```
-User Browser (HTTPS :443)
-    |
-    nginx reverse proxy
-    ├── /lora-studio/    → static dist (Vue.js frontend)
-    ├── /api/lora/*      → proxy_pass http://127.0.0.1:8401 (LoRA Studio API)
-    └── /anime/          → 301 redirect → /lora-studio/
+See [ARCHITECTURE.md](ARCHITECTURE.md) for system diagrams and data flow.
 
-LoRA Studio API (:8401)
-    ├── Character management + SSOT design prompts
-    ├── Dataset approval workflow (pending/approved/rejected)
-    ├── ComfyUI generation (image + video) → :8188
-    ├── Gallery browsing (ComfyUI output)
-    ├── Training job management
-    ├── Feedback loop (rejection → negative prompt refinement)
-    ├── YouTube/video/image ingestion with llava classification
-    ├── Echo Brain AI integration → :8309
-    └── Database credentials from Vault
+## Key Paths
 
-ComfyUI (:8188)
-    ├── Stable Diffusion image generation
-    ├── FramePack video generation
-    └── Output → /opt/ComfyUI/output/
-```
-
-## Projects
-
-5 active anime projects in the database:
-
-| ID | Project | Status | Characters |
-|----|---------|--------|------------|
-| 24 | Tokyo Debt Desire | generating | Mei Kobayashi, Rina Suzuki, Yuki Tanaka, Takeshi Sato |
-| 29 | Cyberpunk Goblin Slayer | generating | Goblin Slayer, Kai Nakamura, Hiroshi, Kai, Ryuu |
-| 41 | Super Mario Galaxy Anime Adventure | planning | Mario, Luigi, Princess Peach, Bowser Jr., Rosalina, +8 more |
-| 42 | CGS: Neon Shadows | active | 13 characters |
-| 43 | Echo Chamber | active | Patrick, Claude, DeepSeek, Echo, Claude Code |
-
-## Pipeline: ComfyUI → LoRA Studio
-
-```
-1. User triggers generation from LoRA Studio Generate tab
-2. API builds ComfyUI workflow JSON (SSOT: project checkpoint, CFG, steps)
-3. ComfyUI generates images → /opt/ComfyUI/output/
-4. Gallery tab shows recent output
-5. Ingestion (YouTube, upload, ComfyUI scan) → character datasets with llava classification
-6. Approve tab: user approves/rejects with feedback loop
-7. Rejections → negative prompt refinement → auto-regeneration
-8. 10+ approved images → Start LoRA training
-9. Trained LoRA → /opt/ComfyUI/models/loras/*.safetensors
-```
-
-## API Endpoints (`/api/lora/`)
-
-### Characters & Datasets
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/lora/characters` | List characters with image counts and project info |
-| POST | `/api/lora/characters` | Create character dataset |
-| PATCH | `/api/lora/characters/{slug}` | Update design_prompt |
-| GET | `/api/lora/dataset/{name}` | Get character's images |
-| POST | `/api/lora/dataset/{name}/images` | Add image to dataset |
-| GET | `/api/lora/dataset/{name}/image/{file}` | Serve image file |
-| GET | `/api/lora/dataset/{name}/image/{file}/metadata` | Image generation metadata |
-
-### Approval & Feedback
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/lora/approval/pending` | All pending approval images |
-| POST | `/api/lora/approval/approve` | Approve/reject image (with feedback loop) |
-| GET | `/api/lora/feedback/{slug}` | Rejection feedback analysis |
-| DELETE | `/api/lora/feedback/{slug}` | Clear rejection feedback |
-
-### Generation (ComfyUI)
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/lora/generate/{slug}` | Generate image/video for character |
-| GET | `/api/lora/generate/{prompt_id}/status` | Check generation progress |
-| POST | `/api/lora/generate/clear-stuck` | Clear stuck ComfyUI jobs |
-| POST | `/api/lora/regenerate/{slug}` | Manual regeneration with seed/prompt override |
-| POST | `/api/lora/refine` | IPAdapter refinement from approved reference |
-
-### Gallery
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/lora/gallery` | Recent images from ComfyUI output |
-| GET | `/api/lora/gallery/image/{filename}` | Serve gallery image |
-
-### Training
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/lora/training/jobs` | List training jobs |
-| POST | `/api/lora/training/start` | Start LoRA training |
-| GET | `/api/lora/training/jobs/{id}` | Job status |
-| GET | `/api/lora/training/jobs/{id}/log` | Tail training log |
-
-### Ingestion
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/lora/ingest/youtube` | YouTube frames → single character |
-| POST | `/api/lora/ingest/youtube-project` | YouTube frames → all project characters (llava classified) |
-| POST | `/api/lora/ingest/image` | Upload image with llava classification |
-| POST | `/api/lora/ingest/video` | Upload video, extract + classify frames |
-| POST | `/api/lora/ingest/scan-comfyui` | Scan ComfyUI output for new images |
-
-### Echo Brain
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/lora/echo/status` | Echo Brain connection status |
-| POST | `/api/lora/echo/chat` | Chat with Echo Brain (optional character context) |
-| POST | `/api/lora/echo/enhance-prompt` | AI-enhanced prompt suggestions |
-
-### Other
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/lora/health` | Health check |
-| GET | `/api/lora/projects` | List projects with character counts |
-
-## Frontend: LoRA Studio (`/lora-studio/`)
-
-7-tab layout:
-
-- **Ingest** — YouTube/video/image ingestion with single-character or project-wide modes
-- **Approve** — Image grid for approve/reject with metadata, feedback categories, prompt editing
-- **Characters** — Character list with dataset counts, project info, training readiness
-- **Train** — LoRA training job management (start, monitor, download)
-- **Generate** — ComfyUI generation with SSOT profiles (image/video)
-- **Gallery** — Browse recent ComfyUI output
-- **Echo Brain** — AI chat for character context and prompt enhancement
-
-**Tech:** Vue 3 + TypeScript, Tailwind CSS, Pinia, Vite
-**Source:** `training/lora-studio/src/`
-**Build:** `training/lora-studio/dist/`
+| Path | Purpose |
+|------|---------|
+| `src/app.py` | FastAPI entry point — mounts all package routers |
+| `packages/core/` | DB pool, auth middleware, config, GPU status, models, events, learning, replenishment |
+| `packages/story/` | Story & world settings, project CRUD (15 routes) |
+| `packages/visual_pipeline/` | Vision review, classification, ComfyUI workflows (5 routes) |
+| `packages/scene_generation/` | Scene builder, FramePack video, assembly, motion presets, story-to-scenes AI (19 routes) |
+| `packages/episode_assembly/` | Episode CRUD, multi-scene assembly, Jellyfin publishing (10 routes) |
+| `packages/lora_training/` | Training, ingestion, regeneration, feedback (32 routes) |
+| `packages/audio_composition/` | Audio analysis, silence detection (4 routes) |
+| `packages/echo_integration/` | Echo Brain chat, prompt enhancement (4 routes) |
+| `src/components/` | Vue 3 tab components with sub-component directories |
+| `src/api/` | TypeScript API client split by domain (base, story, training, visual, scenes, episodes, echo) |
+| `src/generate_training_images.py` | Standalone generation script (per-character negatives, IP-Adapter) |
+| `datasets/{slug}/images/` | Character training images |
+| `datasets/{slug}/reference_images/` | IP-Adapter reference images per character |
+| `datasets/{slug}/approval_status.json` | Per-character approval state |
+| `output/scenes/` | Assembled scene videos |
+| `output/episodes/` | Assembled episode videos |
 
 ## Database
 
-**Database:** `anime_production` on PostgreSQL (localhost:5432, user: patrick)
+PostgreSQL `anime_production` database. Key tables:
 
-Key tables:
+- `projects` - Project definitions with default generation style
+- `generation_styles` - Checkpoint, CFG, steps, sampler, resolution
+- `characters` - Character names, design prompts, appearance_data (species, key_colors, key_features, common_errors)
+- `storylines` - Story metadata per project
+- `world_settings` - Art direction, cinematography, color palettes, negative_prompt_guidance
+- `scenes` - Scene metadata, generation status, output paths, dialogue audio
+- `shots` - Individual shots within scenes, FramePack generation state, dialogue text/character
+- `episodes` - Episode metadata, assembly status, Jellyfin publish path
+- `episode_scenes` - Junction table linking scenes to episodes with position ordering
 
-| Table | Purpose |
-|-------|---------|
-| `projects` | Anime projects with default_style |
-| `characters` | Characters with design_prompt, project association |
-| `generation_styles` | Checkpoint, CFG, steps, sampler per style |
-| `production_jobs` | Generation job tracking |
-| `generated_assets` | Cataloged output files |
-| `lora_models` | Registered LoRA models |
-| `lora_training_jobs` | Training job history |
+## SSOT Principle
 
-## Hardware
+All generation parameters are project-level (Single Source of Truth):
+- Projects reference a `generation_style` (checkpoint, CFG, steps, sampler, resolution)
+- Characters only store `design_prompt` and `appearance_data` - no per-character generation overrides
+- The design prompt IS the main prompt; style templates add quality tags only
+- Per-character negative prompts are built dynamically from `appearance_data.species` and `appearance_data.common_errors`
 
-Tower server (192.168.50.135):
-- **GPU:** NVIDIA RTX 3060 12GB (ComfyUI/FramePack) + AMD RX 9070 XT (Echo Brain)
-- **CPU:** AMD Ryzen 9 24-core
-- **RAM:** 96GB DDR5
-- **Storage:** 1TB NVMe
+## Character Quality Pipeline
 
-## Directory Structure
+### Per-Character Negatives
+Non-human characters (species containing "NOT human") automatically get negative prompt terms:
+`human, human face, human skin, realistic person, humanoid body, human proportions`
+Plus species-specific terms from `common_errors` (e.g., Luigi gets `letter M on cap, child, teenager`).
 
+### IP-Adapter Reference Images
+Each character's `datasets/{slug}/reference_images/` directory is checked during generation.
+If references exist + IP-Adapter models are installed, reference conditioning is injected into the ComfyUI workflow (weight 0.7, end_at 0.85).
+
+### Vision Review (Gemma3)
+- Scores character_match, clarity, training_value (0-10), solo detection, completeness
+- Feature checklist built from `appearance_data` (species, key_colors, key_features, common_errors)
+- Species verification step for non-human characters (focused binary check)
+- **Non-human characters never auto-approve** — always require manual review
+- Auto-reject threshold: quality_score < 0.4
+- Human characters auto-approve at quality_score >= 0.8 + solo
+
+## Scene Builder
+
+The Scene Builder (tab 7) enables multi-shot video scene composition:
+
+1. **Define** scenes with metadata (location, time, weather, mood)
+2. **Add shots** with source images, motion prompts (with preset library), shot types, camera angles, and per-shot dialogue
+3. **Generate** all shots sequentially via FramePack I2V
+4. **Chain** continuity: each shot's last frame becomes the next shot's first frame
+5. **Assemble** completed shots into a single scene video via ffmpeg concat
+6. **Audio mixing**: dialogue WAVs + background music (Apple Music) mixed into final scene video
+
+Generation runs as a background async task. The monitor view polls status every 5 seconds. Failed shots can be individually retried.
+
+### Motion Presets
+6 shot types with curated motion prompts: `establishing`, `wide`, `medium`, `close-up`, `extreme_close-up`, `action`. Presets appear as clickable chips in the shot editor; selecting one populates the motion prompt textarea.
+
+### Story-to-Scenes AI
+`POST /scenes/generate-from-story` sends the project storyline + world settings + character list to Ollama (gemma3:12b) and returns structured scene breakdowns with suggested shots, locations, moods, and motion prompts. The frontend shows a "Generate Scenes from Story" button when no scenes exist.
+
+## Episodes & Publishing
+
+Episodes group scenes into ordered sequences for final video assembly:
+
+1. **Create** episodes with number, title, description, story arc
+2. **Add scenes** to episodes in position order (drag-and-drop reordering)
+3. **Assemble** episode via ffmpeg concat of all scene videos
+4. **Publish** to Jellyfin with proper naming convention:
+   ```
+   /mnt/1TB-storage/media/anime/{Project Name}/Season 01/S01E01 - {Title}.mp4
+   ```
+5. **Auto-scan** triggers Jellyfin library refresh via API
+
+### Episode Endpoints
+- `GET/POST /episodes` — list/create episodes per project
+- `GET/PATCH/DELETE /episodes/{id}` — CRUD
+- `POST/DELETE /episodes/{id}/scenes/{scene_id}` — add/remove scenes
+- `PUT /episodes/{id}/reorder` — reorder scene positions
+- `POST /episodes/{id}/assemble` — ffmpeg concat + thumbnail
+- `GET /episodes/{id}/video` — serve assembled MP4
+- `POST /episodes/{id}/publish` — Jellyfin publish with library scan
+
+## Autonomy System
+
+### EventBus
+In-process async event emitter (`packages/core/events.py`) for cross-package coordination. Events: `image.approved`, `image.rejected`, `generation.submitted`, `generation.completed`, `feedback.recorded`, `regeneration.queued`.
+
+### Learning System
+SQL-based pattern analysis from generation history, rejections, and approvals. Learns success/failure patterns per character, suggests optimal params, detects quality drift.
+
+### Replenishment Loop
+Autonomous image generation to reach target approved counts per character (`packages/core/replenishment.py`). Off by default — enable via Approve tab toggle or `POST /api/lora/replenishment/toggle`.
+
+**Flow**: `IMAGE_APPROVED → check count vs target → generate batch → copy to datasets → register pending → vision review → auto-approve/reject → learn → repeat if still below target → STOP at target`
+
+**Safety mechanisms**:
+| Guard | Default | Purpose |
+|-------|---------|---------|
+| Enable flag | OFF | Must explicitly enable |
+| Cooldown | 60s/char | Prevents burst from simultaneous approvals |
+| Daily limit | 10/char | Caps daily GPU usage |
+| Consecutive rejects | 5 max | Stops if model can't generate well |
+| Pending buffer | 3 max | Won't generate if review backlog exists |
+| Max concurrent | 2 | Limits parallel GPU load |
+| Batch size | 3/round | Small batches for faster feedback |
+
+**Endpoints**:
+- `GET /api/lora/replenishment/status` — loop status, active tasks, daily counts
+- `POST /api/lora/replenishment/toggle?enabled=true` — enable/disable
+- `POST /api/lora/replenishment/target?target=20&character_slug=luigi` — set target count
+- `GET /api/lora/replenishment/readiness?project_name=...` — per-character progress
+
+### Auto-Correction
+7 fix strategies for rejected images (`packages/core/auto_correction.py`). Off by default. Strategies: fix_quality, fix_resolution, fix_blur, fix_brightness, fix_contrast, fix_appearance, fix_solo.
+
+### Quality Gates
+Configurable DB-stored thresholds for auto-approve (0.8), auto-reject (0.4), and scene shot minimum (0.4). Managed via `GET/PUT /api/lora/quality/gates`.
+
+## Generation Pipeline
+
+### Image Generation
+Character design prompt + style template + per-character negatives -> ComfyUI checkpoint workflow (+ IP-Adapter if refs exist) -> output image -> vision review -> approval queue
+
+### FramePack Video (I2V)
+Source image + motion prompt -> FramePack model -> sampling (sections) -> VAE decode tiled -> MP4
+
+### Scene Generation
 ```
-/opt/tower-anime-production/
-├── training/lora-studio/         # THE anime production system
-│   ├── src/
-│   │   ├── dataset_approval_api.py   # FastAPI entry point (:8401)
-│   │   ├── generate_training_images.py
-│   │   ├── components/               # Vue.js components (7 tabs)
-│   │   ├── api/client.ts             # Frontend API client
-│   │   └── types/index.ts            # TypeScript interfaces
-│   ├── tests/                        # pytest test suite
-│   ├── datasets/                     # Character training datasets
-│   ├── dist/                         # Built frontend (served by nginx)
-│   └── venv/                         # Python virtualenv
-├── api/                              # Archived reference (was port 8328)
-├── frontend.archived/                # Archived anime frontend
-├── services/                         # FramePack, generation services
-├── workflows/comfyui/                # Workflow templates
-├── archive/                          # Historical archives
-└── docs/
+For each shot (ordered):
+  1. First frame = previous shot's last frame (or source image for shot 1)
+  2. Copy to ComfyUI/input/
+  3. Build FramePack workflow
+  4. Submit to ComfyUI, poll until complete
+  5. Extract last frame with ffmpeg
+  6. Continue to next shot
+After all shots:
+  7. ffmpeg concat shot videos -> scene video
+  8. Build dialogue audio (TTS per shot, concat)
+  9. Download music preview (if assigned)
+  10. Mix: video + dialogue (100%) + music (30%) -> final scene video
+```
 
-/opt/ComfyUI/
-├── output/                           # Generated images/videos
-├── models/loras/                     # LoRA model files
-└── models/checkpoints/               # Base SD models
+### Episode Assembly
+```
+For each episode:
+  1. Gather scene videos in position order
+  2. ffmpeg concat demuxer -> episode video
+  3. Extract thumbnail from first frame
+  4. Optional: publish to Jellyfin (symlink + library scan)
 ```
 
 ## Development
 
 ```bash
-# Rebuild LoRA Studio frontend
-cd /opt/tower-anime-production/training/lora-studio && npm run build
+# Frontend
+cd /opt/tower-anime-production
+npm install
+npm run dev    # Dev server with HMR
+npm run build  # Production build to dist/
 
-# Run backend tests
-cd /opt/tower-anime-production/training/lora-studio && venv/bin/python -m pytest tests/ -v
+# Backend
+source venv/bin/activate
+python -m uvicorn src.app:app --host 0.0.0.0 --port 8401  # Dev run
 
-# Run frontend tests
-cd /opt/tower-anime-production/training/lora-studio && npx vitest run
-
-# Smoke test
-curl -s http://localhost:8401/api/lora/health
+# Service
+sudo systemctl restart tower-anime-studio
+sudo systemctl status tower-anime-studio
+journalctl -u tower-anime-studio -f
 ```
 
-## Systemd Service
+## Dependencies
 
-```bash
-# Service file
-/etc/systemd/system/tower-lora-studio.service  # API on :8401
+### Python
+FastAPI, asyncpg, uvicorn, hvac (Vault), Pillow, yt-dlp
 
-# Management
-sudo systemctl {start|stop|restart|status} tower-lora-studio
-sudo systemctl reload nginx
-```
+### Node
+Vue 3, TypeScript, Vite, Pinia, vue-router, Tailwind CSS
+
+### External Services
+- **ComfyUI** (port 8188) - Image/video generation engine (NVIDIA RTX 3060)
+- **Qdrant** (port 6333) - Vector database for Echo Brain
+- **Echo Brain** (port 8309) - Memory/context API (AMD RX 9070 XT)
+- **Ollama** (port 11434) - Gemma3 vision model for auto-triage
+- **PostgreSQL** - Database backend
+- **Vault** - Database credential management
