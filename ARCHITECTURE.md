@@ -1,4 +1,4 @@
-# Anime Studio v3.3 Architecture
+# Anime Studio v3.4 Architecture
 
 ## System Overview
 
@@ -12,7 +12,7 @@ graph TB
         APP[src/app.py<br/>FastAPI entry point]
 
         subgraph "packages/"
-            CORE[core/<br/>DB, auth, config, GPU]
+            CORE[core/<br/>DB, auth, config, GPU,<br/>model profiles]
             STORY[story/<br/>15 routes]
             VIS[visual_pipeline/<br/>5 routes]
             SCENE[scene_generation/<br/>21 routes]
@@ -34,7 +34,7 @@ graph TB
 
     subgraph "External Services"
         ComfyUI[ComfyUI<br/>port 8188<br/>NVIDIA RTX 3060]
-        Ollama[Ollama<br/>port 11434<br/>Gemma3:12b]
+        Ollama[Ollama<br/>port 11434<br/>AMD RX 9070 XT<br/>Gemma3:12b]
         Echo[Echo Brain<br/>port 8309<br/>AMD RX 9070 XT]
         ACEStep[ACE-Step<br/>port 8440<br/>AMD RX 9070 XT]
         Jellyfin[Jellyfin<br/>port 8096<br/>media server]
@@ -75,6 +75,8 @@ packages/
     model_selector.py # Param recommendations, drift detection, learned negatives
     auto_correction.py # 7 fix strategies for rejected images
     replenishment.py  # Autonomous generation loop (target-based)
+    model_profiles.py # Checkpoint-aware prompt translation + param defaults
+    generation.py     # Model-aware image generation pipeline
 
   story/              # 15 routes
     router.py         # Project CRUD, storyline, world settings, generation styles
@@ -145,6 +147,8 @@ erDiagram
         int height
         string positive_prompt_template
         string negative_prompt_template
+        string model_architecture "sd15 or sdxl override"
+        string prompt_format "prose or booru_tags override"
     }
 
     characters {
@@ -224,15 +228,19 @@ erDiagram
 
 ```mermaid
 graph TD
-    subgraph "Generation"
+    subgraph "Generation (Model-Aware)"
+        CKPT[checkpoint_model] --> PROFILE[get_model_profile<br/>architecture, prompt_format,<br/>quality tags, style hints]
         DB_CHAR[DB: appearance_data] --> NEG_BUILD[build_character_negatives]
         NEG_BUILD --> |"human, human face..."| NEG[Per-Character Negative Prompt]
         DB_STYLE[DB: generation_style] --> STYLE_NEG[Style Negative Template]
         STYLE_NEG --> COMBINED[Combined Negative Prompt]
         NEG --> COMBINED
 
-        REF[reference_images/] --> IPA[IP-Adapter Injection<br/>weight 0.7]
-        DESIGN[design_prompt] --> POS[Positive Prompt]
+        REF[reference_images/] --> IPA[IP-Adapter Injection<br/>weight 0.7<br/>gated by profile]
+        DESIGN[design_prompt] --> TRANSLATE[translate_prompt<br/>strip style tags for booru,<br/>inject appearance_data]
+        DB_CHAR --> |key_colors,<br/>key_features| TRANSLATE
+        PROFILE --> TRANSLATE
+        TRANSLATE --> POS[Positive Prompt]
 
         POS --> COMFY[ComfyUI Generation]
         COMBINED --> COMFY
@@ -424,14 +432,14 @@ graph TD
 | audio_composition | `/audio`, `/audio/ingest/voice`, `/audio/voice/*`, `/audio/generate-music`, `/audio/music/*` | 8 | router.py |
 | echo_integration | `/echo` | 4 | router.py |
 | app.py | `/health`, `/gpu/status`, `/events/stats`, `/learning/*`, `/recommend/*`, `/drift`, `/quality/*`, `/correction/*`, `/replenishment/*` | 14 | — |
-| **Total** | | **109** | |
+| **Total** | | **127** | |
 
 ## Hardware
 
 | GPU | Service | Purpose |
 |-----|---------|---------|
-| NVIDIA RTX 3060 12GB | ComfyUI, Ollama | Image/video generation (FramePack, LTX-Video), Gemma3 vision review |
-| AMD RX 9070 XT 16GB | Echo Brain, ACE-Step | Embedding generation, AI music generation (ROCm 7.2) |
+| NVIDIA RTX 3060 12GB | ComfyUI | Image/video generation (FramePack, LTX-Video) |
+| AMD RX 9070 XT 16GB | Ollama, Echo Brain, ACE-Step | Vision review (Gemma3, Vulkan), embedding generation, AI music generation (ROCm 7.2) |
 
 ## Ingestion → Production Pipeline (End-to-End)
 
@@ -607,7 +615,7 @@ graph LR
 
 ## Key Design Decisions
 
-- **Modular packages**: 6 domain packages under `packages/`, each with own router. Entry point `src/app.py` mounts all routers.
+- **Modular packages**: 7 domain packages under `packages/` (+ core), each with own router. Entry point `src/app.py` mounts all routers.
 - **Auth middleware**: Local network bypass (192.168.x.x, 127.0.0.1), JWT required for external access via `X-Real-IP` header from nginx
 - **Species-aware generation**: `appearance_data` in DB drives per-character negative prompts and vision review checklist
 - **Non-human manual review**: Auto-approve disabled for non-human characters because vision models can't reliably distinguish stylized cartoon humans from non-human creatures
@@ -621,7 +629,8 @@ graph LR
 - **Progressive quality gates**: Shot generation retries up to 3x with loosening thresholds (0.6→0.45→0.3), +5 steps per retry, new seed each attempt, keeps best result
 - **Crossfade transitions**: Shots joined via ffmpeg `xfade` filter (dissolve/fade/fadeblack/wipeleft, 0.3s default overlap) — requires re-encoding but produces seamless results. Falls back to hard-cut if xfade fails
 - **ACE-Step music generation**: AI music (3.5B model) on AMD RX 9070 XT via ROCm 7.2 nightly. ~20s for 30s of 48kHz stereo WAV. Scene assembly auto-generates from mood if no track assigned
-- **Dual GPU architecture**: NVIDIA RTX 3060 for ComfyUI (image/video gen), AMD RX 9070 XT for ACE-Step (music gen) + Echo Brain (embeddings). No GPU conflicts, parallel execution
+- **Model-aware generation**: `model_profiles.py` maps checkpoint filenames to structured profiles (architecture, prompt_format, quality tags, style stripping, vision hints). `translate_prompt()` adapts design_prompts at generation time — booru tag models get score_9 prefixes and style tag stripping, prose models keep prompts as-is. DB design_prompts never modified. Param cascade: `recommend_params()` (medium+ confidence) > DB `generation_styles` > model profile defaults
+- **Dual GPU architecture**: NVIDIA RTX 3060 for ComfyUI (image/video gen), AMD RX 9070 XT for Ollama (Vulkan) + ACE-Step (music gen, ROCm) + Echo Brain (embeddings). No GPU conflicts, parallel execution
 - **Episode assembly**: ffmpeg concat demuxer (no re-encoding) for fast multi-scene joins
 - **Jellyfin publishing**: Symlinks (not copies) to avoid doubling disk usage; S01E01 naming convention
 - **Audio mixing**: Non-fatal — if TTS or music download fails, scene video is kept without audio
