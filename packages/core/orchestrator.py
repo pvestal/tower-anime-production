@@ -14,9 +14,11 @@ Safety:
 """
 
 import asyncio
+import functools
 import json
 import logging
 import re
+import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -418,92 +420,118 @@ async def _work_scene_planning(project_id: int):
 
 
 async def _work_shot_preparation(conn, project_id: int):
-    """Assign best approved image to each shot that's missing source_image_path."""
+    """Assign best approved image to each shot that's missing source_image_path.
+
+    Uses the image recommender's pose+quality+diversity scoring algorithm
+    instead of assigning the same top-quality image to every shot.
+    Optionally cross-validates against the graph DB for audit logging.
+    """
+    from .db import get_approved_images_for_project
+
+    # Expanded query: include shot_type, camera_angle, characters_present
     shots = await conn.fetch("""
-        SELECT s.id as shot_id, s.generation_prompt,
+        SELECT s.id as shot_id, s.shot_number, s.shot_type, s.camera_angle,
+               s.characters_present, s.generation_prompt,
                sc.id as scene_id
         FROM shots s
         JOIN scenes sc ON s.scene_id = sc.id
         WHERE sc.project_id = $1 AND s.source_image_path IS NULL
+        ORDER BY sc.scene_number, s.shot_number
     """, project_id)
 
     if not shots:
         return
 
-    # Get all characters in this project with their approved images
-    chars = await conn.fetch("""
-        SELECT
-            REGEXP_REPLACE(LOWER(REPLACE(name, ' ', '_')), '[^a-z0-9_-]', '', 'g') as slug,
-            name
-        FROM characters
-        WHERE project_id = $1
-          AND design_prompt IS NOT NULL AND design_prompt != ''
-    """, project_id)
+    # Query approved images from DB (replaces JSON file reading)
+    approved_images = await get_approved_images_for_project(project_id)
+    total_images = sum(len(v) for v in approved_images.values())
 
-    # Build a pool of approved images with quality scores
-    image_pool = []
-    for ch in chars:
-        slug = ch["slug"]
-        images_dir = BASE_PATH / slug / "images"
-        approval_file = BASE_PATH / slug / "approval_status.json"
-        if not approval_file.exists():
-            continue
-
-        try:
-            statuses = json.loads(approval_file.read_text())
-        except (json.JSONDecodeError, IOError):
-            continue
-
-        for img_name, status in statuses.items():
-            if status != "approved":
-                continue
-            img_path = images_dir / img_name
-            if not img_path.exists():
-                continue
-
-            # Try to get quality score from .meta.json
-            meta_path = img_path.with_suffix(".meta.json")
-            quality = 0.5
-            if meta_path.exists():
-                try:
-                    meta = json.loads(meta_path.read_text())
-                    quality = meta.get("quality_score", 0.5)
-                except (json.JSONDecodeError, IOError):
-                    pass
-
-            image_pool.append({
-                "slug": slug,
-                "name": ch["name"],
-                "path": str(img_path),
-                "quality": quality,
-            })
-
-    if not image_pool:
+    if not approved_images:
         logger.warning(f"Orchestrator: no approved images for project {project_id}")
         return
 
-    # Sort by quality descending, assign best available to each shot
-    image_pool.sort(key=lambda x: x["quality"], reverse=True)
+    # Build shot dicts in the format recommend_for_scene() expects
+    shot_dicts = []
+    for s in shots:
+        chars_present = s["characters_present"] or []
+        # Ensure characters_present is a list of strings
+        if isinstance(chars_present, str):
+            chars_present = [chars_present]
+        shot_dicts.append({
+            "id": str(s["shot_id"]),
+            "shot_number": s["shot_number"],
+            "shot_type": s["shot_type"] or "medium",
+            "camera_angle": s["camera_angle"],
+            "characters_present": chars_present,
+            "source_image_path": None,  # These are all unassigned
+        })
 
+    # Call image recommender (synchronous) via executor
+    from packages.scene_generation.image_recommender import recommend_for_scene
+
+    loop = asyncio.get_event_loop()
+    recommendations = await loop.run_in_executor(
+        None,
+        functools.partial(recommend_for_scene, BASE_PATH, shot_dicts, approved_images, 3),
+    )
+
+    # Assign best recommendation per shot
     assigned = 0
-    for shot in shots:
-        if not image_pool:
-            break
-        best = image_pool[0]  # Always use highest quality for now
-        await conn.execute("""
-            UPDATE shots SET source_image_path = $1 WHERE id = $2
-        """, best["path"], shot["shot_id"])
+    assignment_details = []
+    for rec in recommendations:
+        if not rec["recommendations"]:
+            continue
+        best = rec["recommendations"][0]
+        full_path = str(BASE_PATH / best["slug"] / "images" / best["image_name"])
+        await conn.execute(
+            "UPDATE shots SET source_image_path = $1 WHERE id = $2",
+            full_path, uuid.UUID(rec["shot_id"]),
+        )
         assigned += 1
+        assignment_details.append({
+            "shot_id": rec["shot_id"],
+            "shot_number": rec["shot_number"],
+            "shot_type": rec["shot_type"],
+            "image": best["image_name"],
+            "slug": best["slug"],
+            "score": best["score"],
+            "reason": best["reason"],
+        })
 
-    logger.info(f"Orchestrator: assigned source images to {assigned}/{len(shots)} shots")
+    logger.info(
+        f"Orchestrator: smart-assigned source images to {assigned}/{len(shots)} shots "
+        f"(pool: {total_images} images across {len(approved_images)} characters)"
+    )
+
+    # Optional graph enrichment (non-fatal)
+    graph_count = 0
+    try:
+        from .graph_queries import approved_images_for_project
+        project_name = await conn.fetchval(
+            "SELECT name FROM projects WHERE id = $1", project_id
+        )
+        if project_name:
+            graph_images = await approved_images_for_project(project_name)
+            graph_count = sum(len(v) for v in graph_images.values())
+    except Exception as e:
+        logger.warning(f"Graph enrichment skipped (non-fatal): {e}")
 
     await log_decision(
         decision_type="orchestrator_shot_prep",
         project_name=str(project_id),
-        input_context={"shots_needing_images": len(shots), "image_pool_size": len(image_pool)},
-        decision_made="assigned_source_images",
-        confidence_score=0.7,
-        reasoning=f"Assigned {assigned} source images from approved library",
+        input_context={
+            "shots_needing_images": len(shots),
+            "db_images": total_images,
+            "graph_images": graph_count,
+            "characters": len(approved_images),
+            "assignments": assignment_details,
+        },
+        decision_made="smart_assigned_source_images",
+        confidence_score=0.85,
+        reasoning=(
+            f"Smart assignment: {assigned}/{len(shots)} shots, "
+            f"pose+quality+diversity scoring via image_recommender"
+        ),
     )
 
 

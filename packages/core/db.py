@@ -60,6 +60,7 @@ async def run_migrations():
     """Run schema migrations at startup. Idempotent (uses IF NOT EXISTS)."""
     try:
         conn = await connect_direct()
+        await conn.execute("SET search_path TO public")
 
         # world_settings table
         await conn.execute("""
@@ -492,6 +493,35 @@ async def run_migrations():
         ]:
             await conn.execute(idx_sql)
 
+        # --- Production Pipeline (Orchestrator) ---
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS production_pipeline (
+                id SERIAL PRIMARY KEY,
+                entity_type VARCHAR(30) NOT NULL,
+                entity_id VARCHAR(255) NOT NULL,
+                project_id INTEGER NOT NULL,
+                phase VARCHAR(50) NOT NULL,
+                status VARCHAR(30) NOT NULL DEFAULT 'pending',
+                progress_current INTEGER DEFAULT 0,
+                progress_target INTEGER DEFAULT 0,
+                progress_detail JSONB DEFAULT '{}',
+                gate_check_result JSONB,
+                blocked_reason TEXT,
+                started_at TIMESTAMP,
+                completed_at TIMESTAMP,
+                last_checked_at TIMESTAMP DEFAULT NOW(),
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW(),
+                UNIQUE(entity_type, entity_id, phase)
+            )
+        """)
+        for idx_sql in [
+            "CREATE INDEX IF NOT EXISTS idx_pipeline_project ON production_pipeline(project_id)",
+            "CREATE INDEX IF NOT EXISTS idx_pipeline_status ON production_pipeline(status)",
+            "CREATE INDEX IF NOT EXISTS idx_pipeline_entity ON production_pipeline(entity_type, entity_id)",
+        ]:
+            await conn.execute(idx_sql)
+
         # --- Style Switching History ---
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS style_history (
@@ -538,6 +568,29 @@ async def run_migrations():
                 END $$
             """)
 
+        # --- Model Audit Log ---
+        # Tracks every checkpoint change, download, removal, and config update
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS model_audit_log (
+                id SERIAL PRIMARY KEY,
+                action VARCHAR(50) NOT NULL,
+                checkpoint_model VARCHAR(255),
+                previous_model VARCHAR(255),
+                project_name VARCHAR(255),
+                style_name VARCHAR(100),
+                reason TEXT,
+                changed_by VARCHAR(100) DEFAULT 'system',
+                metadata JSONB DEFAULT '{}',
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_model_audit_date ON model_audit_log(created_at)"
+        )
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_model_audit_checkpoint ON model_audit_log(checkpoint_model)"
+        )
+
         # Indexes for Phase 1 tables
         for idx_sql in [
             "CREATE INDEX IF NOT EXISTS idx_gen_history_character ON generation_history(character_slug)",
@@ -562,6 +615,41 @@ async def run_migrations():
         logger.info("Schema migrations completed successfully (incl. Phase 1 autonomy tables)")
     except Exception as e:
         logger.warning(f"Schema migration failed (non-fatal): {e}")
+
+
+async def log_model_change(
+    action: str,
+    checkpoint_model: str,
+    previous_model: str | None = None,
+    project_name: str | None = None,
+    style_name: str | None = None,
+    reason: str | None = None,
+    changed_by: str = "system",
+    metadata: dict | None = None,
+) -> int | None:
+    """Log a model change to the audit table. Fire-and-forget safe.
+
+    Actions: 'switch', 'download', 'remove', 'config_update', 'profile_add'
+    """
+    try:
+        conn = await connect_direct()
+        await conn.execute("SET search_path TO public")
+        row = await conn.fetchrow(
+            """INSERT INTO model_audit_log
+               (action, checkpoint_model, previous_model, project_name,
+                style_name, reason, changed_by, metadata)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
+               RETURNING id""",
+            action, checkpoint_model, previous_model, project_name,
+            style_name, reason, changed_by,
+            json.dumps(metadata or {}),
+        )
+        await conn.close()
+        logger.info(f"Model audit: {action} {checkpoint_model} (project={project_name})")
+        return row["id"] if row else None
+    except Exception as e:
+        logger.warning(f"Model audit log failed (non-fatal): {e}")
+        return None
 
 
 async def get_char_project_map() -> dict:
@@ -622,6 +710,55 @@ async def get_char_project_map() -> dict:
         logger.warning(f"Failed to load char→project map: {e}")
 
     return _char_project_cache
+
+
+async def get_approved_images_for_project(project_id: int) -> dict[str, list[str]]:
+    """Get approved image names grouped by character slug, verified on disk.
+
+    Queries the approvals table joined to characters (via slug derivation)
+    to filter by project_id. Verifies each image file exists on disk.
+
+    Returns:
+        {slug: [image_name, ...]} sorted by quality descending within each slug.
+        This is the exact format recommend_for_scene() expects.
+    """
+    from .config import BASE_PATH
+
+    conn = await connect_direct()
+    try:
+        rows = await conn.fetch("""
+            SELECT a.character_slug, a.image_name, COALESCE(a.quality_score, 0.5) as quality_score
+            FROM approvals a
+            JOIN characters c
+              ON a.character_slug = REGEXP_REPLACE(LOWER(REPLACE(c.name, ' ', '_')), '[^a-z0-9_-]', '', 'g')
+            WHERE c.project_id = $1
+              AND a.image_name IS NOT NULL
+            ORDER BY a.character_slug, a.quality_score DESC
+        """, project_id)
+    finally:
+        await conn.close()
+
+    result: dict[str, list[str]] = {}
+    seen: set[tuple[str, str]] = set()
+
+    for row in rows:
+        slug = row["character_slug"]
+        image_name = row["image_name"]
+
+        # Deduplicate
+        key = (slug, image_name)
+        if key in seen:
+            continue
+        seen.add(key)
+
+        # Verify file exists on disk
+        img_path = BASE_PATH / slug / "images" / image_name
+        if not img_path.exists():
+            continue
+
+        result.setdefault(slug, []).append(image_name)
+
+    return result
 
 
 def invalidate_char_cache():

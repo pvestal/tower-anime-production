@@ -327,3 +327,38 @@ async def feedback_patterns(character_slug: str | None = None) -> list[dict]:
         return []
     finally:
         await conn.close()
+
+
+async def approved_images_for_project(project_name: str) -> dict[str, list[dict]]:
+    """Graph query: approved images per character for a project.
+
+    Returns:
+        {slug: [{filename, quality_score}, ...]} from the graph.
+        Used for audit logging and cross-validation (non-fatal if it fails).
+    """
+    conn = await _get_conn()
+    try:
+        safe_name = project_name.replace("'", "\\'")
+        query = f"""
+            MATCH (c:Character)-[:BELONGS_TO]->(p:Project {{name: '{safe_name}'}})
+            MATCH (i:Image {{status: 'approved'}})-[:DEPICTS]->(c)
+            RETURN c.slug, i.filename, i.quality_score
+        """
+        rows = await _cypher_multi(conn, query, ["slug", "filename", "quality_score"])
+
+        result: dict[str, list[dict]] = {}
+        for row in rows:
+            slug = str(row.get("slug") or "")
+            if not slug:
+                continue
+            result.setdefault(slug, []).append({
+                "filename": row.get("filename"),
+                "quality_score": row.get("quality_score"),
+            })
+
+        return result
+    except Exception as e:
+        logger.error(f"approved_images_for_project failed: {e}")
+        return {}
+    finally:
+        await conn.close()
