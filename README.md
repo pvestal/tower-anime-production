@@ -1,12 +1,12 @@
-# Anime Studio v3.3
+# Anime Studio v3.5
 
-End-to-end anime production pipeline: project management, character design, dataset approval, LoRA training, image/video generation, scene assembly, episode composition, and Jellyfin publishing.
+End-to-end anime production pipeline: project management, character design, dataset approval, LoRA training, image/video generation, scene assembly, episode composition, production orchestration, and Jellyfin publishing.
 
-**Stack**: FastAPI (Python) + Vue 3 (TypeScript) + PostgreSQL + ComfyUI + Qdrant + Ollama
+**Stack**: FastAPI (Python) + Vue 3 (TypeScript) + PostgreSQL + Apache AGE + ComfyUI + Qdrant + Ollama
 **Port**: 8401 (systemd: `tower-anime-studio.service`)
 **URL**: `http://192.168.50.135/anime-studio/`
-**API**: 109 endpoints under `/api/lora/*`
-**Entry**: `src/app.py` (modular router mounts)
+**API**: 127+ endpoints across 8 packages + core + graph + orchestrator
+**Entry**: `server/app.py` (modular router mounts)
 
 ## Tabs
 
@@ -30,8 +30,8 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for system diagrams and data flow.
 
 | Path | Purpose |
 |------|---------|
-| `src/app.py` | FastAPI entry point — mounts all package routers |
-| `packages/core/` | DB pool, auth middleware, config, GPU status, models, events, learning, replenishment |
+| `server/app.py` | FastAPI entry point — mounts all package routers |
+| `packages/core/` | DB pool, auth middleware, config, GPU status, models, events, learning, replenishment, orchestrator, graph |
 | `packages/story/` | Story & world settings, project CRUD (15 routes) |
 | `packages/visual_pipeline/` | Vision review, classification, ComfyUI workflows (5 routes) |
 | `packages/scene_generation/` | Scene builder, FramePack/LTX-Video, progressive-gate generation, crossfade assembly, music gen, motion presets, story-to-scenes AI (21 routes) |
@@ -131,10 +131,63 @@ Episodes group scenes into ordered sequences for final video assembly:
 - `GET /episodes/{id}/video` — serve assembled MP4
 - `POST /episodes/{id}/publish` — Jellyfin publish with library scan
 
+## Production Orchestrator
+
+End-to-end pipeline coordinator (`packages/core/orchestrator.py` + `orchestrator_router.py`) that autonomously advances projects through all production stages. **Off by default** — enable via `POST /api/system/orchestrator/toggle`.
+
+### Pipeline Phases
+
+**Per character** (sequential):
+```
+training_data → lora_training → ready
+```
+
+**Per project** (blocks until all characters ready):
+```
+scene_planning → shot_preparation → video_generation → scene_assembly → episode_assembly → publishing
+```
+
+### Gate Checks
+Each phase has a gate that must pass before advancing:
+- `training_data`: character has ≥ N approved images (default 30)
+- `lora_training`: LoRA `.safetensors` file exists on disk
+- `scene_planning`: scenes exist in DB
+- `shot_preparation`: all shots have `source_image_path` assigned
+- `video_generation`: all shots have completed video
+- `scene_assembly`: all scenes have `final_video_path`
+- `episode_assembly`: all episodes assembled
+- `publishing`: all episodes published to Jellyfin
+
+### Orchestrator Endpoints
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/api/system/orchestrator/status` | Global on/off + config |
+| POST | `/api/system/orchestrator/toggle` | Enable/disable |
+| POST | `/api/system/orchestrator/initialize` | Bootstrap pipeline for a project |
+| GET | `/api/system/orchestrator/pipeline/{project_id}` | Full structured status |
+| GET | `/api/system/orchestrator/summary/{project_id}` | Human-readable summary |
+| POST | `/api/system/orchestrator/tick` | Trigger manual evaluation pass |
+| POST | `/api/system/orchestrator/override` | Force phase status (skip/reset/complete) |
+| POST | `/api/system/orchestrator/training-target` | Set approved image threshold |
+
+### Safety
+- Off by default (must explicitly toggle on)
+- Respects ComfyUI semaphore (generation serialization)
+- FramePack: one scene at a time (GPU memory constraint)
+- All autonomous actions logged to `autonomy_decisions` table
+- Resets to disabled on service restart
+
+### Database
+`production_pipeline` table tracks phase state per entity (character or project):
+- `entity_type`, `entity_id`, `project_id`, `phase`, `status`
+- `progress_current`/`progress_target` for training_data tracking
+- `gate_check_result` (JSONB) stores last gate evaluation
+- `blocked_reason` for debugging
+
 ## Autonomy System
 
 ### EventBus
-In-process async event emitter (`packages/core/events.py`) for cross-package coordination. Events: `image.approved`, `image.rejected`, `generation.submitted`, `generation.completed`, `feedback.recorded`, `regeneration.queued`.
+In-process async event emitter (`packages/core/events.py`) for cross-package coordination. Events: `image.approved`, `image.rejected`, `generation.submitted`, `generation.completed`, `feedback.recorded`, `regeneration.queued`, `pipeline.phase_advanced`.
 
 ### Learning System
 SQL-based pattern analysis from generation history, rejections, and approvals. Learns success/failure patterns per character, suggests optimal params, detects quality drift.

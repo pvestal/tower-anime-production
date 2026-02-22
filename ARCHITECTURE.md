@@ -1,4 +1,4 @@
-# Anime Studio v3.4 Architecture
+# Anime Studio v3.5 Architecture
 
 ## System Overview
 
@@ -77,6 +77,11 @@ packages/
     replenishment.py  # Autonomous generation loop (target-based)
     model_profiles.py # Checkpoint-aware prompt translation + param defaults
     generation.py     # Model-aware image generation pipeline
+    orchestrator.py   # Production pipeline coordinator (training → video → publish)
+    orchestrator_router.py # Orchestrator API endpoints (8 routes)
+    graph_sync.py     # Apache AGE graph sync (EventBus-driven)
+    graph_queries.py  # Cypher query helpers
+    graph_router.py   # Graph analytics endpoints (11 routes)
 
   story/              # 15 routes
     router.py         # Project CRUD, storyline, world settings, generation styles
@@ -431,8 +436,10 @@ graph TD
 | lora_training | `/dataset`, `/approval`, `/training`, `/gallery`, `/ingest`, `/feedback` | 32 | router.py, training_router.py, ingest_router.py, feedback.py |
 | audio_composition | `/audio`, `/audio/ingest/voice`, `/audio/voice/*`, `/audio/generate-music`, `/audio/music/*` | 8 | router.py |
 | echo_integration | `/echo` | 4 | router.py |
+| core (orchestrator) | `/orchestrator/status`, `/orchestrator/toggle`, `/orchestrator/initialize`, `/orchestrator/pipeline/{id}`, `/orchestrator/summary/{id}`, `/orchestrator/tick`, `/orchestrator/override`, `/orchestrator/training-target` | 8 | orchestrator.py, orchestrator_router.py |
+| core (graph) | `/graph/sync`, `/graph/stats`, `/graph/lineage/*`, `/graph/co-occurrence/*`, `/graph/drift/*`, `/graph/ranking/*`, `/graph/health`, `/graph/feedback/*`, `/graph/cross-project/*` | 11 | graph_sync.py, graph_queries.py, graph_router.py |
 | app.py | `/health`, `/gpu/status`, `/events/stats`, `/learning/*`, `/recommend/*`, `/drift`, `/quality/*`, `/correction/*`, `/replenishment/*` | 14 | — |
-| **Total** | | **127** | |
+| **Total** | | **146+** | |
 
 ## Hardware
 

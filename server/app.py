@@ -28,6 +28,7 @@ from packages.core.gpu_router import get_system_status
 import packages.core.learning as learning  # registers EventBus handlers on import
 import packages.core.auto_correction as auto_correction  # registers EventBus handler on import
 import packages.core.replenishment as replenishment  # registers EventBus handler on import
+import packages.core.orchestrator as orchestrator
 from packages.core.model_selector import recommend_params, detect_drift, character_quality_summary
 from packages.lora_training.feedback import reconcile_training_jobs
 
@@ -39,11 +40,13 @@ from packages.audio_composition.router import router as audio_router
 from packages.echo_integration.router import router as echo_router
 from packages.voice_pipeline.router import router as voice_router
 from packages.episode_assembly.router import router as episode_router
+from packages.core.graph_router import router as graph_router
+from packages.core.orchestrator_router import router as orchestrator_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Tower Anime Studio", version="3.3")
+app = FastAPI(title="Tower Anime Studio", version="3.5")
 
 app.add_middleware(
     CORSMiddleware,
@@ -68,13 +71,28 @@ app.include_router(episode_router, prefix="/api", tags=["episodes"])    # /api/e
 # voice_pipeline: prefix="/voice" removed from router, mounted here:
 app.include_router(voice_router, prefix="/api/voice", tags=["voice"])   # /api/voice/*
 
+# Graph analytics (Apache AGE):
+app.include_router(graph_router, prefix="/api/graph", tags=["graph"])   # /api/graph/*
+
+# Production orchestrator:
+app.include_router(orchestrator_router, prefix="/api/system", tags=["orchestrator"])  # /api/system/orchestrator/*
+
 
 @app.on_event("startup")
 async def startup():
     await init_pool()
     await run_migrations()
     reconcile_training_jobs()
-    logger.info("Tower Anime Studio v3.3 started — 8 packages mounted")
+
+    # Register graph sync EventBus handlers
+    from packages.core.events import register_graph_sync_handlers
+    register_graph_sync_handlers()
+
+    # Register orchestrator EventBus handlers + start tick loop
+    orchestrator.register_orchestrator_handlers()
+    await orchestrator.start_tick_loop()
+
+    logger.info("Tower Anime Studio v3.5 started — 8 packages + graph + orchestrator mounted")
 
 
 # ── System Endpoints ─────────────────────────────────────────────────────
@@ -82,7 +100,7 @@ async def startup():
 
 @app.get("/api/system/health")
 async def health():
-    return {"status": "healthy", "service": "tower-anime-studio", "version": "3.3"}
+    return {"status": "healthy", "service": "tower-anime-studio", "version": "3.5"}
 
 
 @app.get("/api/system/gpu/status")
