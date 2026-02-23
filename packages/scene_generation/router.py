@@ -18,6 +18,7 @@ from packages.core.audit import log_decision, log_generation, update_generation_
 from packages.core.models import (
     SceneCreateRequest, ShotCreateRequest, ShotUpdateRequest, SceneUpdateRequest,
     SceneAudioRequest, VideoCompareRequest,
+    VideoReviewRequest, BatchVideoReviewRequest,
 )
 from .builder import (
     SCENE_OUTPUT_DIR, _scene_generation_tasks,
@@ -47,6 +48,9 @@ router = APIRouter()
 router.include_router(framepack_router)
 router.include_router(ltx_router)
 router.include_router(wan_router)
+
+# Concurrency guard: only one scene generation at a time (GPU constraint)
+_scene_gen_semaphore = asyncio.Semaphore(1)
 
 # --- Scene Builder: CRUD Endpoints ---
 
@@ -426,6 +430,255 @@ async def get_video_compare_results():
         "failed": failed,
         "winner": ranked[0] if ranked else None,
     }
+
+
+# --- Video Review Endpoints (static routes — must come before {scene_id} dynamic routes) ---
+
+@router.get("/scenes/pending-videos")
+async def get_pending_videos(
+    project_id: int | None = None,
+    video_engine: str | None = None,
+    character_slug: str | None = None,
+):
+    """List shots pending human video review, with scene/project context."""
+    conn = await connect_direct()
+    try:
+        conditions = ["sh.review_status = 'pending_review'", "sh.output_video_path IS NOT NULL"]
+        params = []
+        idx = 1
+
+        if project_id is not None:
+            conditions.append(f"s.project_id = ${idx}")
+            params.append(project_id)
+            idx += 1
+        if video_engine:
+            conditions.append(f"sh.video_engine = ${idx}")
+            params.append(video_engine)
+            idx += 1
+        if character_slug:
+            conditions.append(f"${idx} = ANY(sh.characters_present)")
+            params.append(character_slug)
+            idx += 1
+
+        where = " AND ".join(conditions)
+        rows = await conn.fetch(f"""
+            SELECT sh.id, sh.scene_id, sh.shot_number, sh.shot_type, sh.camera_angle,
+                   sh.duration_seconds, sh.characters_present, sh.motion_prompt,
+                   sh.source_image_path, sh.output_video_path, sh.quality_score,
+                   sh.video_engine, sh.seed, sh.steps, sh.generation_time_seconds,
+                   sh.review_status, sh.qc_issues, sh.qc_category_averages, sh.qc_per_frame,
+                   sh.review_feedback, sh.reviewed_at,
+                   s.title as scene_title, s.project_id,
+                   p.name as project_name
+            FROM shots sh
+            JOIN scenes s ON sh.scene_id = s.id
+            JOIN projects p ON s.project_id = p.id
+            WHERE {where}
+            ORDER BY sh.quality_score ASC NULLS FIRST
+        """, *params)
+
+        videos = []
+        for r in rows:
+            cat_avgs = r["qc_category_averages"]
+            if isinstance(cat_avgs, str):
+                cat_avgs = json.loads(cat_avgs)
+            per_frame = r["qc_per_frame"]
+            if isinstance(per_frame, str):
+                per_frame = json.loads(per_frame)
+
+            videos.append({
+                "id": str(r["id"]),
+                "scene_id": str(r["scene_id"]),
+                "shot_number": r["shot_number"],
+                "shot_type": r["shot_type"],
+                "camera_angle": r["camera_angle"],
+                "duration_seconds": float(r["duration_seconds"]) if r["duration_seconds"] else 3.0,
+                "characters_present": r["characters_present"] or [],
+                "motion_prompt": r["motion_prompt"],
+                "source_image_path": r["source_image_path"],
+                "output_video_path": r["output_video_path"],
+                "quality_score": float(r["quality_score"]) if r["quality_score"] is not None else None,
+                "video_engine": r["video_engine"] or "framepack",
+                "seed": r["seed"],
+                "steps": r["steps"],
+                "generation_time_seconds": r["generation_time_seconds"],
+                "review_status": r["review_status"],
+                "qc_issues": r["qc_issues"] or [],
+                "qc_category_averages": cat_avgs or {},
+                "qc_per_frame": per_frame or [],
+                "scene_title": r["scene_title"],
+                "project_id": r["project_id"],
+                "project_name": r["project_name"],
+            })
+
+        return {"pending_videos": videos, "total": len(videos)}
+    finally:
+        await conn.close()
+
+
+@router.post("/scenes/review-video")
+async def review_video(body: VideoReviewRequest):
+    """Approve or reject a single shot video. Optionally blacklist the engine."""
+    shot_id = uuid.UUID(body.shot_id)
+    conn = await connect_direct()
+    try:
+        shot = await conn.fetchrow(
+            "SELECT sh.*, s.project_id FROM shots sh JOIN scenes s ON sh.scene_id = s.id WHERE sh.id = $1",
+            shot_id,
+        )
+        if not shot:
+            raise HTTPException(status_code=404, detail="Shot not found")
+
+        if body.approved:
+            await conn.execute("""
+                UPDATE shots SET review_status = 'approved', reviewed_at = NOW(),
+                       review_feedback = $2
+                WHERE id = $1
+            """, shot_id, body.feedback)
+        else:
+            await conn.execute("""
+                UPDATE shots SET review_status = 'rejected', reviewed_at = NOW(),
+                       review_feedback = $2
+                WHERE id = $1
+            """, shot_id, body.feedback)
+
+        # Optionally blacklist this engine for this character
+        if body.reject_engine and not body.approved:
+            chars = shot["characters_present"]
+            char_slug = chars[0] if chars and isinstance(chars, list) and len(chars) > 0 else None
+            engine = shot["video_engine"] or "framepack"
+            project_id = shot["project_id"]
+
+            if char_slug:
+                await conn.execute("""
+                    INSERT INTO engine_blacklist (character_slug, project_id, video_engine, reason)
+                    VALUES ($1, $2, $3, $4)
+                    ON CONFLICT (character_slug, project_id, video_engine) DO UPDATE
+                    SET reason = EXCLUDED.reason, created_at = NOW()
+                """, char_slug, project_id, engine, body.feedback or "Rejected via video review")
+
+        action = "approved" if body.approved else "rejected"
+        return {
+            "message": f"Shot {action}",
+            "shot_id": body.shot_id,
+            "review_status": "approved" if body.approved else "rejected",
+            "engine_blacklisted": body.reject_engine and not body.approved,
+        }
+    finally:
+        await conn.close()
+
+
+@router.post("/scenes/batch-review-video")
+async def batch_review_video(body: BatchVideoReviewRequest):
+    """Batch approve or reject multiple shot videos."""
+    conn = await connect_direct()
+    try:
+        shot_ids = [uuid.UUID(sid) for sid in body.shot_ids]
+        status = "approved" if body.approved else "rejected"
+
+        updated = 0
+        for sid in shot_ids:
+            result = await conn.execute("""
+                UPDATE shots SET review_status = $2, reviewed_at = NOW(),
+                       review_feedback = $3
+                WHERE id = $1 AND review_status = 'pending_review'
+            """, sid, status, body.feedback)
+            if "UPDATE 1" in result:
+                updated += 1
+
+        return {
+            "message": f"Batch {status}: {updated}/{len(shot_ids)} shots",
+            "updated": updated,
+            "total": len(shot_ids),
+            "review_status": status,
+        }
+    finally:
+        await conn.close()
+
+
+@router.get("/scenes/engine-stats")
+async def get_engine_stats(project_id: int | None = None, character_slug: str | None = None):
+    """Per-engine quality statistics, filterable by project/character."""
+    conn = await connect_direct()
+    try:
+        conditions = ["sh.quality_score IS NOT NULL"]
+        params = []
+        idx = 1
+
+        if project_id is not None:
+            conditions.append(f"s.project_id = ${idx}")
+            params.append(project_id)
+            idx += 1
+        if character_slug:
+            conditions.append(f"${idx} = ANY(sh.characters_present)")
+            params.append(character_slug)
+            idx += 1
+
+        where = " AND ".join(conditions)
+        rows = await conn.fetch(f"""
+            SELECT COALESCE(sh.video_engine, 'framepack') as video_engine,
+                   COUNT(*) as total,
+                   ROUND(AVG(sh.quality_score)::numeric, 3) as avg_quality,
+                   MIN(sh.quality_score) as min_quality,
+                   MAX(sh.quality_score) as max_quality,
+                   COUNT(*) FILTER (WHERE sh.review_status = 'approved') as approved,
+                   COUNT(*) FILTER (WHERE sh.review_status = 'rejected') as rejected,
+                   COUNT(*) FILTER (WHERE sh.review_status = 'pending_review') as pending,
+                   ROUND(AVG(sh.generation_time_seconds)::numeric, 1) as avg_gen_time
+            FROM shots sh
+            JOIN scenes s ON sh.scene_id = s.id
+            WHERE {where}
+            GROUP BY COALESCE(sh.video_engine, 'framepack')
+            ORDER BY avg_quality DESC NULLS LAST
+        """, *params)
+
+        # Also fetch blacklisted engines
+        bl_conditions = []
+        bl_params = []
+        bl_idx = 1
+        if project_id is not None:
+            bl_conditions.append(f"project_id = ${bl_idx}")
+            bl_params.append(project_id)
+            bl_idx += 1
+        if character_slug:
+            bl_conditions.append(f"character_slug = ${bl_idx}")
+            bl_params.append(character_slug)
+            bl_idx += 1
+
+        bl_where = " AND ".join(bl_conditions) if bl_conditions else "TRUE"
+        blacklist = await conn.fetch(f"""
+            SELECT character_slug, video_engine, reason, created_at
+            FROM engine_blacklist WHERE {bl_where}
+            ORDER BY created_at DESC
+        """, *bl_params)
+
+        stats = []
+        for r in rows:
+            stats.append({
+                "video_engine": r["video_engine"],
+                "total": r["total"],
+                "avg_quality": float(r["avg_quality"]) if r["avg_quality"] else None,
+                "min_quality": float(r["min_quality"]) if r["min_quality"] else None,
+                "max_quality": float(r["max_quality"]) if r["max_quality"] else None,
+                "approved": r["approved"],
+                "rejected": r["rejected"],
+                "pending": r["pending"],
+                "avg_gen_time": float(r["avg_gen_time"]) if r["avg_gen_time"] else None,
+            })
+
+        blacklist_list = [
+            {
+                "character_slug": bl["character_slug"],
+                "video_engine": bl["video_engine"],
+                "reason": bl["reason"],
+                "created_at": bl["created_at"].isoformat() if bl["created_at"] else None,
+            }
+            for bl in blacklist
+        ]
+
+        return {"engine_stats": stats, "blacklist": blacklist_list}
+    finally:
+        await conn.close()
 
 
 @router.get("/scenes/{scene_id}/shot-recommendations")
@@ -984,8 +1237,14 @@ async def generate_scene_endpoint(scene_id: str):
             else: est_minutes += 30
     finally:
         await conn.close()
-    # Spawn background task
-    task = asyncio.create_task(generate_scene(sid))
+
+    # Wrap generate_scene in semaphore to prevent GPU flooding
+    async def _guarded_generate(scene_uuid):
+        async with _scene_gen_semaphore:
+            await generate_scene(scene_uuid)
+
+    # Spawn background task (serialized via semaphore)
+    task = asyncio.create_task(_guarded_generate(sid))
     _scene_generation_tasks[scene_id] = task
     return {"message": "Scene generation started", "total_shots": shot_count, "estimated_minutes": est_minutes}
 

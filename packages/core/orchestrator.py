@@ -171,16 +171,47 @@ def _gate_training_data(slug: str) -> dict:
 
 
 def _gate_lora_training(slug: str) -> dict:
-    """Check if LoRA safetensors file exists on disk."""
+    """Check if LoRA safetensors file exists on disk.
+
+    Also checks if a training job is already running/queued for this character
+    to prevent double-start.
+    """
     lora_dir = Path("/opt/ComfyUI/models/loras")
     # Check both SD1.5 and SDXL naming patterns
     sd15_path = lora_dir / f"{slug}_lora.safetensors"
     sdxl_path = lora_dir / f"{slug}_xl_lora.safetensors"
     exists = sd15_path.exists() or sdxl_path.exists()
+
+    if exists:
+        return {
+            "passed": True,
+            "action_needed": False,
+            "lora_exists": True,
+            "checked_paths": [str(sd15_path), str(sdxl_path)],
+        }
+
+    # Check if a training job is already running/queued for this slug
+    try:
+        from packages.lora_training.feedback import load_training_jobs
+        jobs = load_training_jobs()
+        for job in jobs:
+            if job.get("character_slug") == slug and job.get("status") in ("running", "queued"):
+                return {
+                    "passed": False,
+                    "action_needed": False,
+                    "lora_exists": False,
+                    "reason": "training in progress",
+                    "job_id": job.get("job_id"),
+                    "job_status": job["status"],
+                    "checked_paths": [str(sd15_path), str(sdxl_path)],
+                }
+    except Exception as e:
+        logger.warning(f"Failed to check training jobs for {slug}: {e}")
+
     return {
-        "passed": exists,
-        "action_needed": not exists,
-        "lora_exists": exists,
+        "passed": False,
+        "action_needed": True,
+        "lora_exists": False,
         "checked_paths": [str(sd15_path), str(sdxl_path)],
     }
 
@@ -658,7 +689,7 @@ async def _work_shot_preparation(conn, project_id: int):
 
 async def _work_video_generation(conn, project_id: int):
     """Generate video for one scene at a time (GPU constraint)."""
-    from packages.scene_generation.builder import generate_scene
+    from packages.scene_generation.builder import generate_scene, _scene_generation_tasks
 
     # Find the first scene that still needs generation
     scene = await conn.fetchrow("""
@@ -672,7 +703,19 @@ async def _work_video_generation(conn, project_id: int):
         return
 
     scene_id = str(scene["id"])
+
+    # Check if this scene is already being generated (e.g. via API)
+    if scene_id in _scene_generation_tasks:
+        existing = _scene_generation_tasks[scene_id]
+        if not existing.done():
+            logger.info(f"Orchestrator: scene {scene_id} already generating (via API), skipping")
+            return
+
     logger.info(f"Orchestrator: starting video generation for scene {scene_id}")
+
+    # Register a sentinel task so the router's dedup guard detects this work
+    sentinel = asyncio.get_event_loop().create_future()
+    _scene_generation_tasks[scene_id] = sentinel
 
     try:
         # generate_scene handles everything: shot rendering, crossfade, audio
@@ -684,6 +727,11 @@ async def _work_video_generation(conn, project_id: int):
         logger.info(f"Orchestrator: scene {scene_id} generation complete")
     except Exception as e:
         logger.error(f"Orchestrator: video generation failed for scene {scene_id}: {e}")
+    finally:
+        # Clean up sentinel
+        _scene_generation_tasks.pop(scene_id, None)
+        if not sentinel.done():
+            sentinel.set_result(None)
 
     await log_decision(
         decision_type="orchestrator_video_gen",
@@ -757,6 +805,98 @@ async def _work_video_qc(conn, project_id: int):
         decision_made="qc_refinement_pass",
         confidence_score=qc_result.get("quality_score", 0) if 'qc_result' in dir() else 0,
         reasoning=f"QC refinement pass on shot with quality below threshold",
+    )
+
+
+async def _work_scene_assembly(conn, project_id: int):
+    """Assemble scenes that have all shots completed but no final_video_path.
+
+    Finds scenes where shots are done but the concat/audio assembly hasn't
+    happened (e.g. partial failures, or generate_scene completed shots but
+    crashed before assembly). Calls concat_videos + apply_scene_audio.
+    """
+    from packages.scene_generation.builder import (
+        SCENE_OUTPUT_DIR, concat_videos, apply_scene_audio,
+    )
+
+    # Find scenes with completed shots but no final video
+    scenes = await conn.fetch("""
+        SELECT s.id, s.scene_number, s.title
+        FROM scenes s
+        WHERE s.project_id = $1
+          AND s.final_video_path IS NULL
+          AND EXISTS (
+              SELECT 1 FROM shots sh
+              WHERE sh.scene_id = s.id
+                AND sh.status IN ('completed', 'accepted_best')
+                AND sh.output_video_path IS NOT NULL
+          )
+        ORDER BY s.scene_number
+    """, project_id)
+
+    if not scenes:
+        return
+
+    assembled = 0
+    for scene in scenes:
+        scene_id = scene["id"]
+        scene_id_str = str(scene_id)
+
+        # Get completed shot videos in order
+        shot_videos = await conn.fetch("""
+            SELECT output_video_path FROM shots
+            WHERE scene_id = $1
+              AND status IN ('completed', 'accepted_best')
+              AND output_video_path IS NOT NULL
+            ORDER BY shot_number
+        """, scene_id)
+
+        video_paths = [r["output_video_path"] for r in shot_videos]
+        if not video_paths:
+            continue
+
+        scene_video_path = str(SCENE_OUTPUT_DIR / f"scene_{scene_id_str}.mp4")
+
+        try:
+            await concat_videos(video_paths, scene_video_path)
+            await apply_scene_audio(conn, scene_id, scene_video_path)
+
+            # Get duration via ffprobe
+            probe = await asyncio.create_subprocess_exec(
+                "ffprobe", "-v", "quiet", "-show_entries", "format=duration",
+                "-of", "csv=p=0", scene_video_path,
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, _ = await probe.communicate()
+            duration = float(stdout.decode().strip()) if stdout.decode().strip() else None
+
+            # Check if all shots are done
+            total_shots = await conn.fetchval(
+                "SELECT COUNT(*) FROM shots WHERE scene_id = $1", scene_id
+            )
+            gen_status = "completed" if len(video_paths) >= total_shots else "partial"
+
+            await conn.execute("""
+                UPDATE scenes SET final_video_path = $2, actual_duration_seconds = $3,
+                       generation_status = $4, completed_shots = $5
+                WHERE id = $1
+            """, scene_id, scene_video_path, duration, gen_status, len(video_paths))
+
+            assembled += 1
+            logger.info(
+                f"Orchestrator: assembled scene {scene['title'] or scene_id_str} "
+                f"({len(video_paths)} shots, {gen_status})"
+            )
+        except Exception as e:
+            logger.error(f"Orchestrator: scene assembly failed for {scene_id_str}: {e}")
+
+    await log_decision(
+        decision_type="orchestrator_scene_assembly",
+        project_name=str(project_id),
+        input_context={"scenes_found": len(scenes), "assembled": assembled},
+        decision_made="assembled_scenes",
+        confidence_score=0.85,
+        reasoning=f"Assembled {assembled}/{len(scenes)} scenes with completed shots",
     )
 
 
@@ -1050,6 +1190,8 @@ async def _do_work(entity_type: str, entity_id: str, project_id: int, phase: str
                     await _work_video_generation(conn, project_id)
                 elif phase == "video_qc":
                     await _work_video_qc(conn, project_id)
+                elif phase == "scene_assembly":
+                    await _work_scene_assembly(conn, project_id)
                 elif phase == "episode_assembly":
                     await _work_episode_assembly(conn, project_id)
                 elif phase == "publishing":
