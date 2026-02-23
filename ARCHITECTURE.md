@@ -98,6 +98,14 @@ packages/
     framepack.py      # FramePack workflow building, I2V pipeline, motion presets
     ltx_video.py      # LTX-Video 2B workflow building, native LoRA support
     wan_video.py      # Wan 2.1 T2V workflow, GGUF support, environment/establishing shots
+    engine_selector.py # Auto engine selection: shot type + LoRA availability + blacklist → wan/ltx/framepack
+    scene_crud.py     # Scene/shot CRUD endpoints, manual engine override
+    scene_review.py   # Shot review + engine blacklist management
+    scene_audio.py    # Dialogue synthesis, music mixing, audio ducking
+    scene_video_utils.py # Crossfade concat, frame interpolation, upscaling
+    scene_comparison.py # Multi-engine video comparison
+    video_qc.py       # QC loop with vision review, prompt refinement, progressive gates
+    video_vision.py   # Video frame quality assessment via Ollama
     story_to_scenes.py # AI scene breakdown from storyline (Ollama gemma3:12b)
 
   episode_assembly/   # 10 routes
@@ -210,6 +218,8 @@ erDiagram
         string transition_type
         float transition_duration
         string video_engine "framepack|framepack_f1|ltx|wan"
+        string lora_name "auto-set by engine selector"
+        float lora_strength "default 0.8"
     }
 
     episodes {

@@ -95,6 +95,7 @@ The Scene Builder (tab 7) enables multi-shot video scene composition:
 
 1. **Define** scenes with metadata (location, time, weather, mood)
 2. **Add shots** with source images, motion prompts (with preset library), shot types, camera angles, per-shot dialogue, transition settings, and **video engine selection** (FramePack, FramePack F1, LTX-Video, Wan T2V)
+2b. **Auto engine selection**: Orchestrator automatically picks the best engine per shot — establishing shots → `wan` T2V, characters with LoRA on disk → `ltx` (native LoRA injection), has source image → `framepack`, no source image → `wan` fallback. Engine blacklist respected. Manual override via `POST /scenes/{id}/shots/{id}/select-engine`
 3. **Generate** shots via progressive quality gates — each shot is generated, quality-checked by vision AI, and retried up to 3x with loosening thresholds (0.6→0.45→0.3) and more steps per retry
 4. **Chain** continuity: each shot's last frame becomes the next shot's first frame
 5. **Assemble** completed shots with crossfade transitions (ffmpeg xfade filter, 0.3s dissolve overlap)
@@ -153,7 +154,7 @@ Each phase has a gate that must pass before advancing:
 - `training_data`: character has ≥ N approved images (default 30)
 - `lora_training`: LoRA `.safetensors` file exists on disk
 - `scene_planning`: scenes exist in DB
-- `shot_preparation`: all shots have `source_image_path` assigned
+- `shot_preparation`: all shots have `source_image_path` assigned + auto engine selection (wan/ltx/framepack based on shot type, LoRA availability, blacklist)
 - `video_generation`: all shots have completed video
 - `scene_assembly`: all scenes have `final_video_path`
 - `episode_assembly`: all episodes assembled
