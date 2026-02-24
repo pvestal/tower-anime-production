@@ -388,3 +388,15 @@ class VideoCompareRequest(BaseModel):
     character_slug: Optional[str] = None
     project_name: Optional[str] = None
     engines: List[VideoEngineConfig]
+
+
+# --- Replenishment Models ---
+
+class ReplenishRequest(BaseModel):
+    project_name: Optional[str] = None  # omit for all projects
+    target_per_character: int = 50
+    auto_reject_threshold: float = 0.25
+    auto_approve_threshold: float = 0.7
+    max_batch_size: int = 5
+    strategy: str = "auto"  # auto | ipadapter | txt2img
+    max_iterations_per_char: int = 10

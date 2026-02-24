@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse
 
 from packages.core.config import BASE_PATH, _PROJECT_DIR, OLLAMA_URL, VISION_MODEL
 from packages.core.db import get_char_project_map
-from packages.core.models import DatasetImageCreate
+from packages.core.models import DatasetImageCreate, ReplenishRequest
 from .feedback import (
     record_rejection,
     queue_regeneration,
@@ -390,3 +390,52 @@ async def identify_character(character_slug: str, image_name: str):
             pass
 
     return {"description": raw, "suggested_name": ""}
+
+
+# ===================================================================
+# Replenishment — proactive deficit filling
+# ===================================================================
+
+@router.post("/replenish")
+async def start_replenish(body: ReplenishRequest):
+    """Kick off proactive replenishment for all characters below target.
+
+    Scans characters in the project (or all projects), identifies those
+    below target_per_character approved images, and runs generate → vision
+    review → loop until targets are met or safety limits are hit.
+
+    Returns a task_id for polling progress via GET /api/training/replenish/{task_id}.
+    """
+    from packages.core.replenishment import fill_deficit
+
+    task_id = await fill_deficit(
+        project_name=body.project_name,
+        target=body.target_per_character,
+        batch_size=body.max_batch_size,
+        max_iterations=body.max_iterations_per_char,
+        auto_reject_threshold=body.auto_reject_threshold,
+        auto_approve_threshold=body.auto_approve_threshold,
+        strategy=body.strategy,
+    )
+
+    return {
+        "task_id": task_id,
+        "status": "running",
+        "message": f"Replenishment started (target: {body.target_per_character})",
+        "poll_url": f"/api/training/replenish/{task_id}",
+    }
+
+
+@router.get("/replenish/{task_id}")
+async def get_replenish_status(task_id: str):
+    """Poll replenishment task progress.
+
+    Returns per-character progress: slug, approved_before, approved_now,
+    target, generated, reviewed, status.
+    """
+    from packages.core.replenishment import get_replenish_task
+
+    task = get_replenish_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail=f"Replenish task '{task_id}' not found")
+    return task
