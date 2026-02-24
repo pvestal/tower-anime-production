@@ -1,11 +1,11 @@
-# Anime Studio v3.5 Architecture
+# Anime Studio v0.3.6 Architecture
 
 ## System Overview
 
 ```mermaid
 graph TB
     subgraph Browser
-        UI[Vue 3 Frontend<br/>7 tabs + Echo Brain panel]
+        UI[Vue 3 Frontend<br/>6 tabs + Echo Brain panel]
     end
 
     subgraph "Anime Studio (port 8401)"
@@ -83,8 +83,9 @@ packages/
     graph_queries.py  # Cypher query helpers
     graph_router.py   # Graph analytics endpoints (11 routes)
 
-  story/              # 15 routes
+  story/              # 18 routes
     router.py         # Project CRUD, storyline, world settings, generation styles
+    story_characters.py # Character CRUD, PATCH with bool/jsonb, archive/unarchive
 
   visual_pipeline/    # 5 routes
     router.py         # Vision review endpoint (Gemma3 auto-triage)
@@ -171,6 +172,7 @@ erDiagram
         text design_prompt
         int project_id FK
         jsonb appearance_data
+        bool archived "default false"
     }
 
     scenes {
@@ -421,20 +423,22 @@ sequenceDiagram
 
 ```mermaid
 graph TD
-    APP[App.vue<br/>nav + router-view] --> PROJ[ProjectTab]
-    APP --> CHAR[CharactersTab]
-    APP --> CREATE[CreateTab]
-    APP --> REVIEW[ReviewTab]
-    APP --> TRAIN_TAB[TrainingTab]
-    APP --> SCENE[SceneBuilderTab]
-    APP --> ANALYTICS[AnalyticsTab]
+    APP[App.vue<br/>nav + router-view] --> STORY[StoryTab /story]
+    APP --> CAST[CastTab /cast]
+    APP --> SCRIPT[ScriptTab /script]
+    APP --> PRODUCE[ProduceTab /produce]
+    APP --> REVIEW[ReviewTab /review]
+    APP --> PUBLISH[PublishTab /publish]
     APP --> ECHO_PANEL[EchoFloatingPanel]
 
-    PROJ --> PROJ_SUB[project/<br/>NewProjectForm<br/>StorylineSection<br/>WorldSettingsPanel<br/>GenerationStylePanel]
-    CHAR --> CHAR_SUB[characters/<br/>CharacterCard<br/>CharacterFilters<br/>DesignPromptEditor]
-    REVIEW --> PEND_SUB[pending/<br/>ImageApprovalModal<br/>ImageCard<br/>ImageReassignModal<br/>PendingFilters<br/>ProjectCharacterGrid<br/>ReplenishmentPanel]
-    TRAIN_TAB --> TRAIN_SUB[training/<br/>ConfirmDialog]
-    SCENE --> SCENE_SUB[scenes/<br/>SceneLibraryView<br/>SceneEditorView<br/>GenerationMonitorView<br/>ImagePickerModal<br/>ShotDetailsPanel<br/>EpisodeView]
+    STORY --> PROJ_SUB[ProjectTab<br/>project carousel, storyline,<br/>world settings, generation style]
+    CAST --> CAST_SUB[3 sub-tabs:<br/>Characters — CharactersTab<br/>Ingest — IngestTab<br/>Voice — VoiceTab]
+    CAST_SUB --> CHAR_DETAIL[CharacterDetailPanel<br/>profile editor, test generation,<br/>ChipInput, KeyValueEditor]
+    SCRIPT --> SCRIPT_SUB[2 sub-tabs:<br/>Scenes — SceneBuilderTab<br/>Screenplay — ScreenplayView]
+    PRODUCE --> PRODUCE_SUB[3 sub-tabs:<br/>Status — ProductionStatusTab<br/>Training — TrainingTab<br/>Analytics — AnalyticsTab]
+    PRODUCE_SUB --> STATUS[ProductionStatusTab<br/>GPU status, active jobs,<br/>per-project pipeline cards,<br/>model lineage warnings]
+    REVIEW --> PEND_SUB[pending/<br/>ImageApprovalModal<br/>ImageCard, PendingFilters<br/>ProjectCharacterGrid]
+    PUBLISH --> PUB_SUB[2 sub-tabs:<br/>Episodes — EpisodeView<br/>Library — PublishedLibrary]
 
     REVIEW --> IDP[ImageDetailPanel]
 ```
@@ -661,4 +665,6 @@ graph LR
 - **Audio mixing**: Non-fatal — if TTS or music download fails, scene video is kept without audio
 - **Story-to-scenes AI**: Uses Ollama gemma3:12b for scene breakdowns; structured JSON output with retry parsing
 - **Motion presets**: Curated per shot type, served via API so frontend stays in sync without hardcoding
+- **Model lineage tracking**: dataset-stats API returns `model_breakdown` per character (which checkpoint generated each approved image), `dominant_model`, and `is_mixed_models` flag. LoRA listing includes `checkpoint`, `final_loss`, `trained_epochs`. Frontend surfaces mixed-model warnings and LoRA/image model mismatches
+- **Character archiving**: `archived` boolean column on characters table, filtered from `get_char_project_map()` core query. Archive/unarchive via API without deleting data
 - **FastAPI route ordering**: Static paths (`/scenes/motion-presets`, `/scenes/generate-from-story`) must be registered BEFORE dynamic `{scene_id}` routes
