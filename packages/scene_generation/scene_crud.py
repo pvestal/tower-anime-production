@@ -111,11 +111,13 @@ async def create_scene(body: SceneCreateRequest):
 
 @router.post("/scenes/generate-from-story")
 async def generate_scenes_from_story_endpoint(project_id: int):
-    """Auto-generate scene breakdowns from project storyline using AI."""
+    """Auto-generate scene breakdowns from project storyline using AI.
+
+    Persists generated scenes AND their shots to the database.
+    """
     from .story_to_scenes import generate_scenes_from_story
     try:
         scenes = await generate_scenes_from_story(project_id)
-        return {"project_id": project_id, "scenes": scenes, "count": len(scenes)}
     except json.JSONDecodeError as e:
         raise HTTPException(status_code=502, detail=f"AI returned invalid JSON: {e}")
     except ValueError as e:
@@ -123,6 +125,248 @@ async def generate_scenes_from_story_endpoint(project_id: int):
     except Exception as e:
         logger.error(f"Story-to-scenes generation failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+    # Persist scenes + shots to DB
+    saved = await _persist_scenes_and_shots(project_id, scenes)
+    return {"project_id": project_id, "scenes": saved, "count": len(saved)}
+
+
+def _name_to_slug(name: str) -> str:
+    """Convert character name to slug: 'Bowser Jr.' → 'bowser_jr'."""
+    import re
+    return re.sub(r'[^a-z0-9_-]', '', name.lower().replace(' ', '_'))
+
+
+async def _persist_scenes_and_shots(
+    project_id: int, scenes: list[dict]
+) -> list[dict]:
+    """Insert AI-generated scenes and their suggested_shots into the DB.
+
+    Returns list of saved scenes with their DB ids and shot ids.
+    """
+    conn = await connect_direct()
+    try:
+        # Build character name→slug map for dialogue assignment
+        chars = await conn.fetch(
+            "SELECT name FROM characters WHERE project_id = $1", project_id)
+        char_slug_map = {c["name"].lower(): _name_to_slug(c["name"]) for c in chars}
+
+        max_num = await conn.fetchval(
+            "SELECT COALESCE(MAX(scene_number), 0) FROM scenes WHERE project_id = $1",
+            project_id)
+
+        saved = []
+        for i, scene in enumerate(scenes):
+            scene_num = (max_num or 0) + i + 1
+            row = await conn.fetchrow("""
+                INSERT INTO scenes (project_id, title, description, location,
+                                    time_of_day, mood, target_duration_seconds,
+                                    scene_number, generation_status)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'draft')
+                RETURNING id
+            """, project_id, scene.get("title"), scene.get("description"),
+                scene.get("location"), scene.get("time_of_day"),
+                scene.get("mood"), None, scene_num)
+
+            scene_id = row["id"]
+            shot_ids = []
+            for j, shot in enumerate(scene.get("suggested_shots", [])):
+                # Resolve dialogue character name to slug
+                dial_char = shot.get("dialogue_character")
+                dial_slug = None
+                if dial_char:
+                    dial_slug = char_slug_map.get(dial_char.lower(), _name_to_slug(dial_char))
+
+                shot_row = await conn.fetchrow("""
+                    INSERT INTO shots (scene_id, shot_number, shot_type,
+                                       duration_seconds, motion_prompt,
+                                       characters_present, status,
+                                       dialogue_text, dialogue_character_slug)
+                    VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7, $8)
+                    RETURNING id
+                """, scene_id, j + 1, shot.get("shot_type", "medium"),
+                    shot.get("duration_seconds", 3),
+                    shot.get("motion_prompt") or shot.get("description", ""),
+                    scene.get("characters") or None,
+                    shot.get("dialogue_text"), dial_slug)
+                shot_ids.append(str(shot_row["id"]))
+
+            # Update total_shots on scene
+            await conn.execute(
+                "UPDATE scenes SET total_shots = $2 WHERE id = $1",
+                scene_id, len(shot_ids))
+
+            saved.append({
+                "scene_id": str(scene_id), "scene_number": scene_num,
+                "title": scene.get("title"), "shots_created": len(shot_ids),
+                "shot_ids": shot_ids,
+            })
+
+        logger.info(f"Persisted {len(saved)} scenes with shots for project {project_id}")
+        return saved
+    finally:
+        await conn.close()
+
+
+@router.post("/scenes/{scene_id}/generate-shots")
+async def generate_shots_for_scene(scene_id: str):
+    """Auto-generate shot breakdowns for an existing scene that has 0 shots.
+
+    Uses the scene description + project characters to plan shots via Ollama.
+    """
+    sid = uuid.UUID(scene_id)
+    conn = await connect_direct()
+    try:
+        scene = await conn.fetchrow(
+            "SELECT s.*, p.name as project_name, p.id as pid, p.genre "
+            "FROM scenes s JOIN projects p ON p.id = s.project_id "
+            "WHERE s.id = $1", sid)
+        if not scene:
+            raise HTTPException(status_code=404, detail="Scene not found")
+
+        existing = await conn.fetchval(
+            "SELECT COUNT(*) FROM shots WHERE scene_id = $1", sid)
+        if existing > 0:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Scene already has {existing} shots. Delete them first to regenerate.")
+
+        chars = await conn.fetch(
+            "SELECT name, design_prompt FROM characters WHERE project_id = $1",
+            scene["pid"])
+        char_list = "\n".join(
+            f"- {c['name']}: {c['design_prompt'] or 'no description'}"
+            for c in chars) if chars else "No characters defined."
+    finally:
+        await conn.close()
+
+    # Build prompt for shot breakdown
+    import httpx
+    from packages.core.config import OLLAMA_URL
+
+    prompt = f"""You are a professional anime scene planner. Break this scene into 3-5 concrete production shots.
+
+Scene: {scene['title']}
+Description: {scene['description'] or 'No description'}
+Mood: {scene['mood'] or 'not specified'}
+Location: {scene['location'] or 'not specified'}
+Genre: {scene['genre'] or 'anime'}
+
+Characters available:
+{char_list}
+
+For each shot provide:
+- shot_type: establishing/wide/medium/close-up/action
+- description: What this shot shows (1 sentence)
+- motion_prompt: FramePack motion description — what moves/happens (1-2 sentences)
+- duration_seconds: 2-5
+- dialogue_character: Character name who speaks (null if no dialogue)
+- dialogue_text: What the character says (null if no dialogue)
+
+Respond with ONLY a valid JSON array. No markdown, no explanation."""
+
+    async with httpx.AsyncClient(timeout=120) as client:
+        resp = await client.post(
+            f"{OLLAMA_URL}/api/generate",
+            json={
+                "model": "gemma3:12b",
+                "prompt": prompt,
+                "stream": False,
+                "options": {"temperature": 0.7, "num_predict": 2048},
+            },
+        )
+        resp.raise_for_status()
+        result = resp.json()
+
+    raw_text = result.get("response", "").strip()
+    if "```" in raw_text:
+        parts = raw_text.split("```")
+        for part in parts:
+            cleaned = part.strip()
+            if cleaned.startswith("json"):
+                cleaned = cleaned[4:].strip()
+            if cleaned.startswith("["):
+                raw_text = cleaned
+                break
+
+    shots_plan = json.loads(raw_text)
+    if not isinstance(shots_plan, list):
+        raise HTTPException(status_code=502, detail="AI returned non-array response")
+
+    # Build char slug map
+    conn = await connect_direct()
+    try:
+        char_slug_map = {c["name"].lower(): _name_to_slug(c["name"])
+                         for c in chars}
+
+        shot_ids = []
+        for j, shot in enumerate(shots_plan):
+            dial_char = shot.get("dialogue_character")
+            dial_slug = None
+            if dial_char:
+                dial_slug = char_slug_map.get(dial_char.lower(), _name_to_slug(dial_char))
+
+            shot.setdefault("shot_type", "medium")
+            shot.setdefault("duration_seconds", 3)
+            shot.setdefault("motion_prompt", shot.get("description", ""))
+
+            row = await conn.fetchrow("""
+                INSERT INTO shots (scene_id, shot_number, shot_type,
+                                   duration_seconds, motion_prompt,
+                                   status, dialogue_text, dialogue_character_slug)
+                VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7)
+                RETURNING id
+            """, sid, j + 1, shot["shot_type"],
+                shot["duration_seconds"],
+                shot.get("motion_prompt") or shot.get("description", ""),
+                shot.get("dialogue_text"), dial_slug)
+            shot_ids.append(str(row["id"]))
+
+        await conn.execute(
+            "UPDATE scenes SET total_shots = $2 WHERE id = $1", sid, len(shot_ids))
+    finally:
+        await conn.close()
+
+    return {
+        "scene_id": scene_id, "title": scene["title"],
+        "shots_created": len(shot_ids), "shot_ids": shot_ids,
+    }
+
+
+@router.post("/scenes/generate-shots-all")
+async def generate_shots_for_all_empty_scenes(project_id: int):
+    """Generate shot breakdowns for ALL scenes in a project that have 0 shots."""
+    conn = await connect_direct()
+    try:
+        rows = await conn.fetch("""
+            SELECT s.id, s.title
+            FROM scenes s
+            WHERE s.project_id = $1
+              AND (SELECT COUNT(*) FROM shots WHERE scene_id = s.id) = 0
+            ORDER BY s.scene_number NULLS LAST
+        """, project_id)
+    finally:
+        await conn.close()
+
+    if not rows:
+        return {"message": "All scenes already have shots", "generated": 0}
+
+    results = []
+    errors = []
+    for scene_row in rows:
+        try:
+            result = await generate_shots_for_scene(str(scene_row["id"]))
+            results.append(result)
+        except Exception as e:
+            logger.error(f"Failed to generate shots for scene {scene_row['title']}: {e}")
+            errors.append({"scene_id": str(scene_row["id"]),
+                          "title": scene_row["title"], "error": str(e)})
+
+    return {
+        "message": f"Generated shots for {len(results)} scenes",
+        "generated": len(results), "scenes": results,
+        "errors": errors if errors else None,
+    }
 
 
 @router.get("/scenes/motion-presets")

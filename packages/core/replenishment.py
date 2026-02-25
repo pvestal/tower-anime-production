@@ -116,11 +116,27 @@ def _count_pending(character_slug: str) -> int:
         return 0
 
 
+def _image_brightness(img_path: Path) -> float:
+    """Quick average brightness of an image (0.0=black, 1.0=white).
+
+    Uses PIL if available, falls back to 0.5 (neutral) if not.
+    Good IP-Adapter references should be well-lit (brightness > 0.3).
+    """
+    try:
+        from PIL import Image
+        img = Image.open(img_path).convert("L")  # grayscale
+        pixels = list(img.getdata())
+        return sum(pixels) / (len(pixels) * 255.0)
+    except Exception:
+        return 0.5
+
+
 def _sync_reference_images(character_slug: str, max_refs: int = 5) -> int:
     """Pick the best solo-approved images as IP-Adapter references.
 
     Scans all approved images, filters to solo-only (multi-character refs confuse
-    IP-Adapter), scores by quality, and copies top N to reference_images/.
+    IP-Adapter), scores by quality + brightness + composition, and copies top N
+    to reference_images/. Dark, close-up, and generated images are penalized.
     Returns the number of reference images synced.
     """
     image_dir = BASE_PATH / character_slug / "images"
@@ -155,7 +171,8 @@ def _sync_reference_images(character_slug: str, max_refs: int = 5) -> int:
                 meta = {}
             vr = meta.get("vision_review", {})
             is_solo = vr.get("solo", True)
-            quality = vr.get("quality_score")
+            # quality_score lives at top level of meta.json (not inside vision_review)
+            quality = meta.get("quality_score") or vr.get("quality_score")
             if quality is not None:
                 score = quality
 
@@ -163,13 +180,26 @@ def _sync_reference_images(character_slug: str, max_refs: int = 5) -> int:
             if not is_solo:
                 continue
 
-        # Bonus for curated reference images (ingested from video sources)
-        if img_name.startswith("yt_ref_"):
-            score += 0.3
-        elif img_name.startswith("movie_"):
-            score += 0.2
-        elif img_name.startswith("vid_"):
-            score += 0.1
+        # Prefer images with completeness=full (not close-ups/partial)
+        completeness = vr.get("completeness", "") if meta_path.exists() else ""
+        if completeness == "full":
+            score += 0.15
+        elif completeness == "face":
+            score -= 0.1  # penalize face-only close-ups as references
+
+        # Never use generated images as references when source frames exist
+        # Generated images are derivative — feeding them back creates quality decay
+        if img_name.startswith("gen_"):
+            score -= 1.0  # effectively eliminates them unless no source frames exist
+
+        # Brightness check — dark scenes make terrible IP-Adapter references
+        brightness = _image_brightness(img_path)
+        if brightness < 0.2:
+            score -= 0.3  # very dark — heavily penalize
+        elif brightness < 0.3:
+            score -= 0.15  # dim
+        elif brightness > 0.4:
+            score += 0.1  # well-lit — bonus
 
         candidates.append((img_name, score, img_path))
 
@@ -294,7 +324,7 @@ async def _trigger_vision_review(
 
         # Use per-character thresholds if set, else module defaults
         reject_th, approve_th = _review_thresholds.get(
-            character_slug, (0.4, 0.65)
+            character_slug, (0.3, 0.92)
         )
 
         request = VisionReviewRequest(
@@ -470,12 +500,17 @@ async def fill_deficit(
         }
         return task_id
 
-    # Build initial progress dict
-    characters_progress = {}
+    # Build initial progress list, sorted by deficit ascending (closest to target first)
+    char_list = []
     for slug in slugs:
         approved = _count_approved(slug)
         if approved >= target:
             continue
+        char_list.append((slug, approved))
+    char_list.sort(key=lambda x: x[1], reverse=True)  # highest approved first
+
+    characters_progress = {}
+    for slug, approved in char_list:
         characters_progress[slug] = {
             "slug": slug,
             "name": char_map[slug].get("name", slug),

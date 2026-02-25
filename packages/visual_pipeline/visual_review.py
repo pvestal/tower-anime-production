@@ -179,7 +179,11 @@ async def _vision_review_worker(
                 with open(approval_file) as f:
                     approval_status = json.load(f)
 
-            target_statuses = ("pending", "approved") if body.include_approved else ("pending",)
+            target_statuses = ["pending"]
+            if body.include_approved:
+                target_statuses.append("approved")
+            if body.include_rejected:
+                target_statuses.append("rejected")
             target_pngs = [
                 img for img in sorted(images_path.glob("*.png"))
                 if approval_status.get(img.name, "pending") in target_statuses
@@ -257,7 +261,9 @@ async def _vision_review_worker(
                         caption_path.write_text(review["caption"])
 
                 # --- Auto-triage decision ---
-                is_already_approved = approval_status.get(img_path.name) == "approved"
+                current_status = approval_status.get(img_path.name, "pending")
+                is_already_approved = current_status == "approved"
+                is_rejected_recheck = current_status == "rejected"
                 action = "approved" if is_already_approved else "pending"
 
                 if is_already_approved:
@@ -265,7 +271,8 @@ async def _vision_review_worker(
                         action = "flagged_multi"
                     logger.info(f"[{task_id}] Scored approved {slug}/{img_path.name} (Q:{quality_score:.0%})")
 
-                elif quality_score < effective_reject:
+                elif quality_score < effective_reject and not is_rejected_recheck:
+                    # Don't re-reject already rejected images — just score them
                     action = "rejected"
                     approval_status[img_path.name] = "rejected"
                     status_changed = True
@@ -303,6 +310,11 @@ async def _vision_review_worker(
                         "checkpoint_model": checkpoint,
                     })
                     logger.info(f"[{task_id}] Auto-rejected {slug}/{img_path.name} (Q:{quality_score:.0%})")
+
+                elif is_rejected_recheck and quality_score < effective_approve:
+                    # Re-reviewed rejected image didn't meet approve threshold — keep rejected, just score it
+                    action = "still_rejected"
+                    logger.info(f"[{task_id}] Re-scored rejected {slug}/{img_path.name} (Q:{quality_score:.0%}, below {effective_approve:.0%})")
 
                 elif quality_score >= effective_approve and review.get("solo", False):
                     action = "approved"

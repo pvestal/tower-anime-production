@@ -162,7 +162,7 @@ def build_comfyui_workflow(
             # IP-Adapter Apply
             workflow["23"] = {
                 "inputs": {
-                    "weight": 0.95,
+                    "weight": 0.7,
                     "weight_type": "linear",
                     "combine_embeds": "concat",
                     "start_at": 0.0,

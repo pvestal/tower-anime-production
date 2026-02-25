@@ -123,6 +123,7 @@ class VisionReviewRequest(BaseModel):
     regenerate: bool = True
     model: Optional[str] = None  # override VISION_MODEL
     include_approved: bool = False
+    include_rejected: bool = False  # re-review rejected images (scores only, no auto-reject)
 
 
 class ProjectCreate(BaseModel):
@@ -395,8 +396,8 @@ class VideoCompareRequest(BaseModel):
 class ReplenishRequest(BaseModel):
     project_name: Optional[str] = None  # omit for all projects
     target_per_character: int = 50
-    auto_reject_threshold: float = 0.25
-    auto_approve_threshold: float = 0.7
+    auto_reject_threshold: float = 0.3
+    auto_approve_threshold: float = 0.92
     max_batch_size: int = 5
     strategy: str = "auto"  # auto | ipadapter | txt2img
     max_iterations_per_char: int = 10
