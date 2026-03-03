@@ -4,26 +4,8 @@
     <div class="produce-header">
       <h2>Produce</h2>
       <div class="header-controls">
-        <div v-if="gpuStatus" class="gpu-chips">
-          <span class="gpu-chip" :class="nvidiaBusy ? 'gpu-busy' : 'gpu-free'"
-                :title="`NVIDIA ${gpuStatus.nvidia?.gpu_name || 'N/A'} — ${gpuStatus.nvidia ? gpuStatus.nvidia.used_mb + '/' + gpuStatus.nvidia.total_mb + 'MB' : 'offline'}`">
-            NVIDIA {{ nvidiaBusy ? 'Generating' : gpuStatus.nvidia ? gpuStatus.nvidia.free_mb + 'MB free' : 'offline' }}
-          </span>
-          <span class="gpu-chip gpu-free"
-                :title="`AMD ${gpuStatus.amd?.gpu_name || 'N/A'} — Ollama${ollamaModels.length ? ': ' + ollamaModels.join(', ') : ''}`">
-            AMD {{ gpuStatus.amd ? gpuStatus.amd.free_mb + 'MB free' : 'N/A' }}
-          </span>
-          <span v-if="gpuStatus.host" class="gpu-chip"
-                :class="gpuStatus.host.cpu_percent > 80 ? 'gpu-busy' : 'gpu-free'"
-                :title="`CPU: ${gpuStatus.host.cpu_percent}% (${gpuStatus.host.cpu_count} cores)\nRAM: ${Math.round(gpuStatus.host.ram_used_mb / 1024)}/${Math.round(gpuStatus.host.ram_total_mb / 1024)}GB`">
-            CPU {{ gpuStatus.host.cpu_percent }}% &middot; RAM {{ gpuStatus.host.ram_percent }}%
-          </span>
-          <span v-if="comfyQueue.queue_running > 0 || comfyQueue.queue_pending > 0" class="gpu-chip gpu-busy">
-            ComfyUI {{ comfyQueue.queue_running }}R / {{ comfyQueue.queue_pending }}Q
-          </span>
-        </div>
         <div style="display: flex; gap: 6px; align-items: center;">
-          <button class="btn btn-sm" :class="orchestratorStatus?.enabled ? 'btn-danger-sm' : 'btn-success-sm'"
+          <button v-if="authStore.isAdvanced" class="btn btn-sm" :class="orchestratorStatus?.enabled ? 'btn-danger-sm' : 'btn-success-sm'"
                   @click="toggleOrchestrator" :title="orchestratorStatus?.enabled ? 'Disable orchestrator' : 'Enable orchestrator'">
             Orchestrator {{ orchestratorStatus?.enabled ? 'On' : 'Off' }}
           </button>
@@ -55,8 +37,8 @@
       </div>
     </div>
 
-    <!-- Recent Failures Banner -->
-    <div v-if="recentFailures.length > 0" class="failures-banner">
+    <!-- Recent Failures Banner (advanced only) -->
+    <div v-if="recentFailures.length > 0 && authStore.isAdvanced" class="failures-banner">
       <div class="failures-header">Recent Failures</div>
       <div v-for="job in recentFailures" :key="job.job_id" class="failure-row">
         <span style="color: var(--status-error);">Training {{ job.character_name }} failed</span>
@@ -93,8 +75,8 @@
       No projects found.
     </div>
 
-    <!-- System Section (collapsible) -->
-    <div v-if="learningStats" class="system-section">
+    <!-- System Section (collapsible, advanced only) -->
+    <div v-if="learningStats && authStore.isAdvanced" class="system-section">
       <div class="system-toggle" @click="showSystem = !showSystem">
         <span class="system-title">System</span>
         <span class="toggle-arrow" :class="{ open: showSystem }">&#9654;</span>
@@ -150,23 +132,25 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useProductionData } from '@/composables/useProductionData'
+import { useGpuStatus } from '@/composables/useGpuStatus'
+import { useAuthStore } from '@/stores/auth'
 import ProjectPipelineCard from './ProjectPipelineCard.vue'
 import TrainingPanel from './training/TrainingPanel.vue'
 import type { TrainingJob, ProjectCard } from '@/types'
 
+const authStore = useAuthStore()
+
+const { comfyQueue } = useGpuStatus()
+
 const {
   loading,
   actionLoading,
-  gpuStatus,
   expandedProjects,
   qualityDataMap,
   qualityLoadingSet,
   learningStats,
   eventStats,
   orchestratorStatus,
-  nvidiaBusy,
-  comfyQueue,
-  ollamaModels,
   runningTrainingJobs,
   recentFailures,
   projectCards,

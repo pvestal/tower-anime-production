@@ -1,7 +1,7 @@
 <template>
-  <div style="display: flex; gap: 16px; align-items: flex-start;">
+  <div style="display: flex; gap: 0; height: 100%; overflow: hidden;">
     <!-- Left: Scene Details -->
-    <div class="card" style="width: 280px; flex-shrink: 0;">
+    <div class="card" style="width: 280px; flex-shrink: 0; overflow-y: auto; height: 100%; border-radius: 0; border-right: 1px solid var(--border-primary);">
       <div style="font-size: 13px; font-weight: 500; margin-bottom: 12px; color: var(--accent-primary);">Scene Details</div>
 
       <div class="field-group">
@@ -187,64 +187,28 @@
       </div>
     </div>
 
-    <!-- Middle: Shot Timeline -->
-    <div style="width: 240px; flex-shrink: 0;">
-      <div style="font-size: 13px; font-weight: 500; margin-bottom: 12px; color: var(--accent-primary);">Shot Timeline</div>
-      <div style="display: flex; flex-direction: column; gap: 8px;">
-        <div
-          v-for="(shot, idx) in shots"
-          :key="shot.id || idx"
-          class="card"
-          :style="{
-            cursor: 'pointer',
-            borderLeft: selectedShotIdx === idx ? '3px solid var(--accent-primary)' : '3px solid transparent',
-            padding: '10px 12px',
-          }"
-          @click="emit('select-shot', idx)"
-        >
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-            <span style="font-size: 13px; font-weight: 500;">Shot {{ shot.shot_number }}</span>
-            <span :class="statusBadgeClass(shot.status || 'pending')" style="font-size: 10px; padding: 1px 6px; border-radius: 3px;">
-              {{ shot.status || 'pending' }}
-            </span>
-          </div>
-          <div style="display: flex; align-items: center; gap: 6px;">
-            <img
-              v-if="shot.source_image_path"
-              :src="sourceImageUrl(shot.source_image_path)"
-              style="width: 48px; height: 48px; object-fit: cover; border-radius: 3px; flex-shrink: 0;"
-              @error="($event.target as HTMLImageElement).style.display = 'none'"
-            />
-            <div v-else style="width: 48px; height: 48px; border-radius: 3px; background: var(--bg-tertiary); display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 10px; color: var(--status-warning);">
-              no img
-            </div>
-            <div>
-              <div style="font-size: 11px; color: var(--text-muted);">
-                {{ shot.shot_type }}/{{ shot.camera_angle }} {{ shot.duration_seconds }}s
-              </div>
-              <div v-if="shot.motion_prompt" style="font-size: 11px; color: var(--text-secondary); margin-top: 2px; max-height: 30px; overflow: hidden;">
-                {{ shot.motion_prompt }}
-              </div>
-            </div>
-          </div>
-        </div>
+    <!-- Middle: Storyboard Grid -->
+    <StoryboardGrid
+      :shots="shots"
+      :selected-shot-idx="selectedShotIdx"
+      :source-image-url="sourceImageUrl"
+      @select-shot="(idx: number) => emit('select-shot', idx)"
+      @add-shot="emit('add-shot')"
+      @batch-regen="() => { /* batch regen placeholder */ }"
+    />
 
-        <button class="btn" style="font-size: 12px; padding: 6px 12px; width: 100%;" @click="emit('add-shot')">
-          + Add Shot
-        </button>
-      </div>
-    </div>
-
-    <!-- Right: Shot Details -->
-    <ShotDetailsPanel
+    <!-- Right: Shot Inspector -->
+    <ShotInspectorPanel
       v-if="selectedShotIdx >= 0 && shots[selectedShotIdx]"
       :shot="shots[selectedShotIdx]"
       :shot-video-src="shotVideoSrc"
       :source-image-url="sourceImageUrl"
       :characters="characters"
+      :auto-dialogue-busy="autoDialogueBusy"
       @remove="emit('remove-shot', selectedShotIdx)"
       @browse-image="emit('browse-image')"
       @update-field="(field: string, value: unknown) => emit('update-shot-field', selectedShotIdx, field, value)"
+      @auto-dialogue="emit('auto-dialogue')"
     />
   </div>
 </template>
@@ -253,7 +217,8 @@
 import { reactive, ref, computed, watch } from 'vue'
 import type { BuilderScene, BuilderShot, SceneAudio, GapAnalysisCharacter } from '@/types'
 import { useProjectStore } from '@/stores/project'
-import ShotDetailsPanel from './ShotDetailsPanel.vue'
+import ShotInspectorPanel from './ShotInspectorPanel.vue'
+import StoryboardGrid from './StoryboardGrid.vue'
 import EchoAssistButton from '../EchoAssistButton.vue'
 import SceneAudioPanel from './SceneAudioPanel.vue'
 
@@ -270,6 +235,7 @@ const props = defineProps<{
   sourceImageUrl: (path: string) => string
   characters: { slug: string; name: string }[]
   gapCharacters?: Record<string, GapAnalysisCharacter>
+  autoDialogueBusy?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -285,6 +251,7 @@ const emit = defineEmits<{
   'update-scene': [scene: Partial<BuilderScene>]
   'audio-changed': [audio: SceneAudio | null]
   'go-to-training': []
+  'auto-dialogue': []
 }>()
 
 const allShotsHaveImages = computed(() =>
@@ -366,18 +333,6 @@ watch(localPostInterpolate, (val) => {
 watch(localPostUpscale, (val) => {
   localScene.post_upscale_factor = val
 })
-
-function statusBadgeClass(status: string): string {
-  const map: Record<string, string> = {
-    draft: 'badge-draft',
-    pending: 'badge-draft',
-    generating: 'badge-generating',
-    completed: 'badge-completed',
-    partial: 'badge-partial',
-    failed: 'badge-failed',
-  }
-  return map[status] || 'badge-draft'
-}
 
 function estimateMinutes(shots: Partial<BuilderShot>[]): number {
   return shots.reduce((sum, s) => {

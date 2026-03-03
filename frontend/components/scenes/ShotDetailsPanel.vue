@@ -1,5 +1,5 @@
 <template>
-  <div v-if="shot" class="card" style="flex: 1; min-width: 300px;">
+  <div v-if="shot" class="card" style="width: 360px; flex-shrink: 0; overflow-y: auto; height: 100%; border-radius: 0; border-left: 1px solid var(--border-primary);">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
       <div style="font-size: 13px; font-weight: 500; color: var(--accent-primary);">
         Shot {{ shot.shot_number }} Details
@@ -88,7 +88,7 @@
           @accept="updateField('motion_prompt', $event.suggestion)"
         />
       </div>
-      <div v-if="motionPresets.length > 0" style="display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px;">
+      <div v-if="motionPresets.length > 0 && authStore.isAdvanced" style="display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px;">
         <button
           v-for="preset in motionPresets"
           :key="preset"
@@ -105,48 +105,53 @@
       ></textarea>
     </div>
 
-    <div class="field-row">
-      <div class="field-group">
-        <label class="field-label">Seed</label>
-        <input
-          :value="shot.seed"
-          @input="updateField('seed', ($event.target as HTMLInputElement).value ? Number(($event.target as HTMLInputElement).value) : null)"
-          type="number" placeholder="Random"
-          class="field-input"
-        />
+    <template v-if="authStore.isAdvanced">
+      <div class="field-row">
+        <div class="field-group">
+          <label class="field-label">Seed</label>
+          <input
+            :value="shot.seed"
+            @input="updateField('seed', ($event.target as HTMLInputElement).value ? Number(($event.target as HTMLInputElement).value) : null)"
+            type="number" placeholder="Random"
+            class="field-input"
+          />
+        </div>
+        <div class="field-group">
+          <label class="field-label">Steps</label>
+          <select
+            :value="shot.steps"
+            @change="updateField('steps', ($event.target as HTMLSelectElement).value ? Number(($event.target as HTMLSelectElement).value) : null)"
+            class="field-input"
+          >
+            <option :value="null">Default ({{ stepsDefault }})</option>
+            <option :value="4">4 (lightx2v)</option>
+            <option :value="15">15</option>
+            <option :value="20">20</option>
+            <option :value="25">25</option>
+            <option :value="30">30</option>
+          </select>
+        </div>
       </div>
+
       <div class="field-group">
-        <label class="field-label">Steps</label>
+        <label class="field-label">Video Engine</label>
         <select
-          :value="shot.steps"
-          @change="updateField('steps', ($event.target as HTMLSelectElement).value ? Number(($event.target as HTMLSelectElement).value) : null)"
+          :value="shot.video_engine || 'framepack'"
+          @change="updateField('video_engine', ($event.target as HTMLSelectElement).value)"
           class="field-input"
         >
-          <option :value="null">Default (25)</option>
-          <option :value="15">15</option>
-          <option :value="20">20</option>
-          <option :value="25">25</option>
-          <option :value="30">30</option>
+          <option value="framepack">FramePack (I2V, solo + LoRA, highest quality)</option>
+          <option value="framepack_f1">FramePack F1 (I2V, faster)</option>
+          <option value="wan">Wan 2.1 T2V (text-only, multi-char, environments)</option>
+          <option value="wan22">Wan 2.2 5B (T2V/I2V, fast, good quality)</option>
+          <option value="wan22_14b">Wan 2.2 14B (I2V, best quality, needs source image)</option>
+          <option value="ltx">LTX-Video (I2V/T2V, LoRA support)</option>
         </select>
+        <div v-if="engineHint" style="font-size: 10px; color: var(--text-muted); margin-top: 3px;">
+          {{ engineHint }}
+        </div>
       </div>
-    </div>
-
-    <div class="field-group">
-      <label class="field-label">Video Engine</label>
-      <select
-        :value="shot.video_engine || 'framepack'"
-        @change="updateField('video_engine', ($event.target as HTMLSelectElement).value)"
-        class="field-input"
-      >
-        <option value="framepack">FramePack (I2V, highest quality)</option>
-        <option value="framepack_f1">FramePack F1 (I2V, faster)</option>
-        <option value="ltx">LTX-Video (I2V/T2V, LoRA support)</option>
-        <option value="wan">Wan T2V (text-only, environments)</option>
-      </select>
-      <div v-if="shot.video_engine === 'wan'" style="font-size: 10px; color: var(--status-warning); margin-top: 3px;">
-        No source image needed — generates from motion prompt text only
-      </div>
-    </div>
+    </template>
 
     <div class="field-row">
       <div class="field-group">
@@ -224,7 +229,7 @@
     </div>
 
     <!-- Character State (NSM) -->
-    <div v-if="characterStates.length > 0" class="state-section">
+    <div v-if="characterStates.length > 0 && authStore.isAdvanced" class="state-section">
       <div
         class="state-header"
         @click="stateExpanded = !stateExpanded"
@@ -290,26 +295,76 @@
       </div>
     </div>
 
-    <!-- Generation Prompt (what was actually sent to ComfyUI) -->
-    <div v-if="shot.generation_prompt" class="state-section">
-      <div
-        class="state-header"
-        @click="promptExpanded = !promptExpanded"
-      >
-        <span class="field-label" style="margin-bottom: 0; font-weight: 500; cursor: pointer;">
-          Generation Prompt {{ promptExpanded ? '▾' : '▸' }}
-        </span>
-        <span class="source-badge source-badge--auto" style="font-size: 9px;">{{ shot.video_engine || 'framepack' }}</span>
+    <!-- Generation Prompt (scene description — what the shot should depict) -->
+    <div class="field-group">
+      <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
+        <label class="field-label" style="margin-bottom: 0;">Scene Prompt</label>
+        <span class="source-badge source-badge--auto" style="font-size: 9px;">drives keyframe + video</span>
       </div>
-      <div v-if="promptExpanded" class="state-card" style="font-size: 11px; line-height: 1.5;">
-        <div style="margin-bottom: 6px;">
-          <span class="state-label" style="display: block; margin-bottom: 2px;">Positive</span>
-          <div style="color: var(--text-primary); white-space: pre-wrap; word-break: break-word;">{{ shot.generation_prompt }}</div>
+      <textarea
+        :value="shot.generation_prompt"
+        @input="updateField('generation_prompt', ($event.target as HTMLTextAreaElement).value)"
+        rows="5"
+        placeholder="Describe what happens in this shot — action, environment, mood, lighting. This is the primary creative prompt."
+        class="field-input field-textarea"
+      ></textarea>
+    </div>
+
+    <div v-if="authStore.isAdvanced" class="field-group">
+      <label class="field-label">Negative Prompt</label>
+      <textarea
+        :value="shot.generation_negative"
+        @input="updateField('generation_negative', ($event.target as HTMLTextAreaElement).value)"
+        rows="2"
+        placeholder="worst quality, low quality, blurry, deformed"
+        class="field-input field-textarea"
+        style="font-size: 11px;"
+      ></textarea>
+    </div>
+
+    <!-- Built Prompt Preview -->
+    <div class="built-prompt-section">
+      <div class="built-prompt-header" @click="toggleBuiltPrompt">
+        <span class="field-label" style="margin-bottom: 0; font-weight: 500; cursor: pointer;">
+          Final Prompt {{ builtPromptExpanded ? '▾' : '▸' }}
+        </span>
+        <span class="source-badge source-badge--auto" style="font-size: 9px;">sent to ComfyUI</span>
+        <button
+          v-if="!builtPromptExpanded"
+          class="btn"
+          style="font-size: 10px; padding: 2px 8px; margin-left: auto;"
+          :disabled="builtPromptLoading"
+          @click.stop="loadBuiltPrompt"
+        >{{ builtPromptLoading ? 'Loading...' : 'Preview' }}</button>
+      </div>
+      <div v-if="builtPromptExpanded && builtPromptData" class="built-prompt-body">
+        <div class="built-prompt-meta">
+          <span class="source-badge" :class="engineBadgeClass">{{ builtPromptData.engine }}</span>
+          <span style="font-size: 10px; color: var(--text-muted);">{{ builtPromptData.prompt_length }} chars</span>
+          <span v-if="builtPromptData.style_anchor" class="source-badge source-badge--auto" style="font-size: 9px;">{{ builtPromptData.style_anchor.split(',')[0] }}</span>
         </div>
-        <div v-if="shot.generation_negative">
-          <span class="state-label" style="display: block; margin-bottom: 2px;">Negative</span>
-          <div style="color: var(--status-error); white-space: pre-wrap; word-break: break-word; opacity: 0.8;">{{ shot.generation_negative }}</div>
+        <div v-if="builtPromptData.character_appearances.length" style="margin-bottom: 6px;">
+          <div v-for="char in builtPromptData.character_appearances" :key="char.name" style="font-size: 10px; margin-bottom: 2px;">
+            <span style="color: var(--accent-primary); font-weight: 500;">{{ char.name }}:</span>
+            <span style="color: var(--text-secondary);"> {{ char.condensed.slice(0, 120) }}{{ char.condensed.length > 120 ? '...' : '' }}</span>
+          </div>
         </div>
+        <div v-if="builtPromptData.scene_context.location" style="font-size: 10px; color: var(--text-secondary); margin-bottom: 4px;">
+          Scene: {{ builtPromptData.scene_context.location }}{{ builtPromptData.scene_context.time_of_day ? ', ' + builtPromptData.scene_context.time_of_day : '' }}{{ builtPromptData.scene_context.mood ? ' (' + builtPromptData.scene_context.mood + ')' : '' }}
+        </div>
+        <textarea
+          :value="builtPromptData.final_prompt"
+          readonly
+          rows="6"
+          class="field-input field-textarea built-prompt-text"
+        ></textarea>
+        <div v-if="builtPromptData.final_negative" style="margin-top: 4px;">
+          <span style="font-size: 10px; color: var(--text-muted); font-weight: 500;">Negative:</span>
+          <div style="font-size: 10px; color: var(--text-secondary); margin-top: 2px;">{{ builtPromptData.final_negative }}</div>
+        </div>
+      </div>
+      <div v-if="builtPromptExpanded && builtPromptError" style="font-size: 11px; color: var(--status-error); margin-top: 4px;">
+        {{ builtPromptError }}
       </div>
     </div>
 
@@ -332,9 +387,11 @@ import { ref, computed, watch } from 'vue'
 import type { BuilderShot, CharacterSceneState } from '@/types'
 import { scenesApi } from '@/api/scenes'
 import { useProjectStore } from '@/stores/project'
+import { useAuthStore } from '@/stores/auth'
 import EchoAssistButton from '../EchoAssistButton.vue'
 
 const projectStore = useProjectStore()
+const authStore = useAuthStore()
 
 const props = defineProps<{
   shot: Partial<BuilderShot> | null
@@ -355,7 +412,6 @@ const shotTypes = ['establishing', 'wide', 'medium', 'close-up', 'extreme_close-
 const cameraAngles = ['eye-level', 'high', 'low', 'dutch', 'pov']
 
 const stateExpanded = ref(false)
-const promptExpanded = ref(false)
 const characterStates = ref<CharacterSceneState[]>([])
 
 const synthBusy = ref(false)
@@ -363,6 +419,50 @@ const dialogueAudioUrl = ref<string | null>(null)
 const synthEngine = ref<string | null>(null)
 const synthDuration = ref<number | null>(null)
 const audioPlayer = ref<HTMLAudioElement | null>(null)
+
+// Built prompt preview
+const builtPromptExpanded = ref(false)
+const builtPromptLoading = ref(false)
+const builtPromptError = ref<string | null>(null)
+const builtPromptData = ref<{
+  final_prompt: string; final_negative: string; engine: string;
+  prompt_length: number; style_anchor: string | null;
+  scene_context: { location: string | null; time_of_day: string | null; mood: string | null; description: string | null };
+  character_appearances: Array<{ name: string; condensed: string }>;
+  motion_prompt: string | null; generation_prompt: string | null;
+} | null>(null)
+
+const engineBadgeClass = computed(() => {
+  const eng = builtPromptData.value?.engine || ''
+  if (eng.startsWith('framepack')) return 'source-badge--good'
+  if (eng.startsWith('wan22')) return 'source-badge--auto'
+  if (eng === 'wan') return 'source-badge--ok'
+  return 'source-badge--manual'
+})
+
+async function loadBuiltPrompt() {
+  const shotAny = props.shot as any
+  if (!shotAny?.id || !shotAny?.scene_id) return
+  builtPromptLoading.value = true
+  builtPromptError.value = null
+  try {
+    builtPromptData.value = await scenesApi.getBuiltPrompt(shotAny.scene_id, shotAny.id)
+    builtPromptExpanded.value = true
+  } catch (e: any) {
+    builtPromptError.value = e.message || 'Failed to load prompt preview'
+    builtPromptExpanded.value = true
+  } finally {
+    builtPromptLoading.value = false
+  }
+}
+
+function toggleBuiltPrompt() {
+  if (!builtPromptExpanded.value && !builtPromptData.value) {
+    loadBuiltPrompt()
+  } else {
+    builtPromptExpanded.value = !builtPromptExpanded.value
+  }
+}
 
 async function synthesizeAndPlay() {
   const shotId = (props.shot as any)?.id
@@ -384,13 +484,16 @@ async function synthesizeAndPlay() {
   }
 }
 
-// Reset audio and fetch character states when shot changes
+// Reset audio, built prompt, and fetch character states when shot changes
 watch(() => (props.shot as any)?.id, async () => {
   dialogueAudioUrl.value = null
   synthEngine.value = null
   synthDuration.value = null
   characterStates.value = []
   stateExpanded.value = false
+  builtPromptExpanded.value = false
+  builtPromptData.value = null
+  builtPromptError.value = null
 
   // Fetch narrative states for this shot's scene
   const shotAny = props.shot as any
@@ -409,6 +512,26 @@ watch(() => (props.shot as any)?.id, async () => {
       // NSM not available — silently skip
     }
   }
+})
+
+const engineHint = computed(() => {
+  const engine = props.shot?.video_engine || 'framepack'
+  const hints: Record<string, string> = {
+    framepack: 'I2V — needs source image. Best for solo characters with LoRA.',
+    framepack_f1: 'Faster FramePack variant. Slightly lower quality.',
+    wan: 'Text-to-video — no source image needed. Best for multi-character and establishing shots.',
+    wan22: 'Wan 2.2 5B — faster than 2.1, good for T2V and I2V.',
+    wan22_14b: 'Wan 2.2 14B — highest quality I2V, needs source image. Uses lightx2v (4 steps).',
+    ltx: 'LTX-Video — supports LoRA. Experimental.',
+  }
+  return hints[engine] || ''
+})
+
+const stepsDefault = computed(() => {
+  const engine = props.shot?.video_engine || 'framepack'
+  if (engine === 'wan' || engine === 'wan22') return 20
+  if (engine === 'wan22_14b') return 4
+  return 25
 })
 
 const motionPresets = ref<string[]>([])
@@ -568,6 +691,32 @@ function updateField(field: string, value: unknown) {
 .state-value {
   color: var(--text-primary);
   word-break: break-word;
+}
+.built-prompt-section {
+  border-top: 1px solid var(--border-primary);
+  padding-top: 8px;
+  margin-top: 8px;
+}
+.built-prompt-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.built-prompt-body {
+  margin-top: 6px;
+}
+.built-prompt-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.built-prompt-text {
+  font-size: 11px !important;
+  background: rgba(122, 162, 247, 0.04) !important;
+  color: var(--text-secondary) !important;
+  cursor: default;
 }
 .dialogue-section {
   border-top: 2px solid var(--accent-primary);

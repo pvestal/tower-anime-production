@@ -1,5 +1,5 @@
 <template>
-  <div>
+  <div class="script-tab-root">
     <!-- Project carousel (shared across sub-tabs) -->
     <div class="project-carousel">
       <button
@@ -183,6 +183,13 @@ function scrollCarousel(dir: number) {
   background: rgba(122, 162, 247, 0.2);
   color: var(--accent-primary);
   font-weight: 600;
+}
+
+/* --- Layout --- */
+.script-tab-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
 }
 
 /* --- Sub-tabs --- */
