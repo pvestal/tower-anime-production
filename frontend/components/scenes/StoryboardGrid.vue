@@ -10,6 +10,11 @@
         class="btn btn-sm"
         @click="emit('batch-regen', [...selectedIndices])"
       >Regen selected ({{ selectedIndices.size }})</button>
+      <button
+        class="btn btn-sm btn-keyframe"
+        :disabled="keyframeBlitzBusy"
+        @click="emit('keyframe-blitz')"
+      >{{ keyframeBlitzBusy ? 'Keyframing...' : 'Keyframe All' }}</button>
       <button class="btn btn-sm" @click="emit('add-shot')">+ Shot</button>
     </div>
 
@@ -70,12 +75,14 @@ const props = defineProps<{
   shots: Partial<BuilderShot>[]
   selectedShotIdx: number
   sourceImageUrl: (path: string) => string
+  keyframeBlitzBusy?: boolean
 }>()
 
 const emit = defineEmits<{
   'select-shot': [idx: number]
   'add-shot': []
   'batch-regen': [indices: number[]]
+  'keyframe-blitz': []
 }>()
 
 const selectedIndices = ref(new Set<number>())
@@ -150,6 +157,17 @@ function statusClass(status: string): string {
 .btn-sm {
   font-size: 11px;
   padding: 4px 10px;
+}
+
+.btn-keyframe {
+  background: rgba(122, 162, 247, 0.15);
+  color: var(--accent-primary, #7aa2f7);
+  border: 1px solid rgba(122, 162, 247, 0.3);
+}
+
+.btn-keyframe:disabled {
+  opacity: 0.5;
+  cursor: wait;
 }
 
 .storyboard-grid {

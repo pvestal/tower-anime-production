@@ -12,6 +12,24 @@
       </select>
     </div>
 
+    <!-- Generation Mode Toggle -->
+    <div v-if="store.selectedProjectId" class="sidebar-section mode-toggle-section">
+      <div class="mode-toggle">
+        <button
+          class="mode-btn"
+          :class="{ active: generationMode === 'autopilot' }"
+          @click="setMode('autopilot')"
+          title="AI enriches shots, enforces variety, consults advisor"
+        >Autopilot</button>
+        <button
+          class="mode-btn"
+          :class="{ active: generationMode === 'direct' }"
+          @click="setMode('direct')"
+          title="You steer, AI suggests on HUD only"
+        >Direct</button>
+      </div>
+    </div>
+
     <!-- Actions -->
     <div v-if="store.selectedProjectId" class="sidebar-section" style="padding: 8px 12px;">
       <button class="btn btn-primary btn-sm" style="width: 100%;" @click="store.openNewScene">
@@ -67,14 +85,39 @@
 </template>
 
 <script setup lang="ts">
+import { ref, watch } from 'vue'
 import { useSceneEditorStore } from '@/stores/sceneEditor'
 
 const store = useSceneEditorStore()
+const generationMode = ref<'autopilot' | 'direct'>('autopilot')
 
 function onProjectChange(e: Event) {
   const val = Number((e.target as HTMLSelectElement).value)
   store.selectedProjectId = val
 }
+
+async function setMode(mode: 'autopilot' | 'direct') {
+  generationMode.value = mode
+  // Persist to backend
+  if (store.selectedProjectId) {
+    try {
+      await fetch(`/anime-studio/api/projects/${store.selectedProjectId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ generation_mode: mode }),
+      })
+    } catch {
+      // Non-critical
+    }
+  }
+}
+
+// Load mode from scene data when project changes
+watch(() => store.editScene, (scene) => {
+  if (scene?.generation_mode) {
+    generationMode.value = scene.generation_mode as 'autopilot' | 'direct'
+  }
+}, { immediate: true })
 
 function statusClass(status: string) {
   if (status === 'completed') return 'status-success'
@@ -114,6 +157,43 @@ function statusClass(status: string) {
 
 .sidebar-select:focus {
   background: var(--bg-hover);
+}
+
+.mode-toggle-section {
+  padding: 6px 12px;
+}
+
+.mode-toggle {
+  display: flex;
+  border: 1px solid var(--border-primary);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.mode-btn {
+  flex: 1;
+  padding: 5px 0;
+  font-size: 11px;
+  font-family: var(--font-primary);
+  border: none;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 150ms, color 150ms;
+}
+
+.mode-btn:first-child {
+  border-right: 1px solid var(--border-primary);
+}
+
+.mode-btn:hover {
+  background: var(--bg-hover);
+}
+
+.mode-btn.active {
+  background: rgba(122, 162, 247, 0.15);
+  color: var(--accent-primary);
+  font-weight: 500;
 }
 
 .btn-sm {

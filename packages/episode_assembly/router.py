@@ -4,10 +4,11 @@ import logging
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 
 from packages.core.db import connect_direct
+from packages.core.auth import get_user_projects
 from packages.core.events import event_bus, EPISODE_UPDATED
 from packages.core.models import (
     EpisodeCreateRequest, EpisodeUpdateRequest,
@@ -114,13 +115,20 @@ async def _apply_episode_music(
 
 
 @router.get("/episodes")
-async def list_episodes(project_id: int):
+async def list_episodes(project_id: int, allowed_projects: list[int] = Depends(get_user_projects)):
     """List episodes for a project."""
+    if project_id not in allowed_projects:
+        raise HTTPException(status_code=403, detail="Access denied to this project")
     conn = await connect_direct()
     try:
         rows = await conn.fetch("""
             SELECT e.*, p.name as project_name,
-                   (SELECT COUNT(*) FROM episode_scenes es WHERE es.episode_id = e.id) as scene_count
+                   (SELECT COUNT(*) FROM episode_scenes es WHERE es.episode_id = e.id) as scene_count,
+                   (SELECT sh.first_frame_path FROM shots sh
+                    JOIN scenes sc ON sh.scene_id = sc.id
+                    JOIN episode_scenes es ON es.scene_id = sc.id
+                    WHERE es.episode_id = e.id AND sh.first_frame_path IS NOT NULL
+                    ORDER BY es.position LIMIT 1) as cover_frame_path
             FROM episodes e
             JOIN projects p ON e.project_id = p.id
             WHERE e.project_id = $1
@@ -140,6 +148,7 @@ async def list_episodes(project_id: int):
                 "thumbnail_path": r["thumbnail_path"],
                 "actual_duration_seconds": r["actual_duration_seconds"],
                 "scene_count": r["scene_count"],
+                "cover_frame_path": r["cover_frame_path"],
                 "created_at": r["created_at"].isoformat() if r["created_at"] else None,
             }
             for r in rows
@@ -148,9 +157,37 @@ async def list_episodes(project_id: int):
         await conn.close()
 
 
+@router.get("/episodes/{episode_id}/cover")
+async def get_episode_cover(episode_id: str, allowed_projects: list[int] = Depends(get_user_projects)):
+    """Serve the episode cover image (first shot frame or thumbnail)."""
+    conn = await connect_direct()
+    try:
+        row = await conn.fetchrow("""
+            SELECT e.project_id, e.thumbnail_path,
+                   (SELECT sh.first_frame_path FROM shots sh
+                    JOIN scenes sc ON sh.scene_id = sc.id
+                    JOIN episode_scenes es ON es.scene_id = sc.id
+                    WHERE es.episode_id = e.id AND sh.first_frame_path IS NOT NULL
+                    ORDER BY es.position LIMIT 1) as cover_frame_path
+            FROM episodes e WHERE e.id = $1
+        """, uuid.UUID(episode_id))
+        if not row:
+            raise HTTPException(status_code=404, detail="Episode not found")
+        if row["project_id"] not in allowed_projects:
+            raise HTTPException(status_code=403, detail="Access denied")
+        img_path = row["thumbnail_path"] or row["cover_frame_path"]
+        if not img_path or not Path(img_path).exists():
+            raise HTTPException(status_code=404, detail="No cover image available")
+        return FileResponse(img_path, media_type="image/png")
+    finally:
+        await conn.close()
+
+
 @router.post("/episodes")
-async def create_episode(body: EpisodeCreateRequest):
+async def create_episode(body: EpisodeCreateRequest, allowed_projects: list[int] = Depends(get_user_projects)):
     """Create a new episode."""
+    if body.project_id not in allowed_projects:
+        raise HTTPException(status_code=403, detail="Access denied to this project")
     conn = await connect_direct()
     try:
         row = await conn.fetchrow("""

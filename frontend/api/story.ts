@@ -6,7 +6,6 @@ import type {
   Character,
   CharacterCreate,
   CharacterUpdate,
-  AppearanceData,
   Project,
   ProjectCreate,
   ProjectUpdate,

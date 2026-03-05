@@ -334,6 +334,10 @@ async def ingest_local_video(req: LocalVideoIngestRequest):
     if not project_slugs:
         raise HTTPException(status_code=404, detail=f"No characters found for project '{req.project_name}'")
 
+    # Validate target_slug if provided
+    if req.target_slug and req.target_slug not in char_map:
+        raise HTTPException(status_code=404, detail=f"Character '{req.target_slug}' not found")
+
     file_size_mb = round(video_path.stat().st_size / (1024 * 1024), 1)
 
     tmpdir = tempfile.mkdtemp(prefix="lora_local_vid_")
@@ -348,16 +352,23 @@ async def ingest_local_video(req: LocalVideoIngestRequest):
 
         for i, frame in enumerate(staged_frames):
             _ingest_progress["local-video"] = {
-                "status": "classifying",
+                "status": "saving" if req.target_slug else "classifying",
                 "project": req.project_name,
                 "frame": i + 1,
                 "total": len(staged_frames),
                 "matched_so_far": dict(per_char),
             }
-            matched, description = await _classify_image(
-                frame, allowed_slugs=project_slugs,
-                project_name=req.project_name,
-            )
+
+            if req.target_slug:
+                # Direct assignment — skip classification entirely
+                matched = [req.target_slug]
+                description = f"direct_assign (target_slug={req.target_slug})"
+            else:
+                matched, description = await _classify_image(
+                    frame, allowed_slugs=project_slugs,
+                    project_name=req.project_name,
+                )
+
             if not matched:
                 saved = await asyncio.to_thread(
                     _save_unclassified_frame, frame,
@@ -397,6 +408,7 @@ async def ingest_local_video(req: LocalVideoIngestRequest):
             "frames_duplicate": duplicates,
             "per_character": per_char,
             "project": req.project_name,
+            "target_slug": req.target_slug,
             "file_size_mb": file_size_mb,
             "status": "pending_approval",
         }

@@ -454,6 +454,12 @@ export const useSceneEditorStore = defineStore('sceneEditor', () => {
   }
 
   function sourceImageUrl(path: string): string {
+    // Absolute path from ComfyUI output (keyframe images)
+    if (path.startsWith('/opt/ComfyUI/output/') || path.startsWith('/opt/comfyui/output/')) {
+      const filename = path.split('/').pop() || ''
+      return api.galleryImageUrl(filename)
+    }
+    // Relative dataset path (slug/images/filename)
     const parts = path.split('/')
     if (parts.length >= 3) {
       return api.imageUrl(parts[0], parts[parts.length - 1])
@@ -484,6 +490,35 @@ export const useSceneEditorStore = defineStore('sceneEditor', () => {
       console.error('Generation failed:', e)
     } finally {
       generating.value = false
+    }
+  }
+
+  const keyframeBlitzBusy = ref(false)
+  const keyframeBlitzProgress = ref('')
+
+  async function runKeyframeBlitz() {
+    if (!editSceneId.value) {
+      await saveScene()
+      if (!editSceneId.value) return
+    }
+    keyframeBlitzBusy.value = true
+    keyframeBlitzProgress.value = 'Starting keyframe blitz...'
+    try {
+      const result = await api.keyframeBlitz(editSceneId.value)
+      keyframeBlitzProgress.value = `Done: ${result.generated} generated, ${result.skipped} skipped, ${result.failed} failed`
+      // Reload shots to pick up new source_image_path values
+      await loadScenes()
+      if (editSceneId.value) {
+        const scene = scenes.value.find(s => s.id === editSceneId.value)
+        if (scene) {
+          await openEditor(scene)
+        }
+      }
+    } catch (e) {
+      console.error('Keyframe blitz failed:', e)
+      keyframeBlitzProgress.value = `Failed: ${e}`
+    } finally {
+      keyframeBlitzBusy.value = false
     }
   }
 
@@ -659,6 +694,9 @@ export const useSceneEditorStore = defineStore('sceneEditor', () => {
     sourceImageUrl,
     confirmGenerate,
     startGeneration,
+    keyframeBlitzBusy,
+    keyframeBlitzProgress,
+    runKeyframeBlitz,
     generateFromStory,
     generateTrainingFromScenes,
     startMonitorPolling,

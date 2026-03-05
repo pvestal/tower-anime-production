@@ -61,10 +61,11 @@ class TestCopyToDataset:
         images_dir = dataset_base / "luigi" / "images"
         assert (images_dir / copied_name).exists()
 
-        # Caption .txt written
+        # Caption .txt written — uses full_prompt from job_params if present,
+        # falls back to design_prompt
         txt_path = images_dir / copied_name.replace(".png", ".txt")
         assert txt_path.exists()
-        assert txt_path.read_text() == "tall thin man in green cap"
+        assert txt_path.read_text() == "tall thin man in green cap"  # no full_prompt in job_params
 
         # Metadata .meta.json written
         meta_path = images_dir / copied_name.replace(".png", ".meta.json")
@@ -77,8 +78,8 @@ class TestCopyToDataset:
         assert meta["character_name"] == "Luigi"
         assert meta["source"] == "generate_batch"
 
-        # Source file should be cleaned up
-        assert not src_file.exists()
+        # Source file is kept in ComfyUI output (shown in gallery UI)
+        assert src_file.exists()
 
     def test_empty_filenames_returns_empty(self, tmp_path, monkeypatch):
         """Empty filenames list returns empty list without creating files."""
@@ -444,7 +445,7 @@ class TestGenerateBatch:
         with p["char_map"], p["submit"], p["poll"], p["copy"], \
              p["register"], p["log_gen"], p["recommend"], \
              p["feedback"] as mock_feedback, \
-             p["event_bus"] as mock_bus, p["build_workflow"]:
+             p["event_bus"] as mock_bus, p["build_workflow"] as mock_build:
             mock_bus.emit = AsyncMock()
 
             results = await generate_batch(
@@ -454,8 +455,9 @@ class TestGenerateBatch:
             )
 
         mock_feedback.assert_called_once_with("luigi")
-        # The feedback negatives should appear in the negative_prompt
-        assert "bad hands, extra fingers" in results[0]["negative_prompt"]
+        # The feedback negatives should appear in the workflow's negative_prompt
+        _, kwargs = mock_build.call_args
+        assert "bad hands, extra fingers" in kwargs["negative_prompt"]
 
     async def test_include_feedback_negatives_false_skips(self, sample_char_map):
         """With include_feedback_negatives=False, get_feedback_negatives is not called."""
@@ -488,7 +490,7 @@ class TestGenerateBatch:
         with p["char_map"], p["submit"], p["poll"], p["copy"], \
              p["register"], p["log_gen"], \
              p["recommend"] as mock_recommend, p["feedback"], \
-             p["event_bus"] as mock_bus, p["build_workflow"]:
+             p["event_bus"] as mock_bus, p["build_workflow"] as mock_build:
             mock_bus.emit = AsyncMock()
 
             results = await generate_batch(
@@ -498,8 +500,9 @@ class TestGenerateBatch:
             )
 
         mock_recommend.assert_called_once()
-        # Learned negatives should be in the negative prompt
-        assert "blurry eyes, wrong colors" in results[0]["negative_prompt"]
+        # Learned negatives should be in the workflow's negative prompt
+        _, kwargs = mock_build.call_args
+        assert "blurry eyes, wrong colors" in kwargs["negative_prompt"]
 
     async def test_include_learned_negatives_false_skips_recommend(
         self, sample_char_map
@@ -593,13 +596,15 @@ class TestGenerateBatch:
         p = _make_generate_batch_patches(sample_char_map)
         with p["char_map"], p["submit"], p["poll"], p["copy"], \
              p["register"], p["log_gen"], p["recommend"], p["feedback"], \
-             p["event_bus"] as mock_bus, p["build_workflow"]:
+             p["event_bus"] as mock_bus, p["build_workflow"] as mock_build:
             mock_bus.emit = AsyncMock()
 
             results = await generate_batch(character_slug="bowser", count=1)
 
         assert len(results) == 1
-        neg = results[0]["negative_prompt"]
+        # Character negatives should appear in the workflow's negative_prompt
+        _, kwargs = mock_build.call_args
+        neg = kwargs["negative_prompt"]
         # Bowser's species is "dragon-turtle (NOT human)" + common_errors has "depicted as child"
         assert "human" in neg
         assert "human face" in neg

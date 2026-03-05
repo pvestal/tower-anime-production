@@ -19,7 +19,7 @@ from packages.core.events import event_bus, SHOT_GENERATED
 
 from .framepack import build_framepack_workflow, _submit_comfyui_workflow
 from .ltx_video import build_ltx_workflow, _submit_comfyui_workflow as _submit_ltx_workflow
-from .wan_video import build_wan_t2v_workflow, build_wan22_workflow, _submit_comfyui_workflow as _submit_wan_workflow
+from .wan_video import build_wan_t2v_workflow, build_wan22_workflow, build_wan22_14b_i2v_workflow, _submit_comfyui_workflow as _submit_wan_workflow
 from .image_recommender import recommend_for_scene, batch_read_metadata
 
 # Re-export from sub-modules so existing imports keep working
@@ -236,6 +236,186 @@ def _build_video_negative(style_anchor: str, genre_profile: dict,
     if nsm_negative:
         parts.append(nsm_negative)
     return ", ".join(parts)
+
+
+async def build_shot_prompt_preview(scene_id: str, shot_id: str) -> dict:
+    """Build the final prompt that would be sent to ComfyUI, without generating.
+
+    Returns dict with: final_prompt, final_negative, engine, style_anchor,
+    character_appearances, scene_context, and component breakdown.
+    """
+    conn = await connect_direct()
+    try:
+        scene_uuid = __import__("uuid").UUID(scene_id)
+        shot_uuid = __import__("uuid").UUID(shot_id)
+
+        shot_row = await conn.fetchrow(
+            "SELECT * FROM shots WHERE id = $1 AND scene_id = $2", shot_uuid, scene_uuid
+        )
+        if not shot_row:
+            return {"error": "Shot not found"}
+
+        scene_row = await conn.fetchrow(
+            "SELECT project_id, description, location, time_of_day, mood FROM scenes WHERE id = $1",
+            scene_uuid,
+        )
+        if not scene_row:
+            return {"error": "Scene not found"}
+
+        project_id = scene_row["project_id"]
+        scene_desc = scene_row["description"] or ""
+        scene_location = scene_row["location"] or ""
+        scene_mood = scene_row["mood"] or ""
+        scene_time = scene_row["time_of_day"] or ""
+
+        # Get project genre profile
+        proj_row = await conn.fetchrow(
+            "SELECT genre, content_rating FROM projects WHERE id = $1", project_id
+        )
+        genre_profile = _get_genre_profile(
+            proj_row["genre"] if proj_row else None,
+            proj_row["content_rating"] if proj_row else None,
+        )
+
+        # Get style anchor
+        style_anchor = ""
+        try:
+            style_row = await conn.fetchrow(
+                "SELECT gs.checkpoint_model FROM projects p "
+                "JOIN generation_styles gs ON p.default_style = gs.style_name "
+                "WHERE p.id = $1", project_id,
+            )
+            if style_row:
+                ckpt = (style_row["checkpoint_model"] or "").lower()
+                if "illustrious" in ckpt or "noob" in ckpt:
+                    style_anchor = "anime style, detailed animation, cinematic"
+                elif "cyberrealistic" in ckpt:
+                    style_anchor = "photorealistic, live action film, cinematic lighting"
+                elif "nova_animal" in ckpt or "pony" in ckpt:
+                    style_anchor = "anime style, detailed illustration, cinematic"
+        except Exception:
+            pass
+
+        shot_dict = dict(shot_row)
+        chars = shot_dict.get("characters_present") or []
+        character_slug = chars[0] if len(chars) == 1 else None
+        shot_engine = shot_dict.get("video_engine") or "framepack"
+        motion_prompt = shot_dict["motion_prompt"] or shot_dict.get("generation_prompt") or ""
+
+        # Helper: look up character
+        async def _find_char(slug):
+            return await conn.fetchrow(
+                "SELECT name, design_prompt FROM characters "
+                "WHERE project_id = $2 AND ("
+                "  REGEXP_REPLACE(LOWER(REPLACE(name, ' ', '_')), '[^a-z0-9_-]', '', 'g') = $1 "
+                "  OR REGEXP_REPLACE(LOWER(REPLACE(name, ' ', '_')), '[^a-z0-9_-]', '', 'g') LIKE $1 || '_%'"
+                ")", slug, project_id,
+            )
+
+        # Build prompt per engine — mirrors generate_scene logic
+        current_prompt = motion_prompt
+        char_appearances = []
+
+        if character_slug and shot_engine in ("framepack", "framepack_f1"):
+            try:
+                char_row = await _find_char(character_slug)
+                if char_row and char_row["design_prompt"]:
+                    appearance = _condense_for_video(char_row["design_prompt"], genre_profile, shot_engine)
+                    char_appearances.append({"name": char_row["name"], "condensed": appearance})
+                    fp_parts = []
+                    if style_anchor:
+                        fp_parts.append(style_anchor)
+                    if scene_location:
+                        setting = scene_location
+                        if scene_time:
+                            setting += f", {scene_time}"
+                        fp_parts.append(setting)
+                    if scene_desc:
+                        fp_parts.append(scene_desc)
+                    fp_parts.append(appearance)
+                    if motion_prompt and motion_prompt.lower() != "static":
+                        fp_parts.append(motion_prompt)
+                    fp_parts.append("consistent character appearance, maintain all physical features")
+                    if scene_mood:
+                        fp_parts.append(f"{scene_mood} mood")
+                    current_prompt = ", ".join(fp_parts)
+            except Exception:
+                pass
+        elif shot_engine in ("wan22", "wan22_14b") and chars:
+            try:
+                char_descriptions = []
+                for cslug in chars:
+                    char_row = await _find_char(cslug)
+                    if char_row and char_row["design_prompt"]:
+                        appearance = _condense_for_video(char_row["design_prompt"], genre_profile, shot_engine)
+                        char_descriptions.append(f"{char_row['name']} ({appearance})")
+                        char_appearances.append({"name": char_row["name"], "condensed": appearance})
+                prompt_parts = []
+                if char_descriptions:
+                    prompt_parts.append("; ".join(char_descriptions))
+                if motion_prompt and motion_prompt.lower() != "static":
+                    prompt_parts.append(motion_prompt)
+                if scene_desc and genre_profile.get("include_scene_desc", True):
+                    prompt_parts.append(scene_desc[:200])
+                if scene_location:
+                    setting = scene_location
+                    if scene_time:
+                        setting += f", {scene_time}"
+                    prompt_parts.append(setting)
+                if style_anchor:
+                    prompt_parts.append(style_anchor)
+                if scene_mood:
+                    prompt_parts.append(f"{scene_mood} mood")
+                current_prompt = ". ".join(prompt_parts)
+            except Exception:
+                pass
+        elif shot_engine == "wan" and chars:
+            try:
+                char_descriptions = []
+                for cslug in chars:
+                    char_row = await _find_char(cslug)
+                    if char_row and char_row["design_prompt"]:
+                        appearance = _condense_for_video(char_row["design_prompt"], genre_profile, shot_engine)
+                        char_descriptions.append(f"{char_row['name']} ({appearance})")
+                        char_appearances.append({"name": char_row["name"], "condensed": appearance})
+                prompt_parts = []
+                if motion_prompt and motion_prompt.lower() != "static":
+                    prompt_parts.append(motion_prompt)
+                if char_descriptions:
+                    prompt_parts.append("; ".join(char_descriptions))
+                if scene_desc and genre_profile.get("include_scene_desc", True):
+                    prompt_parts.append(scene_desc[:120])
+                if scene_location:
+                    setting = scene_location
+                    if scene_time:
+                        setting += f", {scene_time}"
+                    prompt_parts.append(setting)
+                if style_anchor:
+                    prompt_parts.append(style_anchor)
+                current_prompt = ". ".join(prompt_parts)
+            except Exception:
+                pass
+
+        current_negative = _build_video_negative(style_anchor, genre_profile)
+
+        return {
+            "final_prompt": current_prompt,
+            "final_negative": current_negative,
+            "engine": shot_engine,
+            "prompt_length": len(current_prompt),
+            "style_anchor": style_anchor or None,
+            "scene_context": {
+                "location": scene_location or None,
+                "time_of_day": scene_time or None,
+                "mood": scene_mood or None,
+                "description": scene_desc[:200] if scene_desc else None,
+            },
+            "character_appearances": char_appearances,
+            "motion_prompt": shot_dict["motion_prompt"] or None,
+            "generation_prompt": shot_dict["generation_prompt"] or None,
+        }
+    finally:
+        await conn.close()
 
 
 # --- Slug resolver: maps short slugs (rina) to dataset dir slugs (rina_suzuki) ---
@@ -544,6 +724,124 @@ async def generate_scene(scene_id: str, auto_approve: bool = False):
         _scene_generation_lock.release()
 
 
+async def keyframe_blitz(conn, scene_id: str, skip_existing: bool = True) -> dict:
+    """Generate keyframe images for all shots in a scene (~18s each).
+
+    Pass 1 of two-pass generation. Enriches shot specs via Ollama, then generates
+    txt2img keyframes with project checkpoint + character LoRA. Skips shots that
+    already have source_image_path when skip_existing=True.
+
+    Returns: {generated: int, skipped: int, failed: int, shots: [...]}
+    """
+    from .composite_image import generate_simple_keyframe
+    from .shot_spec import enrich_shot_spec, get_scene_context, get_recent_shots
+
+    shots = await conn.fetch(
+        "SELECT * FROM shots WHERE scene_id = $1 ORDER BY shot_number", scene_id
+    )
+    if not shots:
+        return {"generated": 0, "skipped": 0, "failed": 0, "shots": []}
+
+    # Get project info + checkpoint model
+    scene_row = await conn.fetchrow("""
+        SELECT s.project_id, s.scene_number,
+               REGEXP_REPLACE(LOWER(REPLACE(p.name, ' ', '_')), '[^a-z0-9_]', '', 'g') as project_slug
+        FROM scenes s
+        LEFT JOIN projects p ON s.project_id = p.id
+        WHERE s.id = $1
+    """, scene_id)
+    project_id = scene_row["project_id"] if scene_row else None
+
+    checkpoint = "waiIllustriousSDXL_v160.safetensors"
+    if project_id:
+        try:
+            style_row = await conn.fetchrow(
+                """SELECT gs.checkpoint_model FROM projects p
+                   JOIN generation_styles gs ON p.default_style = gs.style_name
+                   WHERE p.id = $1""", project_id)
+            if style_row and style_row["checkpoint_model"]:
+                checkpoint = style_row["checkpoint_model"]
+                if not checkpoint.endswith(".safetensors"):
+                    checkpoint += ".safetensors"
+        except Exception:
+            pass
+
+    # Scene context for shot spec enrichment
+    scene_context = await get_scene_context(conn, scene_id)
+
+    generated = 0
+    skipped = 0
+    failed = 0
+    shot_results = []
+
+    for shot in shots:
+        shot_dict = dict(shot)
+        shot_id = str(shot["id"])
+
+        # Skip if already has source image
+        if skip_existing and shot["source_image_path"]:
+            skipped += 1
+            shot_results.append({
+                "shot_id": shot_id, "shot_number": shot["shot_number"],
+                "status": "skipped", "source_image_path": shot["source_image_path"],
+            })
+            continue
+
+        chars = list(shot.get("characters_present") or [])
+        prompt = shot.get("motion_prompt") or shot.get("scene_description") or ""
+
+        # Use generation_prompt from DB as base
+        gen_prompt = shot.get("generation_prompt")
+        if gen_prompt:
+            prompt = gen_prompt
+
+        # Enrich shot spec (pose, camera, emotion) via Ollama
+        try:
+            prev_shots = await get_recent_shots(conn, scene_id, limit=5)
+            enriched = await enrich_shot_spec(conn, shot_dict, scene_context, prev_shots)
+            if enriched and enriched.get("generation_prompt"):
+                prompt = enriched["generation_prompt"]
+        except Exception as e:
+            logger.debug(f"Shot {shot_id}: enrichment failed (continuing): {e}")
+
+        # Generate keyframe
+        try:
+            kf_path = await generate_simple_keyframe(
+                conn, project_id, chars, prompt, checkpoint,
+                shot_type=shot.get("shot_type") or "medium",
+                camera_angle=shot.get("camera_angle") or "eye-level",
+            )
+            if kf_path and kf_path.exists():
+                await conn.execute(
+                    "UPDATE shots SET source_image_path = $2 WHERE id = $1",
+                    shot["id"], str(kf_path),
+                )
+                generated += 1
+                shot_results.append({
+                    "shot_id": shot_id, "shot_number": shot["shot_number"],
+                    "status": "generated", "source_image_path": str(kf_path),
+                })
+                logger.info(f"Keyframe blitz: shot {shot['shot_number']} → {kf_path.name}")
+            else:
+                failed += 1
+                shot_results.append({
+                    "shot_id": shot_id, "shot_number": shot["shot_number"],
+                    "status": "failed", "error": "keyframe returned None",
+                })
+        except Exception as e:
+            failed += 1
+            shot_results.append({
+                "shot_id": shot_id, "shot_number": shot["shot_number"],
+                "status": "failed", "error": str(e),
+            })
+            logger.warning(f"Keyframe blitz: shot {shot['shot_number']} failed: {e}")
+
+    return {
+        "generated": generated, "skipped": skipped, "failed": failed,
+        "total": len(shots), "shots": shot_results,
+    }
+
+
 async def ensure_source_videos(conn, scene_id: str, shots: list) -> int:
     """Auto-assign best source video clips to solo shots from character_clips table.
 
@@ -590,13 +888,13 @@ async def ensure_source_videos(conn, scene_id: str, shots: list) -> int:
 
 
 async def ensure_source_images(conn, scene_id: str, shots: list) -> int:
-    """Auto-assign best source images to shots that have NULL source_image_path.
+    """Auto-assign best source images to solo-character shots with NULL source_image_path.
 
     Uses the image recommender to score and rank approved images per character.
     Assigns images to ALL solo character shots (1 character) regardless of current
     engine — the engine selector runs AFTER this and will pick FramePack when a
-    source image is available. Multi-char shots (>1 character) are skipped since
-    they use Wan T2V (text-to-video) which doesn't need a source image.
+    source image is available. Multi-char shots (>1 character) are handled separately
+    by generate_composite_source() in Step 1.5 of the generation pipeline.
 
     Returns the number of shots that were auto-assigned.
     """
@@ -930,6 +1228,68 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                 scene_id,
             )
 
+        # Step 1.5: Generate composite keyframes for multi-character shots
+        # Without source images, multi-char shots route to Wan T2V (garbage).
+        # With source images, they route to Wan 2.2 14B I2V (quality).
+        multi_char_no_img = [
+            s for s in shots
+            if not s["source_image_path"]
+            and len(s.get("characters_present") or []) >= 2
+        ]
+        if multi_char_no_img:
+            from .composite_image import generate_composite_source, generate_simple_keyframe
+            _ckpt = "waiIllustriousSDXL_v160.safetensors"
+            try:
+                _style_row = await conn.fetchrow(
+                    """SELECT gs.checkpoint_model FROM projects p
+                       JOIN generation_styles gs ON p.default_style = gs.style_name
+                       WHERE p.id = $1""", project_id)
+                if _style_row and _style_row["checkpoint_model"]:
+                    _ckpt = _style_row["checkpoint_model"]
+                    if not _ckpt.endswith(".safetensors"):
+                        _ckpt += ".safetensors"
+            except Exception:
+                pass
+
+            _keyframe_count = 0
+            for _mc_shot in multi_char_no_img:
+                _mc_chars = list(_mc_shot.get("characters_present") or [])
+                _mc_prompt = _mc_shot.get("motion_prompt") or _mc_shot.get("scene_description") or ""
+                _kf_path = None
+                # Simple keyframe first (txt2img + LoRA) — reliable, full scene
+                # Composite (IP-Adapter regional) has left/right split issues
+                try:
+                    _kf_path = await generate_simple_keyframe(
+                        conn, project_id, _mc_chars, _mc_prompt, _ckpt
+                    )
+                except Exception as _e:
+                    logger.debug(f"Shot {_mc_shot['id']}: simple keyframe failed: {_e}")
+                # Fallback: composite (IP-Adapter regional) if simple fails
+                if not _kf_path or not _kf_path.exists():
+                    try:
+                        _kf_path = await generate_composite_source(
+                            conn, project_id, _mc_chars, _mc_prompt, _ckpt
+                        )
+                    except Exception as _e:
+                        logger.warning(f"Shot {_mc_shot['id']}: composite also failed: {_e}")
+
+                if _kf_path and _kf_path.exists():
+                    await conn.execute(
+                        "UPDATE shots SET source_image_path = $2, source_image_auto_assigned = TRUE WHERE id = $1",
+                        _mc_shot["id"], str(_kf_path),
+                    )
+                    _keyframe_count += 1
+                    logger.info(f"Shot {_mc_shot['id']}: keyframe for {_mc_chars[:2]} → {_kf_path.name}")
+                else:
+                    logger.warning(f"Shot {_mc_shot['id']}: all keyframe generation failed for {_mc_chars[:2]}")
+
+            if _keyframe_count:
+                logger.info(f"Scene {scene_id}: generated {_keyframe_count}/{len(multi_char_no_img)} multi-char keyframes")
+                shots = await conn.fetch(
+                    "SELECT * FROM shots WHERE scene_id = $1 ORDER BY shot_number",
+                    scene_id,
+                )
+
         # Step 2: Run engine selector with source image + video info available
         from .engine_selector import select_engine as _pre_select_engine
         _pre_wan_lora = project_video_lora  # From projects.video_lora column (project-scoped)
@@ -1008,12 +1368,23 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                 scene_id, shot_id,
             )
 
+            # Shot spec enrichment: AI-driven pose/camera/emotion before generation
+            try:
+                from .shot_spec import enrich_shot_spec, get_scene_context, get_recent_shots
+                _scene_ctx = await get_scene_context(conn, scene_id)
+                _prev_shots = await get_recent_shots(conn, scene_id, limit=5)
+                await enrich_shot_spec(conn, dict(shot), _scene_ctx, _prev_shots)
+                # Re-fetch shot with enriched fields (shot_dict created below in generation try block)
+                shot = await conn.fetchrow("SELECT * FROM shots WHERE id = $1", shot_id)
+            except Exception as _enrich_err:
+                logger.debug(f"Shot {shot_id}: spec enrichment skipped: {_enrich_err}")
+
             # Single-pass generation — no QC vision review, all shots go to manual review
             try:
                 from .video_qc import check_engine_blacklist
                 from .framepack import build_framepack_workflow, _submit_comfyui_workflow
                 from .ltx_video import build_ltx_workflow, _submit_comfyui_workflow as _submit_ltx_workflow
-                from .wan_video import build_wan_t2v_workflow, build_wan22_workflow, _submit_comfyui_workflow as _submit_wan_workflow
+                from .wan_video import build_wan_t2v_workflow, build_wan22_workflow, build_wan22_14b_i2v_workflow, _submit_comfyui_workflow as _submit_wan_workflow
                 import time as _time_inner
 
                 shot_dict = dict(shot)
@@ -1147,8 +1518,8 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                             logger.info(f"Shot {shot_id}: FramePack prompt ({len(current_prompt)} chars): {current_prompt[:120]}...")
                     except Exception as e:
                         logger.warning(f"Shot {shot_id}: design_prompt lookup failed: {e}")
-                elif shot_engine == "wan22" and chars:
-                    # Wan 2.2 5B: richer prompt capacity than 1.3B.
+                elif shot_engine in ("wan22", "wan22_14b") and chars:
+                    # Wan 2.2 5B/14B: richer prompt capacity than 1.3B.
                     # Character → action → scene context → style (5B handles longer prompts well).
                     try:
                         char_descriptions = []
@@ -1226,7 +1597,7 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                     if _state_ctx.get("prompt_additions"):
                         current_prompt = f"{current_prompt}, {_state_ctx['prompt_additions']}"
                         logger.info(f"Shot {shot_id}: NSM state additions: {_state_ctx['prompt_additions'][:80]}")
-                elif _shot_nsm and shot_engine == "wan" and chars:
+                elif _shot_nsm and shot_engine in ("wan", "wan22_14b") and chars:
                     # Multi-character: use structured state prompt builder
                     try:
                         from packages.narrative_state.continuity import build_multi_character_state_prompt
@@ -1261,7 +1632,9 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                 if _shot_nsm and character_slug and character_slug in _shot_nsm:
                     _nsm_neg = _shot_nsm[character_slug].get("negative_additions", "")
                 current_negative = _build_video_negative(style_anchor, genre_profile, _nsm_neg)
-                shot_steps = shot_dict.get("steps") or 30
+                # Engine-tuned defaults: Wan converges by 20, FramePack needs 25, 14B lightx2v uses 4
+                _default_steps = 4 if shot_engine == "wan22_14b" else (20 if shot_engine in ("wan", "wan22") else 25)
+                shot_steps = shot_dict.get("steps") or _default_steps
                 shot_guidance = shot_dict.get("guidance_scale") or 6.0
                 shot_seconds = float(shot_dict.get("duration_seconds") or 3)
                 shot_use_f1 = shot_dict.get("use_f1") or False
@@ -1287,7 +1660,7 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                     try:
                         from .composite_image import generate_composite_source
                         # Get checkpoint from project's generation style
-                        ckpt = "realistic_vision_v51.safetensors"
+                        ckpt = "waiIllustriousSDXL_v160.safetensors"
                         try:
                             style_row = await conn.fetchrow(
                                 """SELECT gs.checkpoint_model FROM projects p
@@ -1536,6 +1909,47 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                         ref_image=_wan22_ref,
                     )
                     comfyui_prompt_id = _submit_wan_workflow(workflow)
+                elif shot_engine == "wan22_14b":
+                    # Wan 2.2 14B I2V — highest quality, requires source image
+                    if not image_filename:
+                        logger.error(f"Shot {shot_id}: wan22_14b requires a source image but none available")
+                        await conn.execute(
+                            "UPDATE shots SET status = 'failed', error_message = $2 WHERE id = $1",
+                            shot_id, "wan22_14b requires a source image (I2V only)",
+                        )
+                        continue
+                    fps = 16
+                    num_frames = max(9, int(shot_seconds * fps) + 1)
+                    import hashlib as _hashlib
+                    if not shot_seed:
+                        _scene_seed_bytes = _hashlib.sha256(str(scene_id).encode()).digest()
+                        _scene_base_seed = int.from_bytes(_scene_seed_bytes[:8], "big") % (2**63)
+                        shot_seed = _scene_base_seed + (shot_dict.get("shot_number", 0) or 0)
+                    wan_w, wan_h = 480, 720
+                    if _project_width and _project_height and _project_width > _project_height:
+                        wan_w, wan_h = 720, 480
+                    # Get motion LoRA from engine selector
+                    _14b_motion_lora = engine_sel.motion_loras[0] if engine_sel.motion_loras else None
+                    _14b_motion_str = 0.8
+                    logger.info(
+                        f"Shot {shot_id}: Wan22-14B I2V dims={wan_w}x{wan_h} "
+                        f"ref_image={image_filename} motion_lora={_14b_motion_lora} "
+                        f"seed={shot_seed} steps={shot_steps} frames={num_frames}"
+                    )
+                    workflow, prefix = build_wan22_14b_i2v_workflow(
+                        prompt_text=current_prompt,
+                        ref_image=image_filename,
+                        width=wan_w, height=wan_h,
+                        num_frames=num_frames, fps=fps,
+                        total_steps=shot_steps,
+                        seed=shot_seed,
+                        negative_text=current_negative,
+                        output_prefix=_file_prefix,
+                        use_lightx2v=True,
+                        motion_lora=_14b_motion_lora,
+                        motion_lora_strength=_14b_motion_str,
+                    )
+                    comfyui_prompt_id = _submit_wan_workflow(workflow)
                 elif shot_engine == "wan":
                     fps = 16
                     num_frames = max(9, int(shot_seconds * fps) + 1)
@@ -1648,7 +2062,7 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                 # Wan gets upscale (480→960), FramePack gets interpolation + color only
                 try:
                     from .video_postprocess import postprocess_wan_video
-                    do_upscale = shot_engine in ("wan", "wan22")  # Wan is 480p, needs upscale
+                    do_upscale = shot_engine in ("wan", "wan22", "wan22_14b")  # Wan is 480p, needs upscale
                     processed = await postprocess_wan_video(
                         video_path,
                         upscale=do_upscale,

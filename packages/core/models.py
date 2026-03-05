@@ -253,6 +253,8 @@ class ShotUpdateRequest(BaseModel):
     shot_type: Optional[str] = None
     camera_angle: Optional[str] = None
     duration_seconds: Optional[float] = None
+    generation_prompt: Optional[str] = None
+    generation_negative: Optional[str] = None
     motion_prompt: Optional[str] = None
     characters_present: Optional[List[str]] = None
     seed: Optional[int] = None

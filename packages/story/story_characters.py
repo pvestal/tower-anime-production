@@ -8,10 +8,11 @@ import json, logging, re, urllib.request as _ur
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from packages.core.config import BASE_PATH, OLLAMA_URL
 from packages.core.db import get_char_project_map, invalidate_char_cache, connect_direct
+from packages.core.auth import get_user_projects
 from packages.core.models import CharacterCreate
 
 logger = logging.getLogger(__name__)
@@ -64,9 +65,11 @@ _NARRATION_PROMPT = (
 
 
 @router.get("/characters")
-async def get_characters():
+async def get_characters(allowed_projects: list[int] = Depends(get_user_projects)):
     """Get list of characters with datasets, including project info from DB."""
     char_map = await get_char_project_map()
+    # Filter characters to allowed projects
+    char_map = {k: v for k, v in char_map.items() if v.get("project_id") in allowed_projects}
 
     # Fetch per-character generation history checkpoints
     gen_checkpoints: dict[str, list[dict]] = {}

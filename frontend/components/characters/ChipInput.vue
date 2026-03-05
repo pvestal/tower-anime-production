@@ -6,7 +6,6 @@
         <button class="chip-remove" @click="remove(i)">&times;</button>
       </span>
       <input
-        ref="inputEl"
         v-model="inputText"
         class="chip-text-input"
         :placeholder="modelValue.length ? '' : placeholder"
@@ -33,7 +32,7 @@ const emit = defineEmits<{
 }>()
 
 const inputText = ref('')
-const inputEl = ref<HTMLInputElement>() // eslint-disable-line @typescript-eslint/no-unused-vars -- template ref
+
 
 function add() {
   const val = inputText.value.trim()

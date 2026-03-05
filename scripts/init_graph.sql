@@ -226,3 +226,74 @@ DO $$ BEGIN
     PERFORM create_elabel('anime_graph', 'USES_CHECKPOINT');
   END IF;
 END $$;
+
+
+-- ============================================================
+-- Phase 1a: Video Generation Tracking
+-- ============================================================
+
+-- Generation vertex — one per video generation attempt
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM ag_catalog.ag_label
+    WHERE graph = (SELECT graphid FROM ag_catalog.ag_graph WHERE name = 'anime_graph')
+      AND name = 'Generation'
+  ) THEN
+    PERFORM create_vlabel('anime_graph', 'Generation');
+  END IF;
+END $$;
+
+-- Evaluation vertex — scoring result for a generation
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM ag_catalog.ag_label
+    WHERE graph = (SELECT graphid FROM ag_catalog.ag_graph WHERE name = 'anime_graph')
+      AND name = 'Evaluation'
+  ) THEN
+    PERFORM create_vlabel('anime_graph', 'Evaluation');
+  END IF;
+END $$;
+
+-- FOR_SHOT edge (Generation → Shot)
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM ag_catalog.ag_label
+    WHERE graph = (SELECT graphid FROM ag_catalog.ag_graph WHERE name = 'anime_graph')
+      AND name = 'FOR_SHOT'
+  ) THEN
+    PERFORM create_elabel('anime_graph', 'FOR_SHOT');
+  END IF;
+END $$;
+
+-- EVALUATED_AS edge (Generation → Evaluation)
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM ag_catalog.ag_label
+    WHERE graph = (SELECT graphid FROM ag_catalog.ag_graph WHERE name = 'anime_graph')
+      AND name = 'EVALUATED_AS'
+  ) THEN
+    PERFORM create_elabel('anime_graph', 'EVALUATED_AS');
+  END IF;
+END $$;
+
+-- IN_PROJECT edge (Generation → Project, denormalized convenience)
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM ag_catalog.ag_label
+    WHERE graph = (SELECT graphid FROM ag_catalog.ag_graph WHERE name = 'anime_graph')
+      AND name = 'IN_PROJECT'
+  ) THEN
+    PERFORM create_elabel('anime_graph', 'IN_PROJECT');
+  END IF;
+END $$;
+
+-- USED_LORA edge (Generation → LoRA) — reuses existing LoRA vertex label
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM ag_catalog.ag_label
+    WHERE graph = (SELECT graphid FROM ag_catalog.ag_graph WHERE name = 'anime_graph')
+      AND name = 'USED_LORA'
+  ) THEN
+    PERFORM create_elabel('anime_graph', 'USED_LORA');
+  END IF;
+END $$;

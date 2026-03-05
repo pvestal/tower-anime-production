@@ -58,6 +58,10 @@ export const episodesApi = {
     return `${EPISODES_BASE}/episodes/${episodeId}/video`
   },
 
+  episodeCoverUrl(episodeId: string): string {
+    return `${EPISODES_BASE}/episodes/${episodeId}/cover`
+  },
+
   async publishEpisode(episodeId: string, season: number = 1): Promise<{
     message: string; published_path: string; jellyfin_scan: string
   }> {

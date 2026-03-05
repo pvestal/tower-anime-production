@@ -4,7 +4,9 @@
       <h2>Interactive Visual Novel</h2>
       <p class="launcher-desc">
         Choose a project and step into an AI-driven branching narrative.
-        Every playthrough is unique — your choices shape the story.
+        <strong>AI Director</strong> lets you converse with the AI, set preferences,
+        and shape the story before and during gameplay. <strong>Classic</strong> mode
+        plays as a traditional visual novel.
       </p>
     </div>
 
@@ -46,13 +48,28 @@
         </select>
       </div>
 
-      <button
-        class="start-btn"
-        :disabled="!selectedProjectId || starting"
-        @click="$emit('start', selectedProjectId)"
-      >
-        {{ starting ? 'Starting...' : 'Begin Story' }}
-      </button>
+      <div class="start-buttons">
+        <button
+          class="start-btn director-btn"
+          :disabled="!selectedProjectId || starting"
+          @click="$emit('start-director', selectedProjectId)"
+        >
+          {{ starting ? 'Starting...' : 'AI Director Mode' }}
+        </button>
+        <button
+          class="start-btn classic-btn"
+          :disabled="!selectedProjectId || starting"
+          @click="$emit('start', selectedProjectId)"
+        >
+          Classic Visual Novel
+        </button>
+        <button
+          class="start-btn character-btn"
+          @click="$emit('open-characters')"
+        >
+          &#x2606; Character Viewer
+        </button>
+      </div>
     </div>
   </div>
 </template>
@@ -70,7 +87,9 @@ defineProps<{
 
 defineEmits<{
   start: [projectId: number]
+  'start-director': [projectId: number]
   resume: [sessionId: string]
+  'open-characters': []
 }>()
 
 const selectedProjectId = ref(0)
@@ -213,18 +232,41 @@ async function deleteSession(sessionId: string) {
   font-family: var(--font-primary);
 }
 
+.start-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .start-btn {
   width: 100%;
   padding: 14px;
-  background: var(--accent-primary);
   color: #fff;
   border: none;
   border-radius: 8px;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
   cursor: pointer;
   font-family: var(--font-primary);
   transition: opacity 0.2s;
+}
+
+.director-btn {
+  background: var(--accent-primary);
+}
+
+.classic-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border-primary);
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.character-btn {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px dashed rgba(255, 255, 255, 0.15);
+  color: var(--text-muted);
+  font-weight: 500;
 }
 
 .start-btn:hover:not(:disabled) {

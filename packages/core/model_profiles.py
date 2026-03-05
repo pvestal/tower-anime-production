@@ -26,6 +26,76 @@ logger = logging.getLogger(__name__)
 # Order matters: first match wins. Put specific names before generic ones.
 
 MODEL_PROFILES: dict[str, dict] = {
+    "waiIllustrious": {
+        "architecture": "sdxl",
+        "prompt_format": "booru_tags",
+        "quality_prefix": "masterpiece, best quality, amazing quality",
+        "quality_negative": (
+            "bad quality, worst quality, worst detail, sketch, censor"
+        ),
+        "strip_style_tags": [
+            "Arcane painterly style",
+            "neon-noir atmosphere",
+            "neon-noir lighting",
+            "gritty neon-noir atmosphere",
+            "dramatic shadows",
+            "dramatic chiaroscuro",
+            "dramatic chiaroscuro lighting",
+            "dramatic lighting",
+            "bold shadows",
+            "dark cyberpunk alley setting",
+            "cyberpunk alley",
+            "dark alley background",
+            "neon-lit background",
+            "cyberpunk city background",
+            "muted gritty tones",
+        ],
+        "solo_suffix": "solo",
+        "background_suffix": "simple background",
+        "ip_adapter_model": None,
+        "vision_style_hint": "anime-style illustration",
+        "style_label": "anime/illustration (WAI Illustrious SDXL v16)",
+        "default_cfg": 5.0,
+        "default_steps": 25,
+        "default_sampler": "euler_ancestral",
+        "default_scheduler": "normal",
+    },
+    "illustrious": {
+        "architecture": "sdxl",
+        "prompt_format": "booru_tags",
+        "quality_prefix": "masterpiece, best quality, absurdres, highres, newest",
+        "quality_negative": (
+            "worst quality, low quality, bad anatomy, bad hands, "
+            "extra digits, fewer digits, missing fingers, "
+            "blurry, watermark, text, signature, jpeg artifacts"
+        ),
+        "strip_style_tags": [
+            "Arcane painterly style",
+            "neon-noir atmosphere",
+            "neon-noir lighting",
+            "gritty neon-noir atmosphere",
+            "dramatic shadows",
+            "dramatic chiaroscuro",
+            "dramatic chiaroscuro lighting",
+            "dramatic lighting",
+            "bold shadows",
+            "dark cyberpunk alley setting",
+            "cyberpunk alley",
+            "dark alley background",
+            "neon-lit background",
+            "cyberpunk city background",
+            "muted gritty tones",
+        ],
+        "solo_suffix": "solo",
+        "background_suffix": "simple background",
+        "ip_adapter_model": None,
+        "vision_style_hint": "anime-style illustration",
+        "style_label": "anime/illustration (Illustrious XL)",
+        "default_cfg": 5.0,
+        "default_steps": 28,
+        "default_sampler": "euler_ancestral",
+        "default_scheduler": "normal",
+    },
     "NoobAI-XL-Vpred": {
         "architecture": "sdxl",
         "prompt_format": "booru_tags",
@@ -95,30 +165,6 @@ MODEL_PROFILES: dict[str, dict] = {
         "style_label": "NoobAI XL (eps)",
         "default_cfg": 7.0,
         "default_steps": 35,
-        "default_sampler": "euler_ancestral",
-        "default_scheduler": "normal",
-    },
-    "Counterfeit": {
-        "architecture": "sd15",
-        "prompt_format": "prose",
-        "quality_prefix": (
-            "masterpiece, best quality, highly detailed, sharp focus, "
-            "dark atmosphere, dramatic lighting, hard shadows, cinematic"
-        ),
-        "quality_negative": (
-            "worst quality, low quality, blurry, deformed, disfigured, "
-            "bad anatomy, extra limbs, watermark, text, signature, "
-            "3d, photorealistic, soft lighting, pastel colors, chibi, "
-            "rounded features, cute style"
-        ),
-        "strip_style_tags": [],
-        "solo_suffix": "solo, 1person, single character",
-        "background_suffix": "dark background, simple background",
-        "ip_adapter_model": "ip-adapter-plus_sd15.safetensors",
-        "vision_style_hint": "dark anime illustration with sharp lines, dramatic lighting, and noir atmosphere",
-        "style_label": "dark anime (Counterfeit V3)",
-        "default_cfg": 7.5,
-        "default_steps": 30,
         "default_sampler": "euler_ancestral",
         "default_scheduler": "normal",
     },
@@ -201,136 +247,14 @@ MODEL_PROFILES: dict[str, dict] = {
         "default_sampler": "dpmpp_2m",
         "default_scheduler": "karras",
     },
-    "cyberrealistic": {
-        "architecture": "sd15",
-        "prompt_format": "prose",
-        "quality_prefix": "masterpiece, best quality, highly detailed, sharp focus",
-        "quality_negative": (
-            "worst quality, low quality, blurry, deformed, disfigured, "
-            "bad anatomy, extra limbs, watermark, text, signature"
-        ),
-        "strip_style_tags": [],
-        "solo_suffix": "solo, 1person, single character",
-        "background_suffix": "white background, simple background",
-        "ip_adapter_model": "ip-adapter-plus_sd15.safetensors",
-        "vision_style_hint": "photorealistic digital art with cinematic lighting",
-        "style_label": "photorealistic (Cyberrealistic)",
-        "default_cfg": 7.0,
-        "default_steps": 30,
-        "default_sampler": "dpmpp_2m",
-        "default_scheduler": "karras",
-    },
-    "basil_mix": {
-        "architecture": "sd15",
-        "prompt_format": "prose",
-        "quality_prefix": (
-            "masterpiece, best quality, photorealistic, detailed skin, "
-            "nsfw, explicit, uncensored"
-        ),
-        "quality_negative": (
-            "worst quality, low quality, blurry, bad anatomy, watermark, "
-            "censored, mosaic, bar censor, anime, cartoon, deformed, "
-            "extra limbs"
-        ),
-        "strip_style_tags": [],
-        "solo_suffix": "solo, 1person, single character",
-        "background_suffix": "simple background",
-        "ip_adapter_model": "ip-adapter-plus_sd15.safetensors",
-        "vision_style_hint": "photorealistic explicit portrait",
-        "style_label": "photorealistic NSFW (Basil Mix)",
-        "default_cfg": 7.0,
-        "default_steps": 30,
-        "default_sampler": "euler_ancestral",
-        "default_scheduler": "normal",
-    },
-    "lazymixRealAmateur": {
-        "architecture": "sd15",
-        "prompt_format": "prose",
-        "quality_prefix": (
-            "masterpiece, best quality, photorealistic, detailed skin, "
-            "nsfw, explicit, uncensored"
-        ),
-        "quality_negative": (
-            "worst quality, low quality, blurry, bad anatomy, watermark, "
-            "censored, mosaic, bar censor, anime, cartoon, deformed, "
-            "extra limbs"
-        ),
-        "strip_style_tags": [],
-        "solo_suffix": "solo, 1person, single character",
-        "background_suffix": "simple background",
-        "ip_adapter_model": "ip-adapter-plus_sd15.safetensors",
-        "vision_style_hint": "photorealistic explicit portrait",
-        "style_label": "photorealistic NSFW (LazyMix Real Amateur)",
-        "default_cfg": 7.0,
-        "default_steps": 30,
-        "default_sampler": "euler_ancestral",
-        "default_scheduler": "normal",
-    },
-    "realcartoonPixar": {
-        "architecture": "sd15",
-        "prompt_format": "prose",
-        "quality_prefix": "masterpiece, best quality, Pixar style, 3D render, Illumination style",
-        "quality_negative": (
-            "worst quality, low quality, blurry, deformed, disfigured, "
-            "bad anatomy, extra limbs, watermark, text, signature, "
-            "photorealistic, live action"
-        ),
-        "strip_style_tags": [],
-        "solo_suffix": "solo, 1person, single character",
-        "background_suffix": "white background, simple background",
-        "ip_adapter_model": "ip-adapter-plus_sd15.safetensors",
-        "vision_style_hint": "Pixar/Illumination-style 3D animated character",
-        "style_label": "3D cartoon (RealCartoon Pixar)",
-        "default_cfg": 8.5,
-        "default_steps": 40,
-    },
-    "realistic_vision": {
-        "architecture": "sd15",
-        "prompt_format": "prose",
-        "quality_prefix": "masterpiece, best quality, highly detailed, sharp focus, RAW photo",
-        "quality_negative": (
-            "worst quality, low quality, blurry, deformed, disfigured, "
-            "bad anatomy, extra limbs, watermark, text, signature, "
-            "cartoon, anime, drawing, painting"
-        ),
-        "strip_style_tags": [],
-        "solo_suffix": "solo, 1person, single character",
-        "background_suffix": "white background, simple background",
-        "ip_adapter_model": "ip-adapter-plus_sd15.safetensors",
-        "vision_style_hint": "photorealistic portrait with natural lighting",
-        "style_label": "photorealistic (Realistic Vision)",
-        "default_cfg": 7.0,
-        "default_steps": 30,
-        "default_sampler": "dpmpp_2m",
-        "default_scheduler": "karras",
-    },
-    "dreamshaper": {
-        "architecture": "sd15",
-        "prompt_format": "prose",
-        "quality_prefix": "masterpiece, best quality, highly detailed",
-        "quality_negative": (
-            "worst quality, low quality, blurry, deformed, disfigured, "
-            "bad anatomy, extra limbs, watermark, text, signature"
-        ),
-        "strip_style_tags": [],
-        "solo_suffix": "solo, 1person, single character",
-        "background_suffix": "white background, simple background",
-        "ip_adapter_model": "ip-adapter-plus_sd15.safetensors",
-        "vision_style_hint": "semi-realistic digital art with painterly qualities",
-        "style_label": "semi-realistic (DreamShaper)",
-        "default_cfg": 7.0,
-        "default_steps": 30,
-        "default_sampler": "dpmpp_2m",
-        "default_scheduler": "karras",
-    },
 }
 
 # Safe fallback for unknown checkpoints
 _DEFAULT_PROFILE: dict = {
-    "architecture": "sd15",
-    "prompt_format": "prose",
-    "quality_prefix": "masterpiece, best quality",
-    "quality_negative": "worst quality, low quality, blurry, deformed",
+    "architecture": "sdxl",
+    "prompt_format": "booru_tags",
+    "quality_prefix": "masterpiece, best quality, amazing quality",
+    "quality_negative": "bad quality, worst quality, worst detail, sketch, censor",
     "strip_style_tags": [],
     "solo_suffix": "solo, 1person, single character",
     "background_suffix": "white background, simple background",

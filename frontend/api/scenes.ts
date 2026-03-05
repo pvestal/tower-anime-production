@@ -74,12 +74,29 @@ export const scenesApi = {
     return request(`/${sceneId}/generate`, { method: 'POST' })
   },
 
+  async keyframeBlitz(sceneId: string, skipExisting = true): Promise<{
+    generated: number; skipped: number; failed: number; total: number;
+    shots: Array<{ shot_id: string; shot_number: number; status: string; source_image_path?: string; error?: string }>
+  }> {
+    return request(`/${sceneId}/keyframe-blitz?skip_existing=${skipExisting}`, { method: 'POST' })
+  },
+
   async getSceneStatus(sceneId: string): Promise<SceneGenerationStatus> {
     return request(`/${sceneId}/status`)
   },
 
   async regenerateShot(sceneId: string, shotId: string): Promise<{ message: string; comfyui_prompt_id: string }> {
     return request(`/${sceneId}/shots/${shotId}/regenerate`, { method: 'POST' })
+  },
+
+  async getBuiltPrompt(sceneId: string, shotId: string): Promise<{
+    final_prompt: string; final_negative: string; engine: string;
+    prompt_length: number; style_anchor: string | null;
+    scene_context: { location: string | null; time_of_day: string | null; mood: string | null; description: string | null };
+    character_appearances: Array<{ name: string; condensed: string }>;
+    motion_prompt: string | null; generation_prompt: string | null;
+  }> {
+    return request(`/${sceneId}/shots/${shotId}/built-prompt`)
   },
 
   async assembleScene(sceneId: string): Promise<{ message: string; video_path: string; duration_seconds: number; shots_included: number }> {

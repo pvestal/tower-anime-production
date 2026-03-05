@@ -55,7 +55,7 @@ async def generate_variant(character_slug: str, image_name: str, body: VariantRe
 
     prompt_text = body.prompt_override or meta.get("full_prompt") or db_info.get("design_prompt", "")
     negative_text = meta.get("negative_prompt") or "worst quality, low quality, blurry, watermark, deformed"
-    checkpoint = meta.get("checkpoint_model") or db_info.get("checkpoint_model", "realcartoonPixar_v12.safetensors")
+    checkpoint = meta.get("checkpoint_model") or db_info.get("checkpoint_model", "waiIllustriousSDXL_v160.safetensors")
     steps = meta.get("steps") or db_info.get("steps") or 25
     cfg = meta.get("cfg_scale") or db_info.get("cfg_scale") or 7.0
     width = meta.get("width") or db_info.get("width") or 768

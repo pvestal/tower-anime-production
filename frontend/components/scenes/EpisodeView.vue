@@ -10,77 +10,89 @@
       No episodes yet. Create one to start assembling scenes into full episodes.
     </div>
 
-    <!-- Episode List -->
-    <div v-else style="display: flex; flex-direction: column; gap: 12px;">
+    <!-- Episode Card Grid -->
+    <div v-else class="episode-grid">
       <div
         v-for="ep in episodes"
         :key="ep.id"
-        class="card"
-        :style="{ borderLeft: selectedEpisodeId === ep.id ? '3px solid var(--accent-primary)' : '3px solid transparent' }"
+        class="episode-card"
+        :class="{ selected: selectedEpisodeId === ep.id }"
+        @click="openEditor(ep)"
       >
-        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
-          <div>
-            <span style="font-size: 14px; font-weight: 500;">E{{ ep.episode_number }} — {{ ep.title }}</span>
-            <span :class="statusClass(ep.status)" style="margin-left: 8px; font-size: 11px; padding: 1px 8px; border-radius: 3px;">
-              {{ ep.status }}
-            </span>
+        <!-- Cover Image -->
+        <div class="episode-cover">
+          <img
+            v-if="ep.cover_frame_path || ep.thumbnail_path"
+            :src="episodesApi.episodeCoverUrl(ep.id)"
+            :alt="ep.title"
+            @error="($event.target as HTMLImageElement).style.display = 'none'"
+          />
+          <div v-else class="episode-cover-placeholder">
+            <span class="cover-number">E{{ ep.episode_number }}</span>
           </div>
-        </div>
-        <div v-if="ep.description" style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">{{ ep.description }}</div>
-        <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 8px;">
-          {{ ep.scene_count }} scene{{ ep.scene_count !== 1 ? 's' : '' }}
-          <span v-if="ep.actual_duration_seconds"> · {{ formatDuration(ep.actual_duration_seconds) }}</span>
-          <span v-if="ep.story_arc"> · {{ ep.story_arc }}</span>
-        </div>
-        <div style="display: flex; gap: 6px; flex-wrap: wrap;">
-          <button class="btn" style="font-size: 11px; padding: 3px 10px;" @click="openEditor(ep)">Edit</button>
-          <button class="btn btn-success" style="font-size: 11px; padding: 3px 10px;" :disabled="ep.scene_count === 0" @click="assembleEpisode(ep)">Assemble</button>
-          <button v-if="ep.final_video_path" class="btn" style="font-size: 11px; padding: 3px 10px;" @click="$emit('play-episode', ep)">Play</button>
-          <button v-if="ep.status === 'assembled'" class="btn btn-primary" style="font-size: 11px; padding: 3px 10px;" @click="publishEpisode(ep)">Publish</button>
-          <button class="btn btn-danger" style="font-size: 11px; padding: 3px 10px;" @click="deleteEpisode(ep)">Delete</button>
+          <span class="episode-status-badge" :class="statusClass(ep.status)">{{ ep.status }}</span>
         </div>
 
-        <!-- Expanded scene list when selected -->
-        <div v-if="selectedEpisodeId === ep.id && selectedEpisode" style="margin-top: 12px; border-top: 1px solid var(--border-primary); padding-top: 12px;">
-          <div style="font-size: 12px; font-weight: 500; margin-bottom: 8px;">Scenes in Episode</div>
-
-          <div v-if="selectedEpisode.scenes && selectedEpisode.scenes.length > 0" style="display: flex; flex-direction: column; gap: 6px;">
-            <div v-for="(s, idx) in selectedEpisode.scenes" :key="s.scene_id"
-              style="display: flex; align-items: center; gap: 8px; padding: 6px 8px; background: var(--bg-primary); border-radius: 4px; font-size: 12px;"
-            >
-              <span style="color: var(--text-muted); min-width: 20px;">{{ idx + 1 }}.</span>
-              <span style="flex: 1;">{{ s.title || 'Untitled' }}</span>
-              <span v-if="s.transition && s.transition !== 'cut'" style="font-size: 10px; color: var(--text-muted); padding: 1px 4px;">{{ s.transition }}</span>
-              <span :class="statusClass(s.generation_status)" style="font-size: 10px; padding: 1px 6px; border-radius: 3px;">{{ s.generation_status }}</span>
-              <span v-if="s.actual_duration_seconds" style="color: var(--text-muted);">{{ s.actual_duration_seconds.toFixed(1) }}s</span>
-              <button class="btn btn-danger" style="font-size: 10px; padding: 1px 6px;" @click="removeScene(ep, s.scene_id)">×</button>
-            </div>
-          </div>
-          <div v-else style="color: var(--text-muted); font-size: 12px;">No scenes added yet.</div>
-
-          <!-- Add scene picker -->
-          <div style="margin-top: 8px;">
-            <div style="display: flex; gap: 6px; align-items: flex-end;">
-              <div style="flex: 1;">
-                <select v-model="addSceneId" class="field-input" style="font-size: 12px; padding: 4px 6px;">
-                  <option value="">Add a scene...</option>
-                  <option v-for="s in availableScenes" :key="s.id" :value="s.id">{{ s.title }} ({{ s.generation_status }})</option>
-                </select>
-              </div>
-              <div style="width: 110px;">
-                <label style="font-size: 10px; color: var(--text-muted); display: block; margin-bottom: 2px;">Transition</label>
-                <select v-model="addTransition" class="field-input" style="font-size: 11px; padding: 4px 6px;">
-                  <option value="fadeblack">Fade Black</option>
-                  <option value="dissolve">Dissolve</option>
-                  <option value="fade">Fade</option>
-                  <option value="wipeleft">Wipe Left</option>
-                  <option value="cut">Cut</option>
-                </select>
-              </div>
-            </div>
-            <button v-if="addSceneId" class="btn btn-primary" style="font-size: 11px; padding: 3px 10px; margin-top: 4px;" @click="addScene(ep)">Add Scene</button>
+        <!-- Card Body -->
+        <div class="episode-body">
+          <div class="episode-title">E{{ ep.episode_number }} — {{ ep.title }}</div>
+          <div v-if="ep.description" class="episode-desc">{{ ep.description }}</div>
+          <div class="episode-meta">
+            <span>{{ ep.scene_count }} scene{{ ep.scene_count !== 1 ? 's' : '' }}</span>
+            <span v-if="ep.actual_duration_seconds">{{ formatDuration(ep.actual_duration_seconds) }}</span>
+            <span v-if="ep.story_arc" class="story-arc-chip">{{ ep.story_arc }}</span>
           </div>
         </div>
+
+        <!-- Action Buttons (visible on hover/selected) -->
+        <div class="episode-actions" @click.stop>
+          <button v-if="ep.final_video_path" class="action-btn play" title="Play" @click="$emit('play-episode', ep)">&#9654;</button>
+          <button v-if="authStore.isAdvanced && ep.scene_count > 0" class="action-btn assemble" title="Assemble" @click="assembleEpisode(ep)">&#9881;</button>
+          <button v-if="ep.status === 'assembled'" class="action-btn publish" title="Publish" @click="publishEpisode(ep)">&#8679;</button>
+          <button class="action-btn delete" title="Delete" @click="deleteEpisode(ep)">&times;</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Expanded Scene Editor (slides in below selected card) -->
+    <div v-if="selectedEpisodeId && selectedEpisode" class="scene-editor card">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+        <div style="font-size: 13px; font-weight: 500;">
+          Scenes in E{{ selectedEpisode.episode_number }} — {{ selectedEpisode.title }}
+        </div>
+        <button class="btn" style="font-size: 11px; padding: 2px 8px;" @click="selectedEpisodeId = ''; selectedEpisode = null">&times; Close</button>
+      </div>
+
+      <div v-if="selectedEpisode.scenes && selectedEpisode.scenes.length > 0" class="scene-list">
+        <div v-for="(s, idx) in selectedEpisode.scenes" :key="s.scene_id" class="scene-row">
+          <span class="scene-num">{{ idx + 1 }}</span>
+          <span class="scene-title">{{ s.title || 'Untitled' }}</span>
+          <span v-if="s.transition && s.transition !== 'cut'" class="scene-transition">{{ s.transition }}</span>
+          <span :class="statusClass(s.generation_status)" class="scene-status">{{ s.generation_status }}</span>
+          <span v-if="s.actual_duration_seconds" class="scene-duration">{{ s.actual_duration_seconds.toFixed(1) }}s</span>
+          <button class="btn btn-danger" style="font-size: 10px; padding: 1px 6px;" @click="removeScene(selectedEpisode!, s.scene_id)">×</button>
+        </div>
+      </div>
+      <div v-else style="color: var(--text-muted); font-size: 12px;">No scenes added yet.</div>
+
+      <!-- Add scene picker -->
+      <div style="margin-top: 10px; display: flex; gap: 6px; align-items: flex-end;">
+        <div style="flex: 1;">
+          <select v-model="addSceneId" class="field-input" style="font-size: 12px; padding: 4px 6px;">
+            <option value="">Add a scene...</option>
+            <option v-for="s in availableScenes" :key="s.id" :value="s.id">{{ s.title }} ({{ s.generation_status }})</option>
+          </select>
+        </div>
+        <div style="width: 110px;">
+          <select v-model="addTransition" class="field-input" style="font-size: 11px; padding: 4px 6px;">
+            <option value="fadeblack">Fade Black</option>
+            <option value="dissolve">Dissolve</option>
+            <option value="fade">Fade</option>
+            <option value="wipeleft">Wipe Left</option>
+            <option value="cut">Cut</option>
+          </select>
+        </div>
+        <button v-if="addSceneId" class="btn btn-primary" style="font-size: 11px; padding: 3px 10px;" @click="addScene(selectedEpisode!)">Add</button>
       </div>
     </div>
 
@@ -122,8 +134,8 @@
               v-for="arc in storyArcs"
               :key="arc"
               type="button"
-              style="padding: 2px 8px; font-size: 11px; background: var(--bg-primary); color: var(--text-secondary); border: 1px solid var(--border-primary); border-radius: 10px; cursor: pointer; font-family: var(--font-primary);"
-              :style="newEpisode.story_arc === arc ? { borderColor: 'var(--accent-primary)', color: 'var(--accent-primary)', background: 'rgba(122,162,247,0.1)' } : {}"
+              class="arc-chip"
+              :class="{ active: newEpisode.story_arc === arc }"
               @click="newEpisode.story_arc = newEpisode.story_arc === arc ? '' : arc"
             >{{ arc }}</button>
           </div>
@@ -142,9 +154,11 @@ import { ref, computed, watch } from 'vue'
 import type { Episode, BuilderScene } from '@/types'
 import { episodesApi } from '@/api/episodes'
 import { useProjectStore } from '@/stores/project'
+import { useAuthStore } from '@/stores/auth'
 import EchoAssistButton from '../EchoAssistButton.vue'
 
 const projectStore = useProjectStore()
+const authStore = useAuthStore()
 
 const props = defineProps<{
   projectId: number
@@ -187,7 +201,6 @@ async function loadEpisodes() {
   try {
     const data = await episodesApi.listEpisodes(props.projectId)
     episodes.value = data.episodes
-    // Auto-set next episode number
     const maxNum = episodes.value.reduce((m, e) => Math.max(m, e.episode_number), 0)
     newEpisode.value.episode_number = maxNum + 1
   } catch (e) {
@@ -291,8 +304,10 @@ async function deleteEpisode(ep: Episode) {
 
 function statusClass(status: string): string {
   const map: Record<string, string> = {
-    draft: 'badge-draft', assembled: 'badge-completed', published: 'badge-published',
-    completed: 'badge-completed', partial: 'badge-partial', generating: 'badge-generating', failed: 'badge-failed',
+    draft: 'badge-draft', planning: 'badge-draft', planned: 'badge-draft',
+    assembled: 'badge-completed', published: 'badge-published',
+    completed: 'badge-completed', partial: 'badge-partial',
+    generating: 'badge-generating', failed: 'badge-failed',
   }
   return map[status] || 'badge-draft'
 }
@@ -305,6 +320,177 @@ function formatDuration(seconds: number): string {
 </script>
 
 <style scoped>
+/* ---- Card Grid ---- */
+.episode-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.episode-card {
+  position: relative;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+.episode-card:hover {
+  border-color: var(--accent-primary);
+  box-shadow: 0 2px 12px rgba(122, 162, 247, 0.15);
+}
+.episode-card.selected {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 2px rgba(122, 162, 247, 0.25);
+}
+
+/* ---- Cover Image ---- */
+.episode-cover {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  background: var(--bg-tertiary);
+  overflow: hidden;
+}
+.episode-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.episode-cover-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--bg-tertiary) 0%, var(--bg-primary) 100%);
+}
+.cover-number {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--text-muted);
+  opacity: 0.4;
+}
+.episode-status-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  font-weight: 500;
+}
+
+/* ---- Card Body ---- */
+.episode-body {
+  padding: 10px 12px 12px;
+}
+.episode-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.episode-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.episode-meta {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.story-arc-chip {
+  padding: 0 6px;
+  background: rgba(122, 162, 247, 0.1);
+  color: var(--accent-primary);
+  border-radius: 8px;
+  font-size: 10px;
+}
+
+/* ---- Action Buttons (hover overlay) ---- */
+.episode-actions {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+.episode-card:hover .episode-actions { opacity: 1; }
+
+.action-btn {
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 4px;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-primary);
+  backdrop-filter: blur(4px);
+}
+.action-btn.play { background: rgba(80, 160, 80, 0.85); color: #fff; }
+.action-btn.assemble { background: rgba(122, 162, 247, 0.85); color: #fff; }
+.action-btn.publish { background: rgba(122, 200, 247, 0.85); color: #fff; }
+.action-btn.delete { background: rgba(160, 80, 80, 0.85); color: #fff; font-size: 16px; }
+.action-btn:hover { opacity: 0.9; transform: scale(1.05); }
+
+/* ---- Scene Editor ---- */
+.scene-editor {
+  margin-top: 14px;
+  animation: slideIn 150ms ease;
+}
+@keyframes slideIn {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.scene-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.scene-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--bg-primary);
+  border-radius: 4px;
+  font-size: 12px;
+}
+.scene-num { color: var(--text-muted); min-width: 20px; }
+.scene-title { flex: 1; }
+.scene-transition { font-size: 10px; color: var(--text-muted); padding: 1px 4px; }
+.scene-status { font-size: 10px; padding: 1px 6px; border-radius: 3px; }
+.scene-duration { color: var(--text-muted); }
+
+/* ---- Badges ---- */
+.badge-draft { background: var(--bg-tertiary); color: var(--text-secondary); }
+.badge-generating { background: rgba(122, 162, 247, 0.2); color: var(--accent-primary); }
+.badge-completed { background: rgba(80, 160, 80, 0.2); color: var(--status-success); }
+.badge-partial { background: rgba(160, 128, 80, 0.2); color: var(--status-warning); }
+.badge-failed { background: rgba(160, 80, 80, 0.2); color: var(--status-error); }
+.badge-published { background: rgba(122, 200, 247, 0.2); color: #7ac8f7; }
+
+/* ---- Form Elements ---- */
 .field-group { margin-bottom: 10px; }
 .field-label { font-size: 12px; color: var(--text-secondary); display: block; margin-bottom: 4px; }
 .field-input {
@@ -313,10 +499,19 @@ function formatDuration(seconds: number): string {
   border: 1px solid var(--border-primary); border-radius: 3px;
   font-family: var(--font-primary);
 }
-.badge-draft { background: var(--bg-tertiary); color: var(--text-secondary); }
-.badge-generating { background: rgba(122, 162, 247, 0.2); color: var(--accent-primary); }
-.badge-completed { background: rgba(80, 160, 80, 0.2); color: var(--status-success); }
-.badge-partial { background: rgba(160, 128, 80, 0.2); color: var(--status-warning); }
-.badge-failed { background: rgba(160, 80, 80, 0.2); color: var(--status-error); }
-.badge-published { background: rgba(122, 200, 247, 0.2); color: #7ac8f7; }
+.arc-chip {
+  padding: 2px 8px;
+  font-size: 11px;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: 10px;
+  cursor: pointer;
+  font-family: var(--font-primary);
+}
+.arc-chip.active {
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
+  background: rgba(122, 162, 247, 0.1);
+}
 </style>

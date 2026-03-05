@@ -254,7 +254,7 @@ async def refine_image(body: dict):
 
     prompt_text = prompt_override or db_info.get("design_prompt", "")
     negative_text = "worst quality, low quality, blurry, watermark, deformed"
-    checkpoint = db_info.get("checkpoint_model", "realcartoonPixar_v12.safetensors")
+    checkpoint = db_info.get("checkpoint_model", "waiIllustriousSDXL_v160.safetensors")
     steps = db_info.get("steps") or 25
     cfg = db_info.get("cfg_scale") or 7.0
     width = db_info.get("width") or 768

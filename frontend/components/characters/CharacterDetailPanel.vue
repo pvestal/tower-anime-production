@@ -419,6 +419,22 @@
 import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
 import { RouterLink } from 'vue-router'
 import type { Character, DatasetImage, AppearanceData, CharacterUpdate } from '@/types'
+
+/** makeAppearance() always initializes these fields — reflect that in the type. */
+type InitializedAppearance = AppearanceData & {
+  hair: NonNullable<AppearanceData['hair']>
+  eyes: NonNullable<AppearanceData['eyes']>
+  skin: NonNullable<AppearanceData['skin']>
+  face: NonNullable<AppearanceData['face']>
+  body: NonNullable<AppearanceData['body']>
+  clothing: NonNullable<AppearanceData['clothing']>
+  weapons: NonNullable<AppearanceData['weapons']>
+  accessories: string[]
+  key_colors: Record<string, string>
+  key_features: string[]
+  common_errors: string[]
+  sexual: NonNullable<AppearanceData['sexual']>
+}
 import { api } from '@/api/client'
 import EchoAssistButton from '../EchoAssistButton.vue'
 import ChipInput from './ChipInput.vue'
@@ -461,7 +477,7 @@ const profile = reactive({
   personality_tags: [] as string[],
 })
 
-function makeAppearance(data?: AppearanceData | null): AppearanceData {
+function makeAppearance(data?: AppearanceData | null): InitializedAppearance {
   const d = data || {}
   return {
     species: d.species || '',
@@ -481,7 +497,7 @@ function makeAppearance(data?: AppearanceData | null): AppearanceData {
   }
 }
 
-const appearance = reactive<AppearanceData>(makeAppearance())
+const appearance = reactive<InitializedAppearance>(makeAppearance())
 
 // Snapshot for dirty tracking — use deep watch to guarantee reactivity
 const snapshot = ref('')

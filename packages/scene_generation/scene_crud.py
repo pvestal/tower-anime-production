@@ -9,12 +9,13 @@ import logging
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 
 from packages.core.config import BASE_PATH, COMFYUI_OUTPUT_DIR
 from packages.core.db import connect_direct, get_char_project_map
-from packages.core.events import event_bus, SCENE_UPDATED, SHOT_UPDATED
+from packages.core.auth import get_user_projects
+from packages.core.events import event_bus, SCENE_UPDATED, SHOT_UPDATED, SHOT_GENERATED
 from packages.core.models import (
     SceneCreateRequest, ShotCreateRequest, ShotUpdateRequest,
     SceneUpdateRequest, SceneAudioRequest,
@@ -24,6 +25,7 @@ from .builder import (
     SCENE_OUTPUT_DIR, _scene_generation_tasks,
     extract_last_frame, concat_videos, copy_to_comfyui_input,
     poll_comfyui_completion, generate_scene, apply_scene_audio,
+    build_shot_prompt_preview, keyframe_blitz,
 )
 from .engine_selector import VALID_ENGINES
 from .framepack import (
@@ -40,8 +42,10 @@ _scene_gen_semaphore = asyncio.Semaphore(1)
 
 
 @router.get("/scenes")
-async def list_scenes(project_id: int):
+async def list_scenes(project_id: int, allowed_projects: list[int] = Depends(get_user_projects)):
     """List scenes for a project."""
+    if project_id not in allowed_projects:
+        raise HTTPException(status_code=403, detail="Access denied to this project")
     conn = await connect_direct()
     try:
         rows = await conn.fetch("""
@@ -212,16 +216,23 @@ async def _persist_scenes_and_shots(
                     if dial_char:
                         dial_slug = char_slug_map.get(dial_char.lower(), _name_to_slug(dial_char))
 
+                    # generation_prompt: scene description is the creative content
+                    # motion_prompt: camera/animation direction only
+                    shot_gen_prompt = shot.get("generation_prompt") or scene.get("description", "")
+                    shot_motion = shot.get("motion_prompt") or shot.get("description", "")
+
                     shot_row = await conn.fetchrow("""
                         INSERT INTO shots (scene_id, shot_number, shot_type,
                                            duration_seconds, motion_prompt,
+                                           generation_prompt,
                                            characters_present, status,
                                            dialogue_text, dialogue_character_slug)
-                        VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7, $8)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, $9)
                         RETURNING id
                     """, scene_id, j + 1, shot.get("shot_type", "medium"),
                         shot.get("duration_seconds", 3),
-                        shot.get("motion_prompt") or shot.get("description", ""),
+                        shot_motion,
+                        shot_gen_prompt,
                         chars_as_slugs,
                         shot.get("dialogue_text"), dial_slug)
                     shot_ids.append(str(shot_row["id"]))
@@ -648,7 +659,9 @@ async def update_shot(scene_id: str, shot_id: str, body: ShotUpdateRequest):
         for field, col in [
             ("shot_number", "shot_number"), ("source_image_path", "source_image_path"),
             ("shot_type", "shot_type"), ("camera_angle", "camera_angle"),
-            ("duration_seconds", "duration_seconds"), ("motion_prompt", "motion_prompt"),
+            ("duration_seconds", "duration_seconds"),
+            ("generation_prompt", "generation_prompt"), ("generation_negative", "generation_negative"),
+            ("motion_prompt", "motion_prompt"),
             ("characters_present", "characters_present"),
             ("seed", "seed"), ("steps", "steps"), ("use_f1", "use_f1"),
             ("dialogue_text", "dialogue_text"), ("dialogue_character_slug", "dialogue_character_slug"),
@@ -936,7 +949,14 @@ async def get_scene_status(scene_id: str):
 
 @router.post("/scenes/{scene_id}/shots/{shot_id}/regenerate")
 async def regenerate_shot(scene_id: str, shot_id: str):
-    """Regenerate a single failed shot."""
+    """Regenerate a single failed shot.
+
+    Routes to the correct engine based on the shot's video_engine field:
+    - wan: Wan 2.1 T2V (text-to-video, no source image required)
+    - wan22: Wan 2.2 (I2V with optional ref image)
+    - framepack / framepack_f1: FramePack I2V (requires source image)
+    - ltx: LTX Video
+    """
     shid = uuid.UUID(shot_id)
     sid = uuid.UUID(scene_id)
     if scene_id in _scene_generation_tasks:
@@ -950,23 +970,194 @@ async def regenerate_shot(scene_id: str, shot_id: str):
             raise HTTPException(status_code=404, detail="Shot not found")
         await conn.execute(
             "UPDATE shots SET status = 'pending', error_message = NULL WHERE id = $1", shid)
-        prev = await conn.fetchrow(
-            "SELECT last_frame_path FROM shots WHERE scene_id = $1 AND shot_number < $2 "
-            "ORDER BY shot_number DESC LIMIT 1", sid, shot["shot_number"])
-        if prev and prev["last_frame_path"] and Path(prev["last_frame_path"]).exists():
-            image_filename = await copy_to_comfyui_input(prev["last_frame_path"])
-            first_frame = prev["last_frame_path"]
+
+        # Shot spec enrichment: AI-driven pose/camera/emotion awareness
+        try:
+            from .shot_spec import enrich_shot_spec, get_scene_context, get_recent_shots
+            scene_ctx = await get_scene_context(conn, sid)
+            prev_shots = await get_recent_shots(conn, sid, limit=5)
+            await enrich_shot_spec(conn, dict(shot), scene_ctx, prev_shots)
+            # Re-fetch shot with enriched fields
+            shot = await conn.fetchrow("SELECT * FROM shots WHERE id = $1 AND scene_id = $2", shid, sid)
+        except Exception as _enrich_err:
+            logger.warning(f"Shot spec enrichment failed (non-blocking): {_enrich_err}")
+
+        # generation_prompt = scene content (what's happening)
+        # motion_prompt = camera direction (how to film it)
+        # Use generation_prompt as primary; append motion_prompt for animation guidance
+        gen = (shot["generation_prompt"] or "").strip()
+        motion = (shot["motion_prompt"] or "").strip()
+        if gen and motion:
+            prompt_text = f"{gen}. {motion}"
         else:
-            image_filename = await copy_to_comfyui_input(shot["source_image_path"])
-            src_p = shot["source_image_path"]
-            first_frame = str(BASE_PATH / src_p) if not Path(src_p).is_absolute() else src_p
-        prompt_text = shot["motion_prompt"] or shot["generation_prompt"] or ""
-        workflow_data, _, _ = build_framepack_workflow(
-            prompt_text=prompt_text, image_path=image_filename,
-            total_seconds=float(shot["duration_seconds"] or 3),
-            steps=shot["steps"] or 25, use_f1=shot["use_f1"] or False,
-            seed=shot["seed"], gpu_memory_preservation=6.0)
-        comfyui_prompt_id = _submit_comfyui_workflow(workflow_data["prompt"])
+            prompt_text = gen or motion or ""
+        negative_text = shot["generation_negative"] or ""
+        shot_seconds = float(shot["duration_seconds"] or 3)
+        shot_seed = shot["seed"]
+        shot_guidance = float(shot["guidance_scale"] or 6.0)
+
+        chars = shot.get("characters_present") or []
+        is_multi_char = isinstance(chars, list) and len(chars) >= 2
+
+        # Auto-keyframe generation: if no source image, generate one
+        # Multi-char: so the engine selector can route to I2V instead of T2V
+        # Solo: framepack/wan22_14b require a source image for I2V
+        has_chars = isinstance(chars, list) and len(chars) >= 1
+        if has_chars and not shot["source_image_path"]:
+            scene_row = await conn.fetchrow("SELECT project_id FROM scenes WHERE id = $1", sid)
+            _proj_id = scene_row["project_id"] if scene_row else None
+            if _proj_id:
+                _ckpt = "waiIllustriousSDXL_v160.safetensors"
+                try:
+                    _sr = await conn.fetchrow(
+                        """SELECT gs.checkpoint_model FROM projects p
+                           JOIN generation_styles gs ON p.default_style = gs.style_name
+                           WHERE p.id = $1""", _proj_id)
+                    if _sr and _sr["checkpoint_model"]:
+                        _ckpt = _sr["checkpoint_model"]
+                        if not _ckpt.endswith(".safetensors"):
+                            _ckpt += ".safetensors"
+                except Exception:
+                    pass
+
+                from .composite_image import generate_composite_source, generate_simple_keyframe
+                _kf = None
+                # Simple keyframe first (txt2img + LoRA) — reliable full scene
+                try:
+                    _kf = await generate_simple_keyframe(
+                        conn, _proj_id, list(chars), prompt_text, _ckpt,
+                        shot_type=shot.get("shot_type", "medium"),
+                        camera_angle=shot.get("camera_angle", "eye-level"),
+                    )
+                except Exception:
+                    pass
+                # Fallback: composite (IP-Adapter regional) if simple fails
+                if not _kf or not _kf.exists():
+                    try:
+                        _kf = await generate_composite_source(conn, _proj_id, list(chars), prompt_text, _ckpt)
+                    except Exception:
+                        pass
+                if _kf and _kf.exists():
+                    await conn.execute(
+                        "UPDATE shots SET source_image_path = $2, source_image_auto_assigned = TRUE WHERE id = $1",
+                        shid, str(_kf),
+                    )
+                    # Re-fetch shot with updated source_image_path
+                    shot = await conn.fetchrow("SELECT * FROM shots WHERE id = $1", shid)
+                    logger.info(f"regenerate_shot: keyframe for {list(chars)[:2]} → {_kf.name}")
+
+        # Re-run engine selector if multi-char now has source image
+        engine = shot["video_engine"] or "framepack"
+        if is_multi_char and shot["source_image_path"]:
+            from .engine_selector import select_engine
+            _proj_row = await conn.fetchrow("SELECT video_lora FROM projects p JOIN scenes s ON s.project_id = p.id WHERE s.id = $1", sid)
+            _proj_lora = _proj_row["video_lora"] if _proj_row else None
+            _sel = select_engine(
+                shot_type=shot.get("shot_type") or "medium",
+                characters_present=list(chars),
+                has_source_image=True,
+                has_source_video=bool(shot.get("source_video_path")),
+                project_wan_lora=_proj_lora,
+            )
+            if _sel.engine != engine:
+                engine = _sel.engine
+                await conn.execute("UPDATE shots SET video_engine = $2 WHERE id = $1", shid, engine)
+                logger.info(f"regenerate_shot: engine re-selected → {engine} ({_sel.reason})")
+
+        _default_steps = 4 if engine == "wan22_14b" else (20 if engine in ("wan", "wan22") else 25)
+        shot_steps = shot["steps"] or _default_steps
+
+        # Resolve source image for I2V engines
+        image_filename = None
+        first_frame = None
+        if engine not in ("wan",):
+            # I2V engines need a source image
+            prev = await conn.fetchrow(
+                "SELECT last_frame_path FROM shots WHERE scene_id = $1 AND shot_number < $2 "
+                "ORDER BY shot_number DESC LIMIT 1", sid, shot["shot_number"])
+            if prev and prev["last_frame_path"] and Path(prev["last_frame_path"]).exists():
+                image_filename = await copy_to_comfyui_input(prev["last_frame_path"])
+                first_frame = prev["last_frame_path"]
+            elif shot["source_image_path"]:
+                image_filename = await copy_to_comfyui_input(shot["source_image_path"])
+                src_p = shot["source_image_path"]
+                first_frame = str(BASE_PATH / src_p) if not Path(src_p).is_absolute() else src_p
+
+        # Shot-type-aware video dimensions — landscape for establishing/wide
+        _shot_type = (shot.get("shot_type") or "medium").lower()
+        if _shot_type in ("establishing", "wide"):
+            vid_w, vid_h = 720, 480  # landscape
+        else:
+            vid_w, vid_h = 480, 720  # portrait
+
+        # Route to the correct engine workflow builder
+        if engine == "wan":
+            from .wan_video import build_wan_t2v_workflow, _submit_comfyui_workflow as _submit_wan
+            fps = 16
+            num_frames = max(9, int(shot_seconds * fps) + 1)
+            if not shot_seed:
+                import hashlib
+                _scene_seed_bytes = hashlib.sha256(str(sid).encode()).digest()
+                _scene_base_seed = int.from_bytes(_scene_seed_bytes[:8], "big") % (2**63)
+                shot_seed = _scene_base_seed + (shot["shot_number"] or 0)
+            wan_cfg = max(shot_guidance, 7.5)
+            workflow, prefix = build_wan_t2v_workflow(
+                prompt_text=prompt_text, num_frames=num_frames, fps=fps,
+                steps=shot_steps, seed=shot_seed, cfg=wan_cfg,
+                width=vid_w, height=vid_h, use_gguf=True,
+                negative_text=negative_text,
+            )
+            comfyui_prompt_id = _submit_wan(workflow)
+        elif engine == "wan22":
+            from .wan_video import build_wan22_workflow, _submit_comfyui_workflow as _submit_wan
+            fps = 16
+            num_frames = max(9, int(shot_seconds * fps) + 1)
+            wan_cfg = max(shot_guidance, 7.5)
+            workflow, prefix = build_wan22_workflow(
+                prompt_text=prompt_text, num_frames=num_frames, fps=fps,
+                steps=shot_steps, seed=shot_seed, cfg=wan_cfg,
+                width=vid_w, height=vid_h,
+                negative_text=negative_text,
+                ref_image=image_filename,
+            )
+            comfyui_prompt_id = _submit_wan(workflow)
+        elif engine == "wan22_14b":
+            from .wan_video import build_wan22_14b_i2v_workflow, _submit_comfyui_workflow as _submit_wan
+            if not image_filename:
+                raise HTTPException(status_code=400, detail="wan22_14b requires a source image (I2V only)")
+            fps = 16
+            num_frames = max(9, int(shot_seconds * fps) + 1)
+            if not shot_seed:
+                import hashlib
+                _scene_seed_bytes = hashlib.sha256(str(sid).encode()).digest()
+                _scene_base_seed = int.from_bytes(_scene_seed_bytes[:8], "big") % (2**63)
+                shot_seed = _scene_base_seed + (shot["shot_number"] or 0)
+            workflow, prefix = build_wan22_14b_i2v_workflow(
+                prompt_text=prompt_text,
+                ref_image=image_filename,
+                width=vid_w, height=vid_h,
+                num_frames=num_frames, fps=fps,
+                total_steps=shot_steps,
+                seed=shot_seed,
+                negative_text=negative_text,
+                use_lightx2v=True,
+            )
+            comfyui_prompt_id = _submit_wan(workflow)
+        else:
+            # framepack / framepack_f1
+            if not image_filename:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Engine '{engine}' requires a source image but none is available",
+                )
+            use_f1 = engine == "framepack_f1" or shot["use_f1"] or False
+            workflow_data, _, _ = build_framepack_workflow(
+                prompt_text=prompt_text, image_path=image_filename,
+                total_seconds=shot_seconds, steps=shot_steps, use_f1=use_f1,
+                seed=shot_seed, negative_text=negative_text,
+                gpu_memory_preservation=6.0, guidance_scale=shot_guidance)
+            comfyui_prompt_id = _submit_comfyui_workflow(workflow_data["prompt"])
+
         await conn.execute(
             "UPDATE shots SET status = 'generating', comfyui_prompt_id = $2, first_frame_path = $3 WHERE id = $1",
             shid, comfyui_prompt_id, first_frame)
@@ -984,9 +1175,73 @@ async def regenerate_shot(scene_id: str, shot_id: str):
                 last_frame = await extract_last_frame(vpath)
                 await c.execute("""
                     UPDATE shots SET status = 'completed', output_video_path = $2,
-                           last_frame_path = $3, generation_time_seconds = $4
+                           last_frame_path = $3, generation_time_seconds = $4,
+                           error_message = NULL
                     WHERE id = $1
                 """, shid, vpath, last_frame, _time.time() - start)
+
+                # Variety check: compare against recent shots in scene
+                try:
+                    from .variety_check import check_sequence_variety
+                    variety = await check_sequence_variety(c, shid, sid, last_frame)
+                    if variety["similar"]:
+                        logger.warning(
+                            f"Shot {shid}: too similar to {variety['most_similar_shot_id']} "
+                            f"(score={variety['similarity_score']:.3f}). {variety['suggestion']}"
+                        )
+                        await c.execute(
+                            "UPDATE shots SET review_feedback = $2 WHERE id = $1",
+                            shid, f"Variety warning: similarity {variety['similarity_score']:.3f} "
+                            f"to shot {variety['most_similar_shot_id']}. {variety['suggestion']}")
+                except Exception as _var_err:
+                    logger.debug(f"Variety check skipped: {_var_err}")
+
+                # Echo Brain CLIP scoring (advisory, never blocks)
+                try:
+                    import httpx as _httpx
+                    _shot_data = await c.fetchrow(
+                        "SELECT generation_prompt, characters_present, video_engine, "
+                        "guidance_scale, steps, seed FROM shots WHERE id = $1", shid)
+                    _scene_data = await c.fetchrow(
+                        "SELECT project_id FROM scenes WHERE id = $1", sid)
+                    async with _httpx.AsyncClient(timeout=30.0) as _hc:
+                        await _hc.post(
+                            "http://localhost:8309/api/echo/generation-eval/evaluate",
+                            json={
+                                "image_path": last_frame,
+                                "prompt_text": _shot_data["generation_prompt"] or "",
+                                "shot_id": str(shid),
+                                "scene_id": str(sid),
+                                "project_id": _scene_data["project_id"] if _scene_data else 0,
+                                "character_slugs": list(_shot_data["characters_present"] or []),
+                                "video_engine": _shot_data["video_engine"] or "",
+                                "parameters": {
+                                    "cfg": float(_shot_data["guidance_scale"] or 6.0),
+                                    "steps": _shot_data["steps"],
+                                    "seed": _shot_data["seed"],
+                                },
+                            })
+                except Exception as _eval_err:
+                    logger.debug(f"Echo Brain scoring skipped: {_eval_err}")
+
+                # Emit SHOT_GENERATED event for graph sync
+                try:
+                    _shot_info = await c.fetchrow(
+                        "SELECT video_engine, seed, steps, guidance_scale, lora_name, "
+                        "lora_strength, generation_time_seconds FROM shots WHERE id = $1", shid)
+                    await event_bus.emit(SHOT_GENERATED, {
+                        "shot_id": str(shid),
+                        "scene_id": str(sid),
+                        "video_engine": _shot_info["video_engine"],
+                        "seed": _shot_info["seed"],
+                        "steps": _shot_info["steps"],
+                        "cfg": float(_shot_info["guidance_scale"] or 6.0),
+                        "lora_name": _shot_info["lora_name"],
+                        "lora_strength": float(_shot_info["lora_strength"] or 0.8),
+                        "generation_time_seconds": _shot_info["generation_time_seconds"],
+                    })
+                except Exception as _evt_err:
+                    logger.debug(f"SHOT_GENERATED event skipped: {_evt_err}")
             else:
                 await c.execute(
                     "UPDATE shots SET status = 'failed', error_message = $2 WHERE id = $1",
@@ -1516,6 +1771,19 @@ async def override_shot_engine(scene_id: str, shot_id: str, body: OverrideEngine
         await conn.close()
 
 
+@router.get("/scenes/{scene_id}/shots/{shot_id}/built-prompt")
+async def get_built_prompt(scene_id: str, shot_id: str):
+    """Preview the final assembled prompt that would be sent to ComfyUI.
+
+    Builds style anchor + scene context + character appearance + motion prompt
+    without triggering generation. Returns the full prompt and its components.
+    """
+    result = await build_shot_prompt_preview(scene_id, shot_id)
+    if "error" in result:
+        raise HTTPException(status_code=404, detail=result["error"])
+    return result
+
+
 @router.get("/continuity-frames")
 async def get_continuity_frames(project_id: int):
     """View current continuity frames for all characters in a project."""
@@ -1547,3 +1815,24 @@ async def clear_continuity_frames(project_id: int):
         return {"deleted": count, "project_id": project_id}
     finally:
         await conn.close()
+
+
+@router.post("/scenes/{scene_id}/keyframe-blitz")
+async def keyframe_blitz_endpoint(scene_id: str, skip_existing: bool = True):
+    """Generate keyframe images for all shots in a scene (~18s each).
+
+    Pass 1 of two-pass generation: enriches shot specs then generates txt2img
+    keyframes. Use this to quickly preview all shots before committing to slow
+    video rendering.
+    """
+    async with _scene_gen_semaphore:
+        conn = await connect_direct()
+        try:
+            # Verify scene exists
+            scene = await conn.fetchrow("SELECT id FROM scenes WHERE id = $1", scene_id)
+            if not scene:
+                raise HTTPException(status_code=404, detail="Scene not found")
+            result = await keyframe_blitz(conn, scene_id, skip_existing=skip_existing)
+            return result
+        finally:
+            await conn.close()

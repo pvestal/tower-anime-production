@@ -110,7 +110,7 @@ async def get_char_project_map() -> dict:
     try:
         conn = await connect_direct()
         rows = await conn.fetch("""
-            SELECT c.name,
+            SELECT c.name, p.id as project_id,
                    REGEXP_REPLACE(LOWER(REPLACE(c.name, ' ', '_')), '[^a-z0-9_-]', '', 'g') as slug,
                    c.design_prompt, c.appearance_data, p.name as project_name,
                    p.default_style,
@@ -136,6 +136,7 @@ async def get_char_project_map() -> dict:
                 mapping[slug] = {
                     "name": row["name"],
                     "slug": slug,
+                    "project_id": row["project_id"],
                     "project_name": row["project_name"],
                     "design_prompt": row["design_prompt"],
                     "appearance_data": appearance,

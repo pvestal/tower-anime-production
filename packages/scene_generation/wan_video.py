@@ -6,6 +6,10 @@ exists. Uses native ComfyUI Wan nodes + GGUF loader for low-VRAM operation.
 Wan 2.2 5B adds LoRA support (e.g. furry LoRAs) and I2V mode via
 Wan22FunControlToVideo. Uses 48-channel VAE (different from 2.1's 16-channel).
 
+Wan 2.2 14B I2V is the highest-quality option. Uses dual high/low noise models
+with split-step sampling. Supports lightx2v distill LoRA for 4x speedup.
+Uses 16-channel VAE (wan_2.1_vae, same as 2.1) + CLIP Vision for source images.
+
 VRAM: ~8GB at FP16, ~4-6GB with GGUF Q4/Q8 quantization.
 Speed: Faster than FramePack for short clips.
 
@@ -15,10 +19,17 @@ Model files needed in ComfyUI/models/:
              OR wan2.1_t2v_1.3B_fp16.safetensors (standard)
     - text_encoders/: umt5_xxl_fp8_e4m3fn_scaled.safetensors (UMT5-XXL, NOT T5-XXL)
     - vae/: wan_2.1_vae.safetensors
-  Wan 2.2:
+  Wan 2.2 5B:
     - unet/: Wan2.2-TI2V-5B-Q4_K_S.gguf (GGUF Q4, ~3.1GB)
     - text_encoders/: umt5_xxl_fp8_e4m3fn_scaled.safetensors (shared with 2.1)
     - vae/: wan2.2_vae.safetensors (48-channel, NOT compatible with 2.1)
+  Wan 2.2 14B I2V:
+    - unet/: Wan2.2-I2V-A14B-HighNoise-Q4_K_M.gguf (high noise model)
+             Wan2.2-I2V-A14B-LowNoise-Q4_K_M.gguf (low noise model)
+    - text_encoders/: umt5_xxl_fp8_e4m3fn_scaled.safetensors (shared)
+    - clip_vision/: clip_vision_h.safetensors (CLIP-ViT-H for I2V)
+    - vae/: wan_2.1_vae.safetensors (16-channel, same as 2.1!)
+    - loras/ (optional): lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors
 """
 
 import json
@@ -55,6 +66,19 @@ WAN22_MODELS = {
     "vae": "wan2.2_vae.safetensors",  # 48-channel, NOT compatible with 2.1
 }
 
+# Wan 2.2 14B I2V — dual high/low noise models (16-channel VAE, uses wan_2.1_vae)
+WAN22_14B_MODELS = {
+    "unet_high": "Wan2.2-I2V-A14B-HighNoise-Q4_K_M.gguf",
+    "unet_low": "Wan2.2-I2V-A14B-LowNoise-Q4_K_M.gguf",
+    "text_encoder": "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+    "clip_vision": "clip_vision_h.safetensors",
+    "vae": "wan_2.1_vae.safetensors",  # 16-channel! Same as Wan 2.1
+    "lightx2v_lora": "lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors",
+    "relight_lora": "WanAnimate_relight_lora_fp16.safetensors",
+    "arcshot_lora": "wan22_arcshot_high.safetensors",
+    "walking_lora": "kxsr_walking_anim_v1-5.safetensors",
+}
+
 
 def _submit_comfyui_workflow(workflow: dict) -> str:
     """Submit a workflow to ComfyUI and return the prompt_id."""
@@ -76,7 +100,7 @@ def build_wan_t2v_workflow(
     height: int = 720,
     num_frames: int = 81,
     fps: int = 16,
-    steps: int = 30,
+    steps: int = 20,
     cfg: float = 6.0,
     seed: int | None = None,
     negative_text: str = "low quality, blurry, distorted, watermark, text, ugly",
@@ -245,7 +269,7 @@ def build_wan22_workflow(
     height: int = 720,
     num_frames: int = 81,
     fps: int = 16,
-    steps: int = 30,
+    steps: int = 20,
     cfg: float = 6.0,
     seed: int | None = None,
     negative_text: str = "low quality, blurry, distorted, watermark, text, ugly",
@@ -450,6 +474,333 @@ def build_wan22_workflow(
     return workflow, prefix
 
 
+def build_wan22_14b_i2v_workflow(
+    prompt_text: str,
+    ref_image: str,
+    width: int = 480,
+    height: int = 720,
+    num_frames: int = 81,
+    fps: int = 16,
+    total_steps: int = 6,
+    split_steps: int = 3,
+    cfg: float = 3.5,
+    seed: int | None = None,
+    negative_text: str = "low quality, blurry, distorted, watermark, text, ugly",
+    output_prefix: str | None = None,
+    use_lightx2v: bool = True,
+    motion_lora: str | None = None,
+    motion_lora_strength: float = 0.8,
+) -> tuple[dict, str]:
+    """Build a Wan 2.2 14B I2V ComfyUI workflow with dual high/low noise models.
+
+    Uses split-step KSamplerAdvanced: first N steps with high noise model,
+    remaining steps with low noise model. Supports lightx2v distill LoRA
+    for 4x speedup and optional motion/camera LoRAs.
+
+    The 14B I2V model uses the 16-channel VAE (wan_2.1_vae) + CLIP Vision
+    for source image encoding — different from the 5B model which uses
+    48-channel VAE.
+
+    Args:
+        prompt_text: Scene description for video generation.
+        ref_image: Source image filename in ComfyUI/input/ (REQUIRED for I2V).
+        width: Video width (multiple of 16). 480 safe for 12GB VRAM.
+        height: Video height (multiple of 16).
+        num_frames: Number of frames (81 = ~5s at 16fps).
+        fps: Output frame rate.
+        total_steps: Total sampling steps. With lightx2v: 4. Without: 6-8.
+        split_steps: Steps for high noise model. With lightx2v: 2. Without: 3-4.
+        cfg: CFG guidance scale. lightx2v uses 1.0. Standard uses 3.5.
+        seed: Random seed, auto-generated if None.
+        negative_text: Negative prompt.
+        output_prefix: Filename prefix for output.
+        use_lightx2v: Use lightx2v distill LoRA for 4x speed (changes steps/cfg).
+        motion_lora: Optional motion/camera LoRA filename (applied to high noise model).
+        motion_lora_strength: Strength for motion LoRA (0.0-1.0).
+    """
+    import random as _random
+    if seed is None:
+        seed = _random.randint(0, 2**63 - 1)
+
+    # Override settings when using lightx2v
+    if use_lightx2v:
+        total_steps = 4
+        split_steps = 2
+        cfg = 1.0
+
+    workflow = {}
+    nid = 1
+
+    # --- Load dual models ---
+
+    # High noise model (GGUF)
+    high_unet_node = str(nid)
+    workflow[high_unet_node] = {
+        "class_type": "UnetLoaderGGUF",
+        "inputs": {"unet_name": WAN22_14B_MODELS["unet_high"]},
+    }
+    nid += 1
+
+    # Low noise model (GGUF)
+    low_unet_node = str(nid)
+    workflow[low_unet_node] = {
+        "class_type": "UnetLoaderGGUF",
+        "inputs": {"unet_name": WAN22_14B_MODELS["unet_low"]},
+    }
+    nid += 1
+
+    # Track model output chains (may have LoRAs applied)
+    high_model_node, high_model_slot = high_unet_node, 0
+    low_model_node, low_model_slot = low_unet_node, 0
+
+    # --- Optional: lightx2v distill LoRA (applied to BOTH models) ---
+
+    if use_lightx2v:
+        from pathlib import Path
+        lightx2v_path = Path("/opt/ComfyUI/models/loras") / WAN22_14B_MODELS["lightx2v_lora"]
+        if lightx2v_path.exists():
+            # Apply to high noise model
+            lora_high_node = str(nid)
+            workflow[lora_high_node] = {
+                "class_type": "LoraLoaderModelOnly",
+                "inputs": {
+                    "model": [high_model_node, high_model_slot],
+                    "lora_name": WAN22_14B_MODELS["lightx2v_lora"],
+                    "strength_model": 1.0,
+                },
+            }
+            high_model_node, high_model_slot = lora_high_node, 0
+            nid += 1
+
+            # Apply to low noise model
+            lora_low_node = str(nid)
+            workflow[lora_low_node] = {
+                "class_type": "LoraLoaderModelOnly",
+                "inputs": {
+                    "model": [low_model_node, low_model_slot],
+                    "lora_name": WAN22_14B_MODELS["lightx2v_lora"],
+                    "strength_model": 1.0,
+                },
+            }
+            low_model_node, low_model_slot = lora_low_node, 0
+            nid += 1
+        else:
+            logger.warning("lightx2v LoRA not found, running without acceleration")
+
+    # --- Optional: motion/camera LoRA (applied to high noise model only) ---
+
+    if motion_lora:
+        motion_lora_node = str(nid)
+        workflow[motion_lora_node] = {
+            "class_type": "LoraLoaderModelOnly",
+            "inputs": {
+                "model": [high_model_node, high_model_slot],
+                "lora_name": motion_lora,
+                "strength_model": motion_lora_strength,
+            },
+        }
+        high_model_node, high_model_slot = motion_lora_node, 0
+        nid += 1
+
+    # --- ModelSamplingSD3 for sigma scaling ---
+
+    high_sampling_node = str(nid)
+    workflow[high_sampling_node] = {
+        "class_type": "ModelSamplingSD3",
+        "inputs": {"model": [high_model_node, high_model_slot], "shift": 8},
+    }
+    nid += 1
+
+    low_sampling_node = str(nid)
+    workflow[low_sampling_node] = {
+        "class_type": "ModelSamplingSD3",
+        "inputs": {"model": [low_model_node, low_model_slot], "shift": 8},
+    }
+    nid += 1
+
+    # --- Text encoding ---
+
+    clip_node = str(nid)
+    workflow[clip_node] = {
+        "class_type": "CLIPLoader",
+        "inputs": {"clip_name": WAN22_14B_MODELS["text_encoder"], "type": "wan"},
+    }
+    nid += 1
+
+    pos_node = str(nid)
+    workflow[pos_node] = {
+        "class_type": "CLIPTextEncode",
+        "inputs": {"text": prompt_text, "clip": [clip_node, 0]},
+    }
+    nid += 1
+
+    neg_node = str(nid)
+    workflow[neg_node] = {
+        "class_type": "CLIPTextEncode",
+        "inputs": {"text": negative_text, "clip": [clip_node, 0]},
+    }
+    nid += 1
+
+    # --- CLIP Vision (for I2V source image encoding) ---
+
+    clip_vision_node = str(nid)
+    workflow[clip_vision_node] = {
+        "class_type": "CLIPVisionLoader",
+        "inputs": {"clip_name": WAN22_14B_MODELS["clip_vision"]},
+    }
+    nid += 1
+
+    load_img_node = str(nid)
+    workflow[load_img_node] = {
+        "class_type": "LoadImage",
+        "inputs": {"image": ref_image},
+    }
+    nid += 1
+
+    clip_vision_encode_node = str(nid)
+    workflow[clip_vision_encode_node] = {
+        "class_type": "CLIPVisionEncode",
+        "inputs": {
+            "clip_vision": [clip_vision_node, 0],
+            "image": [load_img_node, 0],
+            "crop": "center",
+        },
+    }
+    nid += 1
+
+    # --- VAE (16-channel, same as Wan 2.1) ---
+
+    vae_node = str(nid)
+    workflow[vae_node] = {
+        "class_type": "VAELoader",
+        "inputs": {"vae_name": WAN22_14B_MODELS["vae"]},
+    }
+    nid += 1
+
+    # --- WanImageToVideo (conditioning + latent generation) ---
+
+    i2v_node = str(nid)
+    workflow[i2v_node] = {
+        "class_type": "WanImageToVideo",
+        "inputs": {
+            "positive": [pos_node, 0],
+            "negative": [neg_node, 0],
+            "vae": [vae_node, 0],
+            "width": width,
+            "height": height,
+            "length": num_frames,
+            "batch_size": 1,
+            "clip_vision_output": [clip_vision_encode_node, 0],
+            "start_image": [load_img_node, 0],
+        },
+    }
+    nid += 1
+
+    # --- Dual KSamplerAdvanced (split-step sampling) ---
+
+    # Pass 1: High noise model (steps 0 → split_steps)
+    sampler_high_node = str(nid)
+    workflow[sampler_high_node] = {
+        "class_type": "KSamplerAdvanced",
+        "inputs": {
+            "model": [high_sampling_node, 0],
+            "positive": [i2v_node, 0],
+            "negative": [i2v_node, 1],
+            "latent_image": [i2v_node, 2],
+            "seed": seed,
+            "steps": total_steps,
+            "cfg": cfg,
+            "sampler_name": "euler",
+            "scheduler": "simple",
+            "start_at_step": 0,
+            "end_at_step": split_steps,
+            "add_noise": "enable",
+            "return_with_leftover_noise": "enable",
+            "noise_seed": seed,
+        },
+    }
+    nid += 1
+
+    # Pass 2: Low noise model (steps split_steps → total_steps)
+    sampler_low_node = str(nid)
+    workflow[sampler_low_node] = {
+        "class_type": "KSamplerAdvanced",
+        "inputs": {
+            "model": [low_sampling_node, 0],
+            "positive": [i2v_node, 0],
+            "negative": [i2v_node, 1],
+            "latent_image": [sampler_high_node, 0],
+            "seed": seed,
+            "steps": total_steps,
+            "cfg": cfg,
+            "sampler_name": "euler",
+            "scheduler": "simple",
+            "start_at_step": split_steps,
+            "end_at_step": total_steps,
+            "add_noise": "disable",
+            "return_with_leftover_noise": "disable",
+            "noise_seed": seed,
+        },
+    }
+    nid += 1
+
+    # --- Decode + output ---
+
+    decode_node = str(nid)
+    workflow[decode_node] = {
+        "class_type": "VAEDecode",
+        "inputs": {
+            "samples": [sampler_low_node, 0],
+            "vae": [vae_node, 0],
+        },
+    }
+    nid += 1
+
+    ts = int(time.time())
+    prefix = output_prefix or f"wan22_14b_{ts}"
+    output_node = str(nid)
+    workflow[output_node] = {
+        "class_type": "VHS_VideoCombine",
+        "inputs": {
+            "images": [decode_node, 0],
+            "frame_rate": fps,
+            "loop_count": 0,
+            "filename_prefix": prefix,
+            "format": "video/h264-mp4",
+            "pix_fmt": "yuv420p",
+            "crf": 19,
+            "save_metadata": True,
+            "trim_to_audio": False,
+            "pingpong": False,
+            "save_output": True,
+        },
+    }
+
+    return workflow, prefix
+
+
+def check_wan22_14b_ready() -> tuple[bool, str]:
+    """Check if Wan 2.2 14B I2V models are available."""
+    from pathlib import Path
+    base = Path("/opt/ComfyUI/models")
+    missing = []
+    for key in ("unet_high", "unet_low"):
+        if not (base / "unet" / WAN22_14B_MODELS[key]).exists():
+            missing.append(f"{key}: {WAN22_14B_MODELS[key]}")
+    if not (base / "text_encoders" / WAN22_14B_MODELS["text_encoder"]).exists():
+        missing.append(f"text_encoder: {WAN22_14B_MODELS['text_encoder']}")
+    if not (base / "clip_vision" / WAN22_14B_MODELS["clip_vision"]).exists():
+        # Also check alternative name
+        alt = base / "clip_vision" / "CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors"
+        if not alt.exists():
+            missing.append(f"clip_vision: {WAN22_14B_MODELS['clip_vision']}")
+    if not (base / "vae" / WAN22_14B_MODELS["vae"]).exists():
+        missing.append(f"vae: {WAN22_14B_MODELS['vae']}")
+    if missing:
+        return False, f"Missing Wan 2.2 14B models: {', '.join(missing)}"
+    return True, "All Wan 2.2 14B I2V models available"
+
+
 def check_wan_models_available() -> dict:
     """Check which Wan model files are present in ComfyUI directories."""
     from pathlib import Path
@@ -512,7 +863,7 @@ def check_wan22_ready() -> tuple[bool, str]:
 
 @router.get("/generate/wan/models")
 async def check_wan_models():
-    """Check availability of Wan model files (2.1 and 2.2)."""
+    """Check availability of all Wan model files (2.1, 2.2 5B, 2.2 14B)."""
     status = check_wan_models_available()
     all_ready = all(v["available"] for k, v in status.items() if k not in ("unet_gguf", "wan22_unet_gguf", "wan22_vae"))
     gguf_ready = (
@@ -521,18 +872,35 @@ async def check_wan_models():
         and status["vae"]["available"]
     )
     wan22_ready, wan22_msg = check_wan22_ready()
+    wan22_14b_ready, wan22_14b_msg = check_wan22_14b_ready()
+
+    # Check LoRA availability
+    lora_status = {}
+    for key in ("lightx2v_lora", "relight_lora", "arcshot_lora", "walking_lora"):
+        lora_path = Path("/opt/ComfyUI/models/loras") / WAN22_14B_MODELS.get(key, "")
+        lora_status[key] = {
+            "filename": WAN22_14B_MODELS.get(key, ""),
+            "available": lora_path.exists() and lora_path.stat().st_size > 0,
+        }
+
     return {
         "models": status,
         "standard_ready": all_ready,
         "gguf_ready": gguf_ready,
         "wan22_ready": wan22_ready,
         "wan22_message": wan22_msg,
+        "wan22_14b_ready": wan22_14b_ready,
+        "wan22_14b_message": wan22_14b_msg,
+        "motion_loras": lora_status,
         "download_instructions": {
             "unet_gguf": "wget -O /opt/ComfyUI/models/unet/Wan2.1-T2V-1.3B-Q8_0.gguf https://huggingface.co/samuelchristlie/Wan2.1-T2V-1.3B-GGUF/resolve/main/Wan2.1-T2V-1.3B-Q8_0.gguf",
             "vae": "wget -O /opt/ComfyUI/models/vae/wan_2.1_vae.safetensors https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/vae/wan_2.1_vae.safetensors",
             "text_encoder": "wget -O /opt/ComfyUI/models/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors",
             "wan22_unet_gguf": "wget -O /opt/ComfyUI/models/unet/Wan2.2-TI2V-5B-Q4_K_S.gguf https://huggingface.co/QuantStack/Wan2.2-TI2V-5B-GGUF/resolve/main/Wan2.2-TI2V-5B-Q4_K_S.gguf",
             "wan22_vae": "wget -O /opt/ComfyUI/models/vae/wan2.2_vae.safetensors https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/vae/wan2.2_vae.safetensors",
+            "wan22_14b_high": "wget -O /opt/ComfyUI/models/unet/Wan2.2-I2V-A14B-HighNoise-Q4_K_M.gguf https://huggingface.co/QuantStack/Wan2.2-I2V-A14B-GGUF/resolve/main/HighNoise/Wan2.2-I2V-A14B-HighNoise-Q4_K_M.gguf",
+            "wan22_14b_low": "wget -O /opt/ComfyUI/models/unet/Wan2.2-I2V-A14B-LowNoise-Q4_K_M.gguf https://huggingface.co/QuantStack/Wan2.2-I2V-A14B-GGUF/resolve/main/LowNoise/Wan2.2-I2V-A14B-LowNoise-Q4_K_M.gguf",
+            "civitai_models": "/opt/ComfyUI/download_civitai_models.sh",
         },
     }
 
@@ -544,7 +912,7 @@ async def generate_wan_video(
     height: int = 720,
     num_frames: int = 81,
     fps: int = 16,
-    steps: int = 30,
+    steps: int = 20,
     cfg: float = 6.0,
     seed: int | None = None,
     use_gguf: bool = True,
@@ -594,7 +962,7 @@ async def generate_wan22_video(
     height: int = 720,
     num_frames: int = 81,
     fps: int = 16,
-    steps: int = 30,
+    steps: int = 20,
     cfg: float = 6.0,
     seed: int | None = None,
     lora_name: str | None = None,
@@ -639,6 +1007,74 @@ async def generate_wan22_video(
         "engine": "wan22-5b-gguf",
         "mode": mode,
         "lora": lora_name,
+        "seconds": round(seconds, 1),
+        "resolution": f"{width}x{height}",
+        "prefix": prefix,
+    }
+
+
+@router.post("/generate/wan22-14b")
+async def generate_wan22_14b_video(
+    prompt: str,
+    ref_image: str,
+    width: int = 480,
+    height: int = 720,
+    num_frames: int = 81,
+    fps: int = 16,
+    total_steps: int = 6,
+    split_steps: int = 3,
+    cfg: float = 3.5,
+    seed: int | None = None,
+    use_lightx2v: bool = True,
+    motion_lora: str | None = None,
+    motion_lora_strength: float = 0.8,
+):
+    """Generate a Wan 2.2 14B I2V video with dual high/low noise models.
+
+    Highest quality video generation. Supports:
+    - lightx2v distill LoRA for 4x speed (default on)
+    - Optional motion/camera LoRAs (arcshot, relight, etc.)
+    - Requires source image (I2V only)
+    """
+    ready, msg = check_wan22_14b_ready()
+    if not ready:
+        raise HTTPException(status_code=503, detail=msg + ". GET /generate/wan/models for instructions.")
+
+    if motion_lora:
+        lora_path = Path("/opt/ComfyUI/models/loras") / motion_lora
+        if not lora_path.exists():
+            raise HTTPException(status_code=404, detail=f"Motion LoRA not found: {motion_lora}")
+
+    workflow, prefix = build_wan22_14b_i2v_workflow(
+        prompt_text=prompt,
+        ref_image=ref_image,
+        width=width,
+        height=height,
+        num_frames=num_frames,
+        fps=fps,
+        total_steps=total_steps,
+        split_steps=split_steps,
+        cfg=cfg,
+        seed=seed,
+        use_lightx2v=use_lightx2v,
+        motion_lora=motion_lora,
+        motion_lora_strength=motion_lora_strength,
+    )
+
+    try:
+        prompt_id = _submit_comfyui_workflow(workflow)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"ComfyUI submission failed: {e}")
+
+    seconds = num_frames / fps
+
+    return {
+        "prompt_id": prompt_id,
+        "engine": "wan22-14b-i2v-gguf",
+        "mode": "i2v",
+        "lightx2v": use_lightx2v,
+        "motion_lora": motion_lora,
+        "steps": f"{total_steps} total ({split_steps} high + {total_steps - split_steps} low)",
         "seconds": round(seconds, 1),
         "resolution": f"{width}x{height}",
         "prefix": prefix,

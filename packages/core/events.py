@@ -136,9 +136,11 @@ def register_graph_sync_handlers():
         on_image_rejected,
         on_generation_submitted,
         on_regeneration_queued,
+        on_shot_generated,
     )
     event_bus.subscribe(IMAGE_APPROVED, on_image_approved)
     event_bus.subscribe(IMAGE_REJECTED, on_image_rejected)
     event_bus.subscribe(GENERATION_SUBMITTED, on_generation_submitted)
     event_bus.subscribe(REGENERATION_QUEUED, on_regeneration_queued)
+    event_bus.subscribe(SHOT_GENERATED, on_shot_generated)
     logger.info("EventBus: graph sync handlers registered")

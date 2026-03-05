@@ -41,7 +41,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, nextTick } from 'vue'
+import { ref, reactive } from 'vue'
 import { api } from '@/api/client'
 import type { NarrateRequest } from '@/types'
 

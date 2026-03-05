@@ -11,7 +11,7 @@ async def test_health(app_client):
     data = resp.json()
     assert data["status"] == "healthy"
     assert data["service"] == "tower-anime-studio"
-    assert data["version"] == "3.3"
+    assert data["version"] == "3.5"
 
 
 @pytest.mark.unit

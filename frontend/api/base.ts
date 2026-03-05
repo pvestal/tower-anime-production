@@ -30,11 +30,17 @@ export function createRequest(base: string) {
           'Content-Type': 'application/json',
           ...fetchOptions.headers,
         },
+        credentials: 'include',
         ...fetchOptions,
         signal: controller.signal,
       })
 
       if (!response.ok) {
+        if (response.status === 401 && !endpoint.startsWith('/studio/auth/')) {
+          // Redirect to login on auth failure (but not for auth endpoints themselves)
+          window.location.href = '/anime-studio/login'
+          throw new ApiError(401, 'Session expired')
+        }
         const errorText = await response.text()
         throw new ApiError(response.status, errorText)
       }

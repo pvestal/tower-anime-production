@@ -6,9 +6,10 @@ Character endpoints are in story_characters.py (included as sub-router).
 import asyncio, json, logging, re, urllib.request as _ur
 from datetime import datetime
 from pathlib import Path
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from packages.core.config import BASE_PATH, OLLAMA_URL
 from packages.core.db import get_char_project_map, invalidate_char_cache, connect_direct
+from packages.core.auth import get_user_projects
 from packages.core.models import (
     ProjectCreate, ProjectUpdate,
     StorylineUpsert, WorldSettingsUpsert, StyleUpdate,
@@ -56,15 +57,22 @@ def _dynamic_update(body, fields, params=None, idx=1):
 # ── Project endpoints ────────────────────────────────────────────────────
 
 @router.get("/projects")
-async def get_projects():
-    """Get list of projects with their character counts."""
+async def get_projects(allowed_projects: list[int] = Depends(get_user_projects)):
+    """Get list of projects with their character counts (filtered by user access)."""
     try:
         conn = await connect_direct()
-        rows = await conn.fetch("""SELECT p.id, p.name, p.default_style, COUNT(c.id) as char_count
-            FROM projects p LEFT JOIN characters c ON c.project_id=p.id
-            GROUP BY p.id, p.name, p.default_style ORDER BY p.name""")
+        if allowed_projects:
+            rows = await conn.fetch("""SELECT p.id, p.name, p.default_style, p.content_rating,
+                COUNT(c.id) as char_count
+                FROM projects p LEFT JOIN characters c ON c.project_id=p.id
+                WHERE p.id = ANY($1)
+                GROUP BY p.id, p.name, p.default_style, p.content_rating ORDER BY p.name""",
+                allowed_projects)
+        else:
+            rows = []
         await conn.close()
         return {"projects": [{"id": r["id"], "name": r["name"], "default_style": r["default_style"],
+                              "content_rating": r["content_rating"],
                               "character_count": r["char_count"]} for r in rows]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -97,8 +105,10 @@ async def get_checkpoints():
 
 
 @router.get("/projects/{project_id}")
-async def get_project_detail(project_id: int):
+async def get_project_detail(project_id: int, allowed_projects: list[int] = Depends(get_user_projects)):
     """Get full project detail including generation style and storyline."""
+    if project_id not in allowed_projects:
+        raise HTTPException(status_code=403, detail="Access denied to this project")
     try:
         conn = await connect_direct()
         row = await conn.fetchrow("""
@@ -162,8 +172,10 @@ async def create_project(body: ProjectCreate):
 
 
 @router.put("/projects/{project_id}")
-async def update_project(project_id: int, body: ProjectUpdate):
+async def update_project(project_id: int, body: ProjectUpdate, allowed_projects: list[int] = Depends(get_user_projects)):
     """Update project metadata."""
+    if project_id not in allowed_projects:
+        raise HTTPException(status_code=403, detail="Access denied to this project")
     try:
         conn = await connect_direct()
         if not await conn.fetchrow("SELECT id FROM projects WHERE id=$1", project_id):
@@ -185,8 +197,10 @@ async def update_project(project_id: int, body: ProjectUpdate):
 
 
 @router.put("/projects/{project_id}/storyline")
-async def upsert_storyline(project_id: int, body: StorylineUpsert):
+async def upsert_storyline(project_id: int, body: StorylineUpsert, allowed_projects: list[int] = Depends(get_user_projects)):
     """Create or update the storyline for a project."""
+    if project_id not in allowed_projects:
+        raise HTTPException(status_code=403, detail="Access denied to this project")
     try:
         conn = await connect_direct()
         if not await conn.fetchrow("SELECT id FROM projects WHERE id=$1", project_id):
@@ -220,8 +234,10 @@ async def upsert_storyline(project_id: int, body: StorylineUpsert):
 
 
 @router.put("/projects/{project_id}/style")
-async def update_style(project_id: int, body: StyleUpdate):
+async def update_style(project_id: int, body: StyleUpdate, allowed_projects: list[int] = Depends(get_user_projects)):
     """Update the generation style for a project. Snapshots current style to style_history before applying changes."""
+    if project_id not in allowed_projects:
+        raise HTTPException(status_code=403, detail="Access denied to this project")
     try:
         conn = await connect_direct()
         row = await conn.fetchrow(
@@ -328,8 +344,10 @@ async def _store_style_switch_memory(
 
 
 @router.get("/projects/{project_id}/style-history")
-async def get_style_history(project_id: int):
+async def get_style_history(project_id: int, allowed_projects: list[int] = Depends(get_user_projects)):
     """Get past style snapshots with live per-checkpoint stats."""
+    if project_id not in allowed_projects:
+        raise HTTPException(status_code=403, detail="Access denied to this project")
     try:
         conn = await connect_direct()
         if not await conn.fetchrow("SELECT id FROM projects WHERE id=$1", project_id):
@@ -385,8 +403,10 @@ async def get_style_history(project_id: int):
 
 
 @router.get("/projects/{project_id}/style-stats")
-async def get_style_stats(project_id: int):
+async def get_style_stats(project_id: int, allowed_projects: list[int] = Depends(get_user_projects)):
     """Aggregated per-checkpoint quality stats for a project."""
+    if project_id not in allowed_projects:
+        raise HTTPException(status_code=403, detail="Access denied to this project")
     try:
         conn = await connect_direct()
         project_name = await conn.fetchval("SELECT name FROM projects WHERE id=$1", project_id)
@@ -434,8 +454,10 @@ async def get_style_stats(project_id: int):
 
 
 @router.get("/projects/{project_id}/world")
-async def get_world_settings(project_id: int):
+async def get_world_settings(project_id: int, allowed_projects: list[int] = Depends(get_user_projects)):
     """Get world settings for a project."""
+    if project_id not in allowed_projects:
+        raise HTTPException(status_code=403, detail="Access denied to this project")
     try:
         conn = await connect_direct()
         if not await conn.fetchrow("SELECT id FROM projects WHERE id=$1", project_id):
@@ -451,8 +473,10 @@ async def get_world_settings(project_id: int):
 
 
 @router.put("/projects/{project_id}/world")
-async def upsert_world_settings(project_id: int, body: WorldSettingsUpsert):
+async def upsert_world_settings(project_id: int, body: WorldSettingsUpsert, allowed_projects: list[int] = Depends(get_user_projects)):
     """Create or update world settings for a project."""
+    if project_id not in allowed_projects:
+        raise HTTPException(status_code=403, detail="Access denied to this project")
     try:
         conn = await connect_direct()
         if not await conn.fetchrow("SELECT id FROM projects WHERE id=$1", project_id):

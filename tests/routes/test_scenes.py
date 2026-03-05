@@ -4,7 +4,11 @@ import uuid
 from datetime import datetime
 
 import pytest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
+
+# scene_crud.py imports connect_direct and get_user_projects;
+# patch at the usage site, not at the aggregator router.py.
+_CRUD = "packages.scene_generation.scene_crud"
 
 
 SCENE_UUID = str(uuid.uuid4())
@@ -37,12 +41,15 @@ async def test_list_scenes(app_client):
         "audio_fade_in": None,
         "audio_fade_out": None,
         "audio_start_offset": None,
+        "audio_auto_duck": None,
+        "audio_generation_mode": None,
+        "audio_source_playlist_id": None,
     }
     mock_conn.fetch = AsyncMock(return_value=[mock_row])
     mock_conn.fetchval = AsyncMock(return_value=3)  # shot_count
     mock_conn.close = AsyncMock()
     with patch(
-        "packages.scene_generation.router.connect_direct",
+        f"{_CRUD}.connect_direct",
         new_callable=AsyncMock,
         return_value=mock_conn,
     ):
@@ -64,9 +71,12 @@ async def test_create_scene(app_client):
         "id": new_id,
         "created_at": datetime(2026, 2, 18),
     })
+    mock_conn.execute = AsyncMock()
     mock_conn.close = AsyncMock()
+    # transaction() is used as async context manager; mock it properly
+    mock_conn.transaction = MagicMock(return_value=AsyncMock())
     with patch(
-        "packages.scene_generation.router.connect_direct",
+        f"{_CRUD}.connect_direct",
         new_callable=AsyncMock,
         return_value=mock_conn,
     ):
@@ -104,12 +114,15 @@ async def test_get_scene_status(app_client):
         "generation_time_seconds": 120.5,
         "quality_score": 0.85,
         "motion_prompt": "walking forward",
+        "generation_prompt": "test prompt",
+        "generation_negative": "bad quality",
+        "video_engine": "framepack",
     }]
     mock_conn.fetchrow = AsyncMock(return_value=mock_scene)
     mock_conn.fetch = AsyncMock(return_value=mock_shots)
     mock_conn.close = AsyncMock()
     with patch(
-        "packages.scene_generation.router.connect_direct",
+        f"{_CRUD}.connect_direct",
         new_callable=AsyncMock,
         return_value=mock_conn,
     ):
@@ -128,7 +141,7 @@ async def test_get_scene_status_not_found(app_client):
     mock_conn.fetchrow = AsyncMock(return_value=None)
     mock_conn.close = AsyncMock()
     with patch(
-        "packages.scene_generation.router.connect_direct",
+        f"{_CRUD}.connect_direct",
         new_callable=AsyncMock,
         return_value=mock_conn,
     ):
@@ -142,7 +155,7 @@ async def test_delete_scene(app_client):
     mock_conn.execute = AsyncMock()
     mock_conn.close = AsyncMock()
     with patch(
-        "packages.scene_generation.router.connect_direct",
+        f"{_CRUD}.connect_direct",
         new_callable=AsyncMock,
         return_value=mock_conn,
     ):

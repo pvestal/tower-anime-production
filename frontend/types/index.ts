@@ -407,6 +407,7 @@ export interface StyleUpdate {
   cfg_scale?: number
   steps?: number
   sampler?: string
+  scheduler?: string
   width?: number
   height?: number
   positive_prompt_template?: string
@@ -598,6 +599,7 @@ export interface BuilderScene {
   audio?: SceneAudio | null
   shots?: BuilderShot[]
   created_at: string | null
+  generation_mode?: 'autopilot' | 'direct' | null
 }
 
 export interface BuilderShot {
@@ -623,12 +625,23 @@ export interface BuilderShot {
   generation_time_seconds: number | null
   dialogue_text: string | null
   dialogue_character_slug: string | null
-  video_engine: 'framepack' | 'framepack_f1' | 'ltx' | 'wan' | 'reference_v2v' | null
+  video_engine: 'framepack' | 'framepack_f1' | 'ltx' | 'wan' | 'wan22' | 'wan22_14b' | 'reference_v2v' | null
   transition_type: string | null
   transition_duration: number | null
   generation_prompt: string | null
   generation_negative: string | null
   source_image_auto_assigned: boolean | null
+  // Quality loop fields
+  pose_type: string | null
+  pose_vocabulary: string[] | null
+  must_differ_from: string[] | null
+  emotional_beat: string | null
+  viewer_should_feel: string | null
+  storyboard_notes: string | null
+  review_feedback: string | null
+  guidance_scale: number | null
+  lora_name: string | null
+  lora_strength: number | null
 }
 
 export interface SceneCreateRequest {
@@ -650,6 +663,8 @@ export interface ShotCreateRequest {
   shot_type?: string
   camera_angle?: string
   duration_seconds?: number
+  generation_prompt?: string
+  generation_negative?: string
   motion_prompt: string
   characters_present?: string[]
   seed?: number
@@ -657,7 +672,7 @@ export interface ShotCreateRequest {
   use_f1?: boolean
   dialogue_text?: string | null
   dialogue_character_slug?: string | null
-  video_engine?: 'framepack' | 'framepack_f1' | 'ltx' | 'wan' | 'reference_v2v' | null
+  video_engine?: 'framepack' | 'framepack_f1' | 'ltx' | 'wan' | 'wan22' | 'wan22_14b' | 'reference_v2v' | null
   transition_type?: string | null
   transition_duration?: number | null
 }
@@ -679,6 +694,7 @@ export interface SceneGenerationStatus {
     generation_time_seconds: number | null
     quality_score: number | null
     motion_prompt: string | null
+    video_engine: string | null
   }>
 }
 
@@ -732,6 +748,7 @@ export interface Episode {
   status: 'draft' | 'assembled' | 'published'
   final_video_path: string | null
   thumbnail_path: string | null
+  cover_frame_path: string | null
   actual_duration_seconds: number | null
   scene_count: number
   created_at: string | null
@@ -1199,7 +1216,7 @@ export interface PendingVideo {
   source_image_path: string | null
   output_video_path: string | null
   quality_score: number | null
-  video_engine: 'framepack' | 'framepack_f1' | 'ltx' | 'wan' | 'reference_v2v'
+  video_engine: 'framepack' | 'framepack_f1' | 'ltx' | 'wan' | 'wan22' | 'wan22_14b' | 'reference_v2v'
   seed: number | null
   steps: number | null
   generation_time_seconds: number | null

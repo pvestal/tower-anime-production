@@ -9,11 +9,12 @@ import urllib.request as _ur
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 
 from packages.core.config import BASE_PATH, _PROJECT_DIR, OLLAMA_URL, VISION_MODEL
 from packages.core.db import get_char_project_map
+from packages.core.auth import get_user_projects
 from packages.core.models import DatasetImageCreate, ReplenishRequest
 from .feedback import (
     record_rejection,
@@ -172,12 +173,14 @@ async def get_image_metadata(character_name: str, image_name: str):
 # ===================================================================
 
 @router.get("/library")
-async def get_library():
+async def get_library(allowed_projects: list[int] = Depends(get_user_projects)):
     """Get all approved images across all characters in one fast call."""
     if not BASE_PATH.exists():
         return {"images": [], "characters": []}
 
     char_map = await get_char_project_map()
+    # Filter to allowed projects
+    char_map = {k: v for k, v in char_map.items() if v.get("project_id") in allowed_projects}
     images = []
     char_counts: dict[str, dict] = {}
 
@@ -243,7 +246,7 @@ async def get_library():
 # ===================================================================
 
 @router.get("/dataset-stats")
-async def dataset_stats(project_name: str = None):
+async def dataset_stats(project_name: str = None, allowed_projects: list[int] = Depends(get_user_projects)):
     """Aggregate real dataset stats from filesystem approval_status.json files.
 
     Returns per-character approved/pending/rejected counts and totals.
@@ -253,6 +256,8 @@ async def dataset_stats(project_name: str = None):
         return {"characters": [], "totals": {"approved": 0, "pending": 0, "rejected": 0, "total": 0}}
 
     char_map = await get_char_project_map()
+    # Filter to allowed projects
+    char_map = {k: v for k, v in char_map.items() if v.get("project_id") in allowed_projects}
     characters = []
     totals = {"approved": 0, "pending": 0, "rejected": 0, "total": 0}
 

@@ -102,12 +102,22 @@ def build_appearance_summary(appearance_data: dict | None, design_prompt: str) -
         return design_prompt[:200] if design_prompt else ""
     parts = []
     if hair := appearance_data.get("hair"):
-        parts.append(f"{hair.get('color', '')} {hair.get('style', '')} hair".strip())
+        if isinstance(hair, dict):
+            parts.append(f"{hair.get('color', '')} {hair.get('style', '')} hair".strip())
+        elif isinstance(hair, str):
+            parts.append(f"{hair} hair")
     if eyes := appearance_data.get("eyes"):
-        parts.append(f"{eyes.get('color', '')} eyes".strip())
+        if isinstance(eyes, dict):
+            parts.append(f"{eyes.get('color', '')} eyes".strip())
+        elif isinstance(eyes, str):
+            parts.append(f"{eyes} eyes")
     if clothing := appearance_data.get("clothing"):
-        if outfit := clothing.get("default_outfit"):
-            parts.append(outfit)
+        if isinstance(clothing, dict):
+            if outfit := clothing.get("default_outfit"):
+                parts.append(outfit)
+        elif isinstance(clothing, str):
+            parts.append(clothing)
     if features := appearance_data.get("key_features"):
-        parts.extend(features[:3])
+        if isinstance(features, list):
+            parts.extend(str(f) for f in features[:3])
     return ", ".join(parts) if parts else design_prompt[:200]

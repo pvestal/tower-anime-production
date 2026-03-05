@@ -8,7 +8,202 @@ End-to-end anime production pipeline: project management, character design, data
 **API**: 127+ endpoints across 8 packages + core + graph + orchestrator
 **Entry**: `server/app.py` (modular router mounts)
 
-## Tabs
+---
+
+## User Guide — How This System Works
+
+### The Concepts (Movie Studio Analogy)
+
+| Movie Studio            | This System                  | What It Does                              |
+|-------------------------|------------------------------|-------------------------------------------|
+| Film stock / camera     | **Checkpoint** model         | Determines the visual look of everything  |
+| Casting photos          | **LoRA** files               | Teaches the system what each actor looks like |
+| The script              | **Prompts**                  | Describes what happens in each shot       |
+| The director            | **Sampler + CFG + Steps**    | Controls pacing, mood, interpretation     |
+| Film format (35mm/IMAX) | **Architecture** (SD1.5/SDXL)| Resolution and quality ceiling            |
+| The editing room        | **Scenes + Shots**           | Assembles everything into sequences       |
+| Reference footage       | **Uploaded videos**          | Shows the system "make it look like this" |
+
+**The key rule**: Your film stock and casting photos must be the same format.
+SD1.5 LoRAs only work with SD1.5 checkpoints. SDXL LoRAs only work with SDXL
+checkpoints. They cannot cross architectures.
+
+### Architecture Quick Reference
+
+| Architecture | Resolution | VRAM (generate) | VRAM (train) | Speed | LoRA size |
+|-------------|-----------|-----------------|--------------|-------|-----------|
+| **SD 1.5**  | 512x768   | ~3-4 GB         | ~6-8 GB      | ~22s/image | ~12 MB |
+| **SDXL**    | 832x1216  | ~6-8 GB         | ~10-12 GB    | ~55s/image | ~186 MB |
+
+SD1.5 is the workhorse — fast to generate, fast to train, fits easily on the
+RTX 3060. SDXL produces higher quality (better anatomy, more detail) but is
+3x slower and LoRA training is tight on 12GB VRAM.
+
+### How to Do Common Tasks
+
+#### Generate images of a character
+1. **Story** tab → select project
+2. **Cast** tab → click character → **Generate**
+3. The system auto-selects the project checkpoint + character LoRA
+
+#### Upload a reference video and extract frames
+```bash
+# Upload from your machine
+curl -X POST http://192.168.50.135:8401/api/training/ingest/video \
+  -F "file=@/path/to/video.mp4" -F "character_slug=mei_kobayashi"
+
+# Ingest from a file already on the server
+curl -X POST http://192.168.50.135:8401/api/training/ingest/local-video \
+  -H "Content-Type: application/json" \
+  -d '{"video_path": "/path/on/server/video.mp4", "character_slug": "mei_kobayashi"}'
+
+# Ingest from YouTube
+curl -X POST http://192.168.50.135:8401/api/training/ingest/youtube \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://youtube.com/watch?v=XXXXX", "character_slug": "mario"}'
+```
+
+#### Upload a movie and split frames across characters
+```bash
+# Upload a movie file
+curl -X POST http://192.168.50.135:8401/api/training/ingest/movie-upload \
+  -F "file=@/path/to/movie.mp4"
+
+# Extract + classify frames from a movie already on disk
+curl -X POST http://192.168.50.135:8401/api/training/ingest/movie-extract \
+  -H "Content-Type: application/json" \
+  -d '{"movie_path": "/opt/anime-studio/datasets/_movies/movie.mp4", "project_name": "Project Name"}'
+```
+
+#### Approve images for training
+Images must be approved before LoRA training. Minimum 100 approved.
+
+**UI**: Cast tab → character → review images → approve/reject
+
+**Bulk approve from terminal:**
+```bash
+python3 -c "
+import os, requests
+slug = 'mei_kobayashi'  # change this
+imgs = [f for f in os.listdir(f'/opt/anime-studio/datasets/{slug}/images') if f.endswith(('.png','.jpg'))]
+r = requests.post('http://localhost:8401/api/training/approval/bulk-status',
+    json={'images': [{'character_slug': slug, 'image_name': i} for i in imgs], 'status': 'approved'})
+print(f'Approved {r.json().get(\"updated_count\",0)} images')
+"
+```
+
+#### Train a character LoRA
+**UI**: Cast tab → character → Train
+
+**Terminal:**
+```bash
+curl -X POST http://192.168.50.135:8401/api/training/start \
+  -H "Content-Type: application/json" \
+  -d '{"character_name": "Mei Kobayashi"}'
+
+# Monitor
+tail -f /opt/anime-studio/logs/train_mei_kobayashi_*.log
+```
+
+Training auto-detects the project checkpoint. ~10-15 min (SD1.5), ~30-45 min (SDXL).
+One job at a time (single GPU).
+
+#### Generate video from a reference clip (reference_v2v)
+```bash
+# Extract clips from a reference video
+curl -X POST http://192.168.50.135:8401/api/training/ingest/clips/extract \
+  -H "Content-Type: application/json" \
+  -d '{"video_path": "/opt/anime-studio/datasets/_movies/fury/roxy_fox_bed_01.mp4",
+       "character_slug": "roxy", "clip_duration": 5}'
+
+# Assign clip to a shot (auto-selects reference_v2v engine)
+curl -X POST http://192.168.50.135:8401/api/scenes/{scene_id}/shots/{shot_id}/assign-source-video \
+  -H "Content-Type: application/json" \
+  -d '{"clip_path": "/path/to/clip.mp4"}'
+
+# Generate
+curl -X POST http://192.168.50.135:8401/api/scenes/{scene_id}/generate
+```
+
+#### Check system status
+```bash
+# All trained LoRAs
+curl -s http://192.168.50.135:8401/api/training/loras | python3 -m json.tool
+
+# All checkpoints
+curl -s http://192.168.50.135:8401/api/story/checkpoints | python3 -m json.tool
+
+# Gap analysis (what characters need training)
+curl -s http://192.168.50.135:8401/api/training/gap-analysis | python3 -m json.tool
+
+# Training jobs
+curl -s http://192.168.50.135:8401/api/training/jobs | python3 -m json.tool
+```
+
+#### Add a new checkpoint from CivitAI
+1. Download .safetensors from CivitAI
+2. Copy to `/opt/ComfyUI/models/checkpoints/` — it appears automatically
+3. Add a generation style:
+```sql
+PGPASSWORD=RP78eIrW7cI2jYvL5akt1yurE psql -h localhost -U patrick -d anime_production -c "
+INSERT INTO generation_styles (style_name, checkpoint_model, model_architecture, width, height, cfg_scale, sampler, scheduler, steps)
+VALUES ('my_style', 'filename.safetensors', 'sd15', 512, 768, 7.0, 'dpmpp_2m', 'karras', 30);"
+```
+4. Assign to project: `UPDATE projects SET default_style = 'my_style' WHERE name = 'Project';`
+5. **WARNING**: Changing checkpoint means retraining ALL character LoRAs for that project.
+
+#### Add a LoRA from CivitAI
+1. Download .safetensors from CivitAI
+2. Copy to `/opt/ComfyUI/models/loras/`
+3. Check the CivitAI page for: **base model** (must match your architecture) and **trigger word**
+4. Style LoRAs: add trigger word to your prompt
+5. Character LoRAs: assign to a character via DB `lora_path` column
+
+### CivitAI Shopping Guide
+
+On civitai.com/models, the **Base Model** filter is the most important:
+- **"SD 1.5"** → compatible with: cyberrealistic_v9, Counterfeit-V3.0, realcartoonPixar, realistic_vision, dreamshaper, basil_mix, lazymix
+- **"Pony"** → compatible with: ponyDiffusionV6XL, nova_animal_xl_v11
+- **"Illustrious"** → compatible with: NoobAI-XL-Vpred
+- **"SDXL 1.0"** → compatible with: cyberrealisticXL_v8
+
+**LoRA ecosystems are incompatible across families.** A Pony LoRA won't work on
+Illustrious/NoobAI and vice versa.
+
+**What to look for**: Downloads > 50K (community tested), multiple diverse example
+images (not cherry-picked), trigger word documented, file size matches arch
+(~2GB checkpoint = SD1.5, ~6.5GB = SDXL, ~12MB LoRA = SD1.5, ~186MB LoRA = SDXL).
+
+**Red flags**: No examples, "LoRA" over 2GB (mislabeled checkpoint), no trigger
+word, all examples identical, comments saying "doesn't work".
+
+### Current Projects
+
+| Project | Checkpoint | Arch | Characters |
+|---------|-----------|------|------------|
+| Tokyo Debt Desire | cyberrealistic_v9 | SD1.5 | Mei, Rina, Yuki, Takeshi, Beth |
+| Cyberpunk Goblin Slayer | Counterfeit-V3.0_fp16 | SD1.5 | 15 characters |
+| Fury | nova_animal_xl_v11 | SDXL | Roxy, Lilith, Zara, Buck + others |
+| Mario Galaxy | realcartoonPixar_v12 | SD1.5 | Mario, Luigi, Peach + others |
+| Rosa Caliente | cyberrealistic_v9 | SD1.5 | Rosa |
+| Echo Chamber | cyberrealistic_v9 | SD1.5 | 5 characters |
+| Small Wonders | realistic_vision_v51 | SD1.5 | 4 characters |
+
+### File Locations
+
+| Thing | Path |
+|-------|------|
+| Checkpoints | `/opt/ComfyUI/models/checkpoints/` |
+| LoRAs | `/opt/ComfyUI/models/loras/` |
+| Character datasets | `/opt/anime-studio/datasets/{slug}/images/` |
+| Uploaded movies | `/opt/anime-studio/datasets/_movies/` |
+| Generated videos | `/opt/ComfyUI/output/` |
+| Training logs | `/opt/anime-studio/logs/` |
+| Approval status | `/opt/anime-studio/datasets/{slug}/approval_status.json` |
+
+---
+
+## Tabs (Developer Reference)
 
 | # | Tab | Purpose |
 |---|-----|---------|

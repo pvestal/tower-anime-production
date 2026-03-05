@@ -192,9 +192,11 @@
       :shots="shots"
       :selected-shot-idx="selectedShotIdx"
       :source-image-url="sourceImageUrl"
+      :keyframe-blitz-busy="keyframeBlitzBusy"
       @select-shot="(idx: number) => emit('select-shot', idx)"
       @add-shot="emit('add-shot')"
       @batch-regen="() => { /* batch regen placeholder */ }"
+      @keyframe-blitz="emit('keyframe-blitz')"
     />
 
     <!-- Right: Shot Inspector -->
@@ -236,6 +238,7 @@ const props = defineProps<{
   characters: { slug: string; name: string }[]
   gapCharacters?: Record<string, GapAnalysisCharacter>
   autoDialogueBusy?: boolean
+  keyframeBlitzBusy?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -252,6 +255,7 @@ const emit = defineEmits<{
   'audio-changed': [audio: SceneAudio | null]
   'go-to-training': []
   'auto-dialogue': []
+  'keyframe-blitz': []
 }>()
 
 const allShotsHaveImages = computed(() =>

@@ -112,4 +112,100 @@ export const interactiveApi = {
   }> {
     return request(`/sessions/${sessionId}/history`)
   },
+
+  // --- Director Mode ---
+
+  async startDirectorSession(projectId: number, characterSlugs?: string[]): Promise<DirectorSessionResponse> {
+    return request('/director/sessions', {
+      method: 'POST',
+      body: JSON.stringify({
+        project_id: projectId,
+        character_slugs: characterSlugs || null,
+      }),
+      timeoutMs: 120000,
+    })
+  },
+
+  async sendMessage(sessionId: string, text: string): Promise<DirectorMessageResponse> {
+    return request(`/director/sessions/${sessionId}/message`, {
+      method: 'POST',
+      body: JSON.stringify({ text }),
+      timeoutMs: 120000,
+    })
+  },
+
+  async directorChoose(sessionId: string, choiceIndex: number): Promise<DirectorMessageResponse> {
+    return request(`/director/sessions/${sessionId}/choose`, {
+      method: 'POST',
+      body: JSON.stringify({ choice_index: choiceIndex }),
+      timeoutMs: 120000,
+    })
+  },
+
+  async editScene(sessionId: string, sceneIndex: number, field: string, value: string): Promise<{
+    result: { type: string; scene_index: number; field: string; regenerating_image: boolean }
+    image?: InteractiveImageStatus
+  }> {
+    return request(`/director/sessions/${sessionId}/edit`, {
+      method: 'PATCH',
+      body: JSON.stringify({ scene_index: sceneIndex, field, value }),
+    })
+  },
+
+  async getDirectorMessages(sessionId: string): Promise<DirectorMessagesResponse> {
+    return request(`/director/sessions/${sessionId}/messages`)
+  },
+
+  async endDirectorSession(sessionId: string): Promise<{ message: string }> {
+    return request(`/director/sessions/${sessionId}`, { method: 'DELETE' })
+  },
+
+  directorEventsUrl(sessionId: string): string {
+    return `/api/interactive/director/sessions/${sessionId}/events`
+  },
+}
+
+// --- Director Types ---
+
+export interface DirectorConversation {
+  type: 'conversation'
+  message: string
+  suggestions: string[]
+  detected_preferences: { key: string; value: string }[]
+  ready_to_generate: boolean
+}
+
+export interface DirectorSceneResult {
+  type: 'scene'
+  scene: InteractiveScene & { director_note?: string }
+  director_note: string
+}
+
+export type DirectorResult = DirectorConversation | DirectorSceneResult | { type: 'error'; message: string }
+
+export interface DirectorSessionResponse {
+  session_id: string
+  greeting: DirectorConversation
+  project_name: string
+  characters: { name: string; slug: string; role: string }[]
+}
+
+export interface DirectorMessageResponse {
+  result: DirectorResult
+  session_ended: boolean
+  image?: InteractiveImageStatus
+  relationships?: Record<string, number>
+}
+
+export interface DirectorMessage {
+  role: 'user' | 'director'
+  content: any
+  timestamp: number
+}
+
+export interface DirectorMessagesResponse {
+  messages: DirectorMessage[]
+  scene_count: number
+  relationships: Record<string, number>
+  preferences: Record<string, string>
 }

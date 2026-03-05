@@ -4,16 +4,22 @@ import pytest
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
+# Project endpoints live in story/router.py
+_STORY = "packages.story.router"
+# Character endpoints live in story/story_characters.py
+_CHARS = "packages.story.story_characters"
+
 
 @pytest.mark.unit
 async def test_get_projects(app_client):
     mock_conn = AsyncMock()
     mock_conn.fetch = AsyncMock(return_value=[
-        {"id": 1, "name": "Test Project", "default_style": "test_style", "char_count": 3},
+        {"id": 1, "name": "Test Project", "default_style": "test_style",
+         "content_rating": "PG", "char_count": 3},
     ])
     mock_conn.close = AsyncMock()
     with patch(
-        "packages.story.router.connect_direct",
+        f"{_STORY}.connect_direct",
         new_callable=AsyncMock,
         return_value=mock_conn,
     ):
@@ -33,7 +39,7 @@ async def test_create_project(app_client):
     mock_conn.execute = AsyncMock()
     mock_conn.close = AsyncMock()
     with patch(
-        "packages.story.router.connect_direct",
+        f"{_STORY}.connect_direct",
         new_callable=AsyncMock,
         return_value=mock_conn,
     ):
@@ -55,6 +61,7 @@ async def test_get_characters(app_client):
     mock_char_map = {
         "luigi": {
             "name": "Luigi",
+            "project_id": 1,
             "project_name": "Mario Galaxy",
             "design_prompt": "tall man in green",
             "default_style": "mario_style",
@@ -64,12 +71,19 @@ async def test_get_characters(app_client):
             "resolution": "512x768",
         },
     }
+    mock_conn = AsyncMock()
+    mock_conn.fetch = AsyncMock(return_value=[])  # gen_checkpoints query
+    mock_conn.close = AsyncMock()
     with patch(
-        "packages.story.router.get_char_project_map",
+        f"{_CHARS}.get_char_project_map",
         new_callable=AsyncMock,
         return_value=mock_char_map,
     ), patch(
-        "packages.story.router.BASE_PATH",
+        f"{_CHARS}.connect_direct",
+        new_callable=AsyncMock,
+        return_value=mock_conn,
+    ), patch(
+        f"{_CHARS}.BASE_PATH",
         new=MagicMock(),
     ) as mock_base:
         # Make the images directory appear to not exist so we skip filesystem calls
@@ -97,14 +111,14 @@ async def test_create_character(app_client):
     mock_conn.fetchval = AsyncMock(return_value=99)
     mock_conn.close = AsyncMock()
     with patch(
-        "packages.story.router.connect_direct",
+        f"{_CHARS}.connect_direct",
         new_callable=AsyncMock,
         return_value=mock_conn,
     ), patch(
-        "packages.story.router.BASE_PATH",
+        f"{_CHARS}.BASE_PATH",
         new=MagicMock(),
     ) as mock_base, patch(
-        "packages.story.router.invalidate_char_cache",
+        f"{_CHARS}.invalidate_char_cache",
     ):
         # Mock the filesystem path operations
         mock_char_path = MagicMock()
@@ -140,7 +154,7 @@ async def test_create_character_project_not_found(app_client):
     mock_conn.fetchrow = AsyncMock(return_value=None)
     mock_conn.close = AsyncMock()
     with patch(
-        "packages.story.router.connect_direct",
+        f"{_CHARS}.connect_direct",
         new_callable=AsyncMock,
         return_value=mock_conn,
     ):
@@ -166,7 +180,7 @@ async def test_get_checkpoints(app_client):
     mock_dir.exists.return_value = True
     mock_dir.iterdir.return_value = [mock_file1]
 
-    with patch("packages.story.router.CHECKPOINTS_DIR", mock_dir):
+    with patch(f"{_STORY}.CHECKPOINTS_DIR", mock_dir):
         resp = await app_client.get("/api/story/checkpoints")
         assert resp.status_code == 200
         data = resp.json()

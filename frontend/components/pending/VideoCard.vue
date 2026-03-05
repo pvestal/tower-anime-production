@@ -66,6 +66,11 @@
         </span>
       </div>
 
+      <!-- Motion prompt (truncated) -->
+      <div v-if="video.motion_prompt" class="motion-prompt" :title="video.motion_prompt">
+        {{ video.motion_prompt }}
+      </div>
+
       <!-- Gen info -->
       <div class="gen-info">
         <span v-if="video.generation_time_seconds">{{ video.generation_time_seconds.toFixed(0) }}s</span>
@@ -82,11 +87,18 @@
           Reject
         </button>
         <button
+          class="btn btn-outline"
+          @click.stop="$emit('edit-shot', video)"
+          title="Edit shot parameters and regenerate"
+        >
+          Edit
+        </button>
+        <button
           class="btn btn-danger-outline"
           @click.stop="$emit('reject-engine', video)"
           :title="`Reject & blacklist ${engineLabel} for ${video.characters_present[0] || 'character'}`"
         >
-          Ban Engine
+          Ban
         </button>
       </div>
     </div>
@@ -108,6 +120,7 @@ defineEmits<{
   (e: 'approve', video: PendingVideo): void
   (e: 'reject', video: PendingVideo): void
   (e: 'reject-engine', video: PendingVideo): void
+  (e: 'edit-shot', video: PendingVideo): void
 }>()
 
 const ENGINE_LABELS: Record<string, string> = {
@@ -115,6 +128,8 @@ const ENGINE_LABELS: Record<string, string> = {
   framepack_f1: 'FramePack F1',
   ltx: 'LTX',
   wan: 'Wan 2.1',
+  wan22: 'Wan 2.2',
+  wan22_14b: 'Wan 14B',
 }
 
 const engineLabel = computed(() => ENGINE_LABELS[props.video.video_engine] || props.video.video_engine)
@@ -203,6 +218,8 @@ function handleMouseLeave(e: Event) {
 .engine-framepack_f1 { background: #3ba55d; }
 .engine-ltx { background: #4e7dd4; }
 .engine-wan { background: #d4844e; }
+.engine-wan22 { background: #c46e3a; }
+.engine-wan22_14b { background: #a04e2a; }
 
 .video-container {
   width: 100%;
@@ -349,6 +366,14 @@ function handleMouseLeave(e: Event) {
   font-size: 11px;
   padding: 4px 6px;
 }
+.btn-outline {
+  background: transparent;
+  color: var(--accent-primary);
+  border: 1px solid var(--accent-primary);
+}
+.btn-outline:hover {
+  background: rgba(122, 162, 247, 0.15);
+}
 .btn-danger-outline {
   background: transparent;
   color: var(--status-error);
@@ -356,5 +381,18 @@ function handleMouseLeave(e: Event) {
 }
 .btn-danger-outline:hover {
   background: rgba(200, 80, 80, 0.15);
+}
+
+.motion-prompt {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  line-height: 1.4;
+  cursor: help;
 }
 </style>

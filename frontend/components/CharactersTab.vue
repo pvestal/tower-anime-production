@@ -378,8 +378,9 @@
       <div v-if="newCharError" style="margin-top: 8px; font-size: 12px; color: var(--status-error);">{{ newCharError }}</div>
     </div>
 
-    <!-- Filters -->
+    <!-- Filters (model filter hidden in easy mode) -->
     <CharacterFilters
+      v-if="authStore.isAdvanced"
       :characters="charactersStore.characters"
       v-model:filter-project="filterProject"
       v-model:filter-character="filterCharacter"
@@ -411,8 +412,8 @@
               {{ group.characters.length }} characters
             </span>
           </div>
-          <!-- Project generation settings -->
-          <div v-if="group.style" style="display: flex; gap: 12px; margin-top: 6px; flex-wrap: wrap;">
+          <!-- Project generation settings (advanced only) -->
+          <div v-if="group.style && authStore.isAdvanced" style="display: flex; gap: 12px; margin-top: 6px; flex-wrap: wrap;">
             <span class="meta-tag">{{ group.style.default_style }}</span>
             <span class="meta-tag" style="color: var(--accent-primary);">{{ group.style.checkpoint_model }}</span>
             <span v-if="group.style.cfg_scale" class="meta-tag">CFG {{ group.style.cfg_scale }}</span>
@@ -478,6 +479,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useCharactersStore } from '@/stores/characters'
 import { useTrainingStore } from '@/stores/training'
 import { useProjectStore } from '@/stores/project'
+import { useAuthStore } from '@/stores/auth'
 import { api } from '@/api/client'
 import type { Character, DatasetImage } from '@/types'
 import CharacterFilters from './characters/CharacterFilters.vue'
@@ -500,6 +502,7 @@ const MIN_TRAINING_IMAGES = 100
 const charactersStore = useCharactersStore()
 const trainingStore = useTrainingStore()
 const projectStore = useProjectStore()
+const authStore = useAuthStore()
 const activeSubTab = ref<'characters' | 'ingest' | 'workbench'>(props.initialSubTab)
 const filterProject = ref('')
 const filterCharacter = ref('')
@@ -748,21 +751,6 @@ async function loadMoviesList() {
   } catch { /* ignore */ }
 }
 
-const approvedCount = computed(() => {
-  let total = 0
-  for (const images of charactersStore.datasets.values()) {
-    total += images.filter(img => img.status === 'approved').length
-  }
-  return total
-})
-
-const readyCount = computed(() => {
-  return charactersStore.characters.filter(c => stats(c.slug).canTrain).length
-})
-
-const needsMoreCount = computed(() => {
-  return charactersStore.characters.filter(c => !stats(c.slug).canTrain && stats(c.slug).total > 0).length
-})
 
 interface ProjectGroup {
   characters: Character[]

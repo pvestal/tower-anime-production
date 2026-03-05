@@ -37,6 +37,12 @@
         :shot="shot"
         @update-field="(field: string, value: unknown) => $emit('update-field', field, value)"
       />
+      <ShotScoresTab
+        v-if="activeTab === 'scores'"
+        :shot="shot"
+        @update-field="(field: string, value: unknown) => $emit('update-field', field, value)"
+        @regenerate="$emit('regenerate')"
+      />
       <ShotHistoryTab
         v-if="activeTab === 'history'"
         :shot="shot"
@@ -51,6 +57,7 @@ import { ref } from 'vue'
 import type { BuilderShot } from '@/types'
 import ShotCreativeTab from './tabs/ShotCreativeTab.vue'
 import ShotTechnicalTab from './tabs/ShotTechnicalTab.vue'
+import ShotScoresTab from './tabs/ShotScoresTab.vue'
 import ShotHistoryTab from './tabs/ShotHistoryTab.vue'
 
 defineProps<{
@@ -66,11 +73,13 @@ defineEmits<{
   'browse-image': []
   'update-field': [field: string, value: unknown]
   'auto-dialogue': []
+  'regenerate': []
 }>()
 
 const tabs = [
   { id: 'creative', label: 'Creative' },
   { id: 'technical', label: 'Technical' },
+  { id: 'scores', label: 'Scores' },
   { id: 'history', label: 'History' },
 ]
 

@@ -615,6 +615,162 @@ async def sync_approvals_rejections(conn: asyncpg.Connection | None = None) -> i
             await conn.close()
 
 
+async def sync_video_generations(conn: asyncpg.Connection | None = None) -> int:
+    """Sync completed video shots → Generation vertices + edges.
+
+    Creates:
+    - (:Generation) node with generation parameters
+    - [:FOR_SHOT] edge → Shot
+    - [:USED_CHECKPOINT] edge → Checkpoint (if known)
+    - [:USED_LORA] edge → LoRA (if lora_name set)
+    - [:IN_PROJECT] edge → Project
+    - (:Evaluation) + [:EVALUATED_AS] edge if quality_score exists
+    """
+    close_conn = conn is None
+    if conn is None:
+        conn = await _get_conn()
+
+    try:
+        rows = await conn.fetch("""
+            SELECT sh.id::text as shot_id, sh.scene_id::text as scene_id,
+                   sh.video_engine, sh.seed, sh.steps,
+                   sh.guidance_scale, sh.lora_name, sh.lora_strength,
+                   sh.quality_score, sh.qc_category_averages, sh.qc_issues,
+                   sh.generation_time_seconds, sh.status, sh.created_at,
+                   s.project_id, p.name as project_name,
+                   gs.checkpoint_model
+            FROM shots sh
+            JOIN scenes s ON sh.scene_id = s.id
+            JOIN projects p ON s.project_id = p.id
+            LEFT JOIN generation_styles gs ON p.default_style = gs.style_name
+            WHERE sh.status = 'completed'
+        """)
+
+        count = 0
+        for row in rows:
+            gen_id = f"gen_{row['shot_id']}"
+            cfg = row["guidance_scale"] or 6.0
+            steps = row["steps"] or 25
+            engine = row["video_engine"] or "framepack"
+            seed = row["seed"] or 0
+            lora = row["lora_name"]
+            lora_w = row["lora_strength"] or 0.8
+            gen_time = row["generation_time_seconds"] or 0
+            ts = str(row["created_at"]) if row["created_at"] else ""
+
+            # Merge Generation vertex
+            query = f"""
+                MERGE (g:Generation {{gen_id: {_esc(gen_id)}}})
+                SET g.cfg = {_esc(cfg)},
+                    g.steps = {_esc(steps)},
+                    g.video_engine = {_esc(engine)},
+                    g.seed = {_esc(seed)},
+                    g.lora_name = {_esc(lora)},
+                    g.lora_weight = {_esc(lora_w)},
+                    g.generation_time_seconds = {_esc(gen_time)},
+                    g.ts = {_esc(ts)}
+                RETURN g
+            """
+            await _cypher(conn, query)
+
+            # FOR_SHOT edge → Shot
+            query = f"""
+                MATCH (g:Generation {{gen_id: {_esc(gen_id)}}}),
+                      (sh:Shot {{shot_id: {_esc(row['shot_id'])}}})
+                MERGE (g)-[r:FOR_SHOT]->(sh)
+                RETURN r
+            """
+            try:
+                await _cypher(conn, query)
+            except Exception:
+                pass  # shot may not exist in graph yet
+
+            # USED_CHECKPOINT edge → Checkpoint
+            if row["checkpoint_model"]:
+                query = f"""
+                    MATCH (g:Generation {{gen_id: {_esc(gen_id)}}}),
+                          (ck:Checkpoint {{checkpoint_model: {_esc(row['checkpoint_model'])}}})
+                    MERGE (g)-[r:GENERATED_WITH]->(ck)
+                    RETURN r
+                """
+                try:
+                    await _cypher(conn, query)
+                except Exception:
+                    pass
+
+            # USED_LORA edge → LoRA
+            if lora:
+                query = f"""
+                    MERGE (l:LoRA {{name: {_esc(lora)}}})
+                    WITH l
+                    MATCH (g:Generation {{gen_id: {_esc(gen_id)}}})
+                    MERGE (g)-[r:USED_LORA]->(l)
+                    SET r.weight = {_esc(lora_w)}
+                    RETURN r
+                """
+                try:
+                    await _cypher(conn, query)
+                except Exception:
+                    pass
+
+            # IN_PROJECT edge → Project
+            if row["project_name"]:
+                query = f"""
+                    MATCH (g:Generation {{gen_id: {_esc(gen_id)}}}),
+                          (p:Project {{name: {_esc(row['project_name'])}}})
+                    MERGE (g)-[r:IN_PROJECT]->(p)
+                    RETURN r
+                """
+                try:
+                    await _cypher(conn, query)
+                except Exception:
+                    pass
+
+            # Evaluation vertex + EVALUATED_AS edge (if quality_score exists)
+            if row["quality_score"] is not None:
+                eval_id = f"eval_{row['shot_id']}"
+                qc_avgs = row["qc_category_averages"] or {}
+                if isinstance(qc_avgs, str):
+                    try:
+                        qc_avgs = json.loads(qc_avgs)
+                    except (json.JSONDecodeError, TypeError):
+                        qc_avgs = {}
+
+                semantic = qc_avgs.get("semantic", 0)
+                structural = qc_avgs.get("structural", 0)
+                style = qc_avgs.get("style", 0)
+                mhp = row["quality_score"]
+
+                query = f"""
+                    MERGE (e:Evaluation {{eval_id: {_esc(eval_id)}}})
+                    SET e.semantic_score = {_esc(semantic)},
+                        e.structural_score = {_esc(structural)},
+                        e.style_score = {_esc(style)},
+                        e.mhp_bucket = {_esc(mhp)}
+                    RETURN e
+                """
+                await _cypher(conn, query)
+
+                query = f"""
+                    MATCH (g:Generation {{gen_id: {_esc(gen_id)}}}),
+                          (e:Evaluation {{eval_id: {_esc(eval_id)}}})
+                    MERGE (g)-[r:EVALUATED_AS]->(e)
+                    RETURN r
+                """
+                try:
+                    await _cypher(conn, query)
+                except Exception:
+                    pass
+
+            count += 1
+
+        logger.info(f"graph_sync: synced {count} video generations")
+        return count
+    finally:
+        if close_conn:
+            await conn.close()
+
+
 async def full_sync() -> dict:
     """Run all sync functions. Idempotent — safe to call repeatedly.
 
@@ -632,6 +788,7 @@ async def full_sync() -> dict:
         ("generation_history", sync_generation_history),
         ("approvals_rejections", sync_approvals_rejections),
         ("feedback", sync_feedback),
+        ("video_generations", sync_video_generations),
     ]:
         results[name] = await fn()  # each creates+closes its own connection
     logger.info(f"graph_sync: full sync complete — {results}")
@@ -645,11 +802,13 @@ async def graph_stats() -> dict:
         vertex_labels = [
             "Project", "Character", "Checkpoint", "Image",
             "Scene", "Shot", "Episode", "LoRA", "FeedbackCategory",
+            "Generation", "Evaluation",
         ]
         edge_labels = [
             "BELONGS_TO", "GENERATED_WITH", "DEPICTS", "REVIEWED_AS",
             "FEEDBACK_FOR", "REGENERATED_FROM", "APPEARS_IN", "PART_OF",
             "SCENE_IN", "TRAINED_ON", "USES_LORA", "USES_CHECKPOINT",
+            "FOR_SHOT", "EVALUATED_AS", "IN_PROJECT", "USED_LORA",
         ]
 
         stats = {"vertices": {}, "edges": {}}
@@ -687,6 +846,7 @@ _GRAPH_EVENT_NAMES = {
     "on_image_rejected",
     "on_generation_submitted",
     "on_regeneration_queued",
+    "on_shot_generated",
 }
 
 

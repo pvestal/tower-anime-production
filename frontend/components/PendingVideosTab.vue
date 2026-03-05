@@ -26,8 +26,8 @@
         </select>
       </div>
 
-      <!-- Engine chips -->
-      <div class="engine-chips">
+      <!-- Engine chips — advanced only -->
+      <div v-if="authStore.isAdvanced" class="engine-chips">
         <button
           class="chip"
           :class="{ active: store.filterEngine === '' }"
@@ -63,8 +63,8 @@
       </div>
     </div>
 
-    <!-- Engine stats panel (collapsible) -->
-    <details v-if="store.engineStats.length > 0" class="stats-panel">
+    <!-- Engine stats panel (collapsible) — advanced only -->
+    <details v-if="store.engineStats.length > 0 && authStore.isAdvanced" class="stats-panel">
       <summary class="stats-summary">Engine Quality Stats</summary>
       <div class="stats-grid">
         <div v-for="stat in store.engineStats" :key="stat.video_engine" class="stat-card">
@@ -128,6 +128,7 @@
         @approve="onApprove"
         @reject="onReject"
         @reject-engine="onRejectEngine"
+        @edit-shot="onEditShot"
       />
     </div>
   </div>
@@ -135,11 +136,15 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import type { PendingVideo } from '@/types'
 import { useVideoReviewStore } from '@/stores/videoReview'
+import { useAuthStore } from '@/stores/auth'
 import VideoCard from './pending/VideoCard.vue'
 
 const store = useVideoReviewStore()
+const authStore = useAuthStore()
+const router = useRouter()
 
 const projectFilter = ref<number | null>(null)
 const characterFilter = ref<string>('')
@@ -149,6 +154,8 @@ const ENGINE_LABELS: Record<string, string> = {
   framepack_f1: 'FramePack F1',
   ltx: 'LTX',
   wan: 'Wan 2.1',
+  wan22: 'Wan 2.2',
+  wan22_14b: 'Wan 14B',
 }
 
 function engineLabel(engine: string): string {
@@ -212,6 +219,13 @@ async function batchApprove() {
 
 async function batchReject() {
   await store.batchReview(false, 'Batch rejected')
+}
+
+function onEditShot(video: PendingVideo) {
+  router.push({
+    path: '/script/scenes',
+    query: { scene_id: video.scene_id, shot_id: video.id },
+  })
 }
 
 function refresh() {
@@ -296,6 +310,8 @@ onMounted(() => {
 .chip.active.engine-framepack_f1 { background: #3ba55d; border-color: #3ba55d; }
 .chip.active.engine-ltx { background: #4e7dd4; border-color: #4e7dd4; }
 .chip.active.engine-wan { background: #d4844e; border-color: #d4844e; }
+.chip.active.engine-wan22 { background: #c46e3a; border-color: #c46e3a; }
+.chip.active.engine-wan22_14b { background: #a04e2a; border-color: #a04e2a; }
 
 .batch-actions {
   display: flex;
@@ -371,6 +387,8 @@ onMounted(() => {
 .engine-badge-sm.engine-framepack_f1 { background: #3ba55d; }
 .engine-badge-sm.engine-ltx { background: #4e7dd4; }
 .engine-badge-sm.engine-wan { background: #d4844e; }
+.engine-badge-sm.engine-wan22 { background: #c46e3a; }
+.engine-badge-sm.engine-wan22_14b { background: #a04e2a; }
 
 .blacklist-row {
   display: flex;

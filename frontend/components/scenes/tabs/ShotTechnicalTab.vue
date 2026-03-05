@@ -20,17 +20,8 @@
       </div>
     </div>
 
-    <!-- Seed + Steps -->
+    <!-- Steps (visible) -->
     <div v-if="authStore.isAdvanced" class="field-row">
-      <div class="field-group">
-        <label class="field-label">Seed</label>
-        <input
-          :value="shot.seed"
-          @input="updateField('seed', ($event.target as HTMLInputElement).value ? Number(($event.target as HTMLInputElement).value) : null)"
-          type="number" placeholder="Random"
-          class="field-input"
-        />
-      </div>
       <div class="field-group">
         <label class="field-label">Steps</label>
         <select
@@ -45,6 +36,51 @@
           <option :value="25">25</option>
           <option :value="30">30</option>
         </select>
+      </div>
+      <div class="field-group">
+        <label class="field-label">Pose</label>
+        <div v-if="shot.pose_type" class="pose-display">{{ shot.pose_type }}</div>
+        <div v-else class="pose-display pose-display--empty">auto (enrichment pending)</div>
+      </div>
+    </div>
+
+    <!-- Advanced: Seed + Lock -->
+    <div v-if="authStore.isAdvanced" class="advanced-section">
+      <div class="advanced-header" @click="advancedExpanded = !advancedExpanded">
+        <span class="field-label" style="margin-bottom: 0; font-weight: 500; cursor: pointer;">
+          Advanced {{ advancedExpanded ? '\u25BE' : '\u25B8' }}
+        </span>
+        <span v-if="shot.seed" class="source-badge source-badge--manual" style="font-size: 9px;">seed locked</span>
+      </div>
+      <div v-if="advancedExpanded" class="advanced-body">
+        <div class="field-row">
+          <div class="field-group">
+            <label class="field-label">Seed</label>
+            <input
+              :value="shot.seed"
+              @input="updateField('seed', ($event.target as HTMLInputElement).value ? Number(($event.target as HTMLInputElement).value) : null)"
+              type="number" placeholder="Random"
+              class="field-input"
+            />
+          </div>
+          <div class="field-group" style="flex: 0 0 auto; display: flex; align-items: flex-end;">
+            <button
+              v-if="shot.seed"
+              class="btn"
+              style="font-size: 10px; padding: 4px 8px;"
+              @click="updateField('seed', null)"
+              title="Unlock seed (use random)"
+            >Unlock</button>
+          </div>
+        </div>
+        <div v-if="shot.guidance_scale" class="field-group">
+          <label class="field-label">CFG: {{ shot.guidance_scale }}</label>
+          <div class="gen-param-display">{{ shot.guidance_scale }}</div>
+        </div>
+        <div v-if="shot.lora_name" class="field-group">
+          <label class="field-label">LoRA</label>
+          <div class="gen-param-display">{{ shot.lora_name }} @ {{ shot.lora_strength || 0.8 }}</div>
+        </div>
       </div>
     </div>
 
@@ -175,6 +211,7 @@ const emit = defineEmits<{
 }>()
 
 const stateExpanded = ref(false)
+const advancedExpanded = ref(false)
 const characterStates = ref<CharacterSceneState[]>([])
 
 const engineHint = computed(() => {
@@ -237,6 +274,12 @@ function updateField(field: string, value: unknown) {
 .source-badge--auto { background: rgba(122, 162, 247, 0.15); color: var(--accent-primary); border: 1px solid rgba(122, 162, 247, 0.3); }
 .source-badge--manual { background: rgba(160, 160, 160, 0.1); color: var(--text-secondary); border: 1px solid var(--border-primary); }
 .source-badge--poor { background: rgba(200, 80, 80, 0.15); color: #c85050; border: 1px solid rgba(200, 80, 80, 0.3); }
+.pose-display { font-size: 12px; padding: 6px 8px; background: var(--bg-primary); border: 1px solid var(--border-primary); border-radius: 3px; color: var(--accent-primary); }
+.pose-display--empty { color: var(--text-muted); font-style: italic; }
+.advanced-section { border-top: 1px solid var(--border-primary); padding-top: 8px; margin-top: 4px; margin-bottom: 10px; }
+.advanced-header { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; cursor: pointer; }
+.advanced-body { padding-left: 4px; }
+.gen-param-display { font-size: 12px; padding: 4px 8px; background: var(--bg-primary); border: 1px solid var(--border-primary); border-radius: 3px; color: var(--text-primary); }
 .state-section { border-top: 1px solid var(--border-primary); padding-top: 8px; margin-top: 8px; }
 .state-header { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; cursor: pointer; }
 .state-card { background: rgba(122, 162, 247, 0.04); border: 1px solid var(--border-primary); border-radius: 4px; padding: 8px; margin-bottom: 6px; }

@@ -1,0 +1,250 @@
+# Video Model Catalog
+# Defines all video generation models, LoRAs, and motion presets.
+# Used by engine_selector.py to pick model+LoRA combos per shot.
+
+video_models:
+  # --- Wan 2.2 14B I2V (dual high/low noise) ---
+  wan22_i2v_14b_high_q4:
+    type: wan_i2v
+    role: high_noise
+    path: /opt/ComfyUI/models/unet/Wan2.2-I2V-A14B-HighNoise-Q4_K_M.gguf
+    architecture: wan22_14b
+    vram_gb: 8
+    vae: wan_2.1_vae  # 16-channel, same as Wan 2.1
+    tags: [anime, motion, i2v, wan22, 14b, quality]
+    pair: wan22_i2v_14b_low_q4
+
+  wan22_i2v_14b_low_q4:
+    type: wan_i2v
+    role: low_noise
+    path: /opt/ComfyUI/models/unet/Wan2.2-I2V-A14B-LowNoise-Q4_K_M.gguf
+    architecture: wan22_14b
+    vram_gb: 8
+    vae: wan_2.1_vae
+    tags: [anime, motion, i2v, wan22, 14b, quality]
+    pair: wan22_i2v_14b_high_q4
+
+  # --- DaSiWa TastySin v8 (merged, pre-baked distillation) ---
+  # NOTE: Pending CivitAI download. Run /opt/ComfyUI/download_civitai_models.sh
+  dasiwa_tastysin_v8_q4_high:
+    type: wan_i2v
+    role: high_noise
+    path: /opt/ComfyUI/models/unet/DaSiWa_TastySin_v8_Q4_High.gguf
+    architecture: wan22_14b_merged
+    vram_gb: 9
+    vae: wan_2.1_vae
+    tags: [anime, fast, 4steps, tastysin, i2v, wan22, merged]
+    pair: dasiwa_tastysin_v8_q4_low
+    notes: "Pre-baked lightx2v distillation. 4 steps, CFG 1. No extra speed LoRAs needed."
+
+  dasiwa_tastysin_v8_q4_low:
+    type: wan_i2v
+    role: low_noise
+    path: /opt/ComfyUI/models/unet/DaSiWa_TastySin_v8_Q4_Low.gguf
+    architecture: wan22_14b_merged
+    vram_gb: 9
+    vae: wan_2.1_vae
+    tags: [anime, fast, 4steps, tastysin, i2v, wan22, merged]
+    pair: dasiwa_tastysin_v8_q4_high
+
+  # --- Existing engines (already wired) ---
+  framepack_i2v:
+    type: framepack
+    role: primary
+    path: /opt/ComfyUI/models/diffusion_models/FramePackI2V_HY_fp8_e4m3fn.safetensors
+    architecture: hunyuan
+    vram_gb: 10
+    tags: [solo, i2v, quality, slow, hunyuan]
+
+  framepack_f1:
+    type: framepack
+    role: primary
+    path: /opt/ComfyUI/models/diffusion_models/FramePack_F1_I2V_HY_20250503_fp8_e4m3fn.safetensors
+    architecture: hunyuan
+    vram_gb: 10
+    tags: [solo, i2v, fast, hunyuan]
+
+  wan21_t2v_1.3b:
+    type: wan_t2v
+    role: primary
+    path: /opt/ComfyUI/models/unet/Wan2.1-T2V-1.3B-Q8_0.gguf
+    architecture: wan21
+    vram_gb: 4
+    vae: wan_2.1_vae
+    tags: [multi_char, t2v, establishing, fast, wan21]
+
+  wan22_5b:
+    type: wan_i2v
+    role: primary
+    path: /opt/ComfyUI/models/unet/Wan2.2-TI2V-5B-Q4_K_S.gguf
+    architecture: wan22_5b
+    vram_gb: 6
+    vae: wan2.2_vae  # 48-channel
+    tags: [lora_compat, i2v, t2v, wan22]
+
+# --- LoRAs (video) ---
+loras:
+  # Speed acceleration
+  lightx2v_i2v:
+    path: /opt/ComfyUI/models/loras/lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors
+    compatible: [wan22_14b, wan21]  # architecture compatibility
+    strength: 1.0
+    tags: [speedup, distill, wan22, i2v]
+    notes: "Cuts steps from 20 to 4. Set CFG=1, steps=4, split=2."
+
+  # Lighting/realism
+  wan_relight:
+    path: /opt/ComfyUI/models/loras/WanAnimate_relight_lora_fp16.safetensors
+    compatible: [wan22_14b]
+    strength: 0.8
+    tags: [relight, exposure, contrast, atmosphere]
+    notes: "Enhances lighting in generated videos. Apply to high noise model."
+
+  # Camera movement
+  wan_arcshot:
+    path: /opt/ComfyUI/models/loras/wan22_arcshot_high.safetensors
+    compatible: [wan22_14b]
+    strength: 0.8
+    tags: [camera, arcshot, orbit, movement, cinematic]
+    notes: "Arc camera movement. Prompt: 'arc shot, camera moving from left to right around the subject'. High noise model only."
+    # NOTE: Pending CivitAI download
+
+  # Walking motion (HunyuanVideo/FramePack)
+  kxsr_walk:
+    path: /opt/ComfyUI/models/loras/kxsr_walking_anim_v1-5.safetensors
+    compatible: [hunyuan]
+    strength: 0.9
+    tags: [walking, motion, movement, body, hunyuan]
+    trigger: "kxsr"
+    notes: "Strength 0.85-1.0 for animated characters. Prompt: 'kxsr, full body, no_crop'"
+    # NOTE: Pending CivitAI download
+
+# --- Motion Presets ---
+# Maps shot intent → recommended video_model + LoRA combos.
+# engine_selector.py resolves these to actual model paths.
+motion_presets:
+  walking:
+    description: "Character walking, striding, moving through space"
+    primary_engine: framepack  # HunyuanVideo with walking LoRA
+    loras: [kxsr_walk]
+    fallback_engine: wan22_14b
+    fallback_loras: []
+    shot_types: [medium, wide]
+
+  running:
+    description: "Character running, sprinting, chasing"
+    primary_engine: wan22_14b
+    loras: [lightx2v_i2v]
+    fallback_engine: framepack
+    fallback_loras: []
+    shot_types: [wide, medium, action]
+
+  fight_scene:
+    description: "Combat, punching, kicking, dramatic action"
+    primary_engine: wan22_14b
+    loras: [lightx2v_i2v]
+    fallback_engine: framepack_f1
+    fallback_loras: []
+    shot_types: [action, medium]
+
+  cinematic_orbit:
+    description: "Camera orbits around subject, dramatic reveal"
+    primary_engine: wan22_14b
+    loras: [lightx2v_i2v, wan_arcshot]
+    fallback_engine: framepack
+    fallback_loras: []
+    shot_types: [establishing, medium, wide]
+
+  cinematic_relight:
+    description: "Atmospheric lighting shifts, mood lighting, dramatic exposure"
+    primary_engine: wan22_14b
+    loras: [lightx2v_i2v, wan_relight]
+    fallback_engine: framepack
+    fallback_loras: []
+    shot_types: [close-up, medium, establishing]
+
+  dialogue:
+    description: "Character talking, subtle facial movement, gestures"
+    primary_engine: framepack
+    loras: []
+    fallback_engine: wan22_14b
+    fallback_loras: [lightx2v_i2v]
+    shot_types: [close-up, medium]
+
+  establishing:
+    description: "Environment shots, wide landscape, city establishing"
+    primary_engine: wan21_t2v  # No source image needed
+    loras: []
+    fallback_engine: wan22_14b
+    fallback_loras: [lightx2v_i2v]
+    shot_types: [establishing, wide_establishing, aerial, environment]
+
+  idle:
+    description: "Subtle movement, breathing, wind, ambient"
+    primary_engine: framepack
+    loras: []
+    fallback_engine: framepack_f1
+    fallback_loras: []
+    shot_types: [close-up, extreme_close-up, medium]
+
+  multi_character:
+    description: "Two or more characters interacting in frame"
+    primary_engine: wan22_14b
+    loras: [lightx2v_i2v]
+    fallback_engine: wan21_t2v
+    fallback_loras: []
+    shot_types: [medium, wide]
+
+# --- Default generation parameters per engine ---
+engine_defaults:
+  wan22_14b:
+    steps: 6
+    split_steps: 3
+    cfg: 3.5
+    sampler: euler
+    scheduler: simple
+    fps: 16
+    num_frames: 81
+    width: 480
+    height: 720
+
+  wan22_14b_lightx2v:
+    steps: 4
+    split_steps: 2
+    cfg: 1.0
+    sampler: euler
+    scheduler: simple
+    fps: 16
+    num_frames: 81
+    width: 480
+    height: 720
+
+  wan22_14b_dasiwa:
+    steps: 4
+    split_steps: 2
+    cfg: 1.0
+    sampler: euler
+    scheduler: simple
+    fps: 16
+    num_frames: 81
+    width: 480
+    height: 720
+    notes: "No extra speed LoRAs — distillation baked in"
+
+  framepack:
+    steps: 25
+    cfg: 1.0
+    fps: 30
+    num_frames: 49  # ~1.6s at 30fps
+    width: 544
+    height: 704
+
+  wan21_t2v:
+    steps: 30
+    cfg: 6.0
+    sampler: uni_pc
+    scheduler: simple
+    fps: 16
+    num_frames: 81
+    width: 480
+    height: 720

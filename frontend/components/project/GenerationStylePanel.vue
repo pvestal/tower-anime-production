@@ -31,26 +31,39 @@
         </div>
       </div>
       <div>
-        <label class="field-label">CFG Scale</label>
-        <input v-model.number="editStyle.cfg_scale" type="number" min="1" max="30" step="0.5" class="field-input" />
+        <label class="field-label">CFG Scale <span class="field-hint">Higher = stricter prompt adherence</span></label>
+        <input v-model.number="editStyle.cfg_scale" type="range" min="1" max="20" step="0.5" class="field-range" />
+        <span class="range-value">{{ editStyle.cfg_scale }}</span>
       </div>
       <div>
-        <label class="field-label">Steps</label>
-        <input v-model.number="editStyle.steps" type="number" min="1" max="100" class="field-input" />
+        <label class="field-label">Steps <span class="field-hint">More = finer detail, slower</span></label>
+        <input v-model.number="editStyle.steps" type="range" min="10" max="60" step="5" class="field-range" />
+        <span class="range-value">{{ editStyle.steps }}</span>
       </div>
       <div>
         <label class="field-label">Sampler</label>
         <select v-model="editStyle.sampler" class="field-input" style="width: 100%;">
-          <option v-for="s in samplerOptions" :key="s" :value="s">{{ s }}</option>
+          <option v-for="s in samplerOptions" :key="s.value" :value="s.value">{{ s.label }}</option>
         </select>
       </div>
       <div>
-        <label class="field-label">Width</label>
-        <input v-model.number="editStyle.width" type="number" min="256" max="2048" step="64" class="field-input" />
+        <label class="field-label">Scheduler</label>
+        <select v-model="editStyle.scheduler" class="field-input" style="width: 100%;">
+          <option value="normal">Normal — standard noise schedule</option>
+          <option value="karras">Karras — sharper details</option>
+          <option value="exponential">Exponential — smooth falloff</option>
+          <option value="simple">Simple — linear</option>
+          <option value="sgm_uniform">SGM Uniform — even spacing</option>
+        </select>
       </div>
       <div>
-        <label class="field-label">Height</label>
-        <input v-model.number="editStyle.height" type="number" min="256" max="2048" step="64" class="field-input" />
+        <label class="field-label">Resolution</label>
+        <div style="display: flex; gap: 6px; align-items: center;">
+          <input v-model.number="editStyle.width" type="number" min="256" max="2048" step="64" class="field-input" style="width: 80px;" />
+          <span style="color: var(--text-muted); font-size: 12px;">×</span>
+          <input v-model.number="editStyle.height" type="number" min="256" max="2048" step="64" class="field-input" style="width: 80px;" />
+          <span class="field-hint" style="font-size: 10px;">{{ (editStyle.width || 512) * (editStyle.height || 768) > 589824 ? 'SDXL' : 'SD1.5' }} range</span>
+        </div>
       </div>
     </div>
     <div style="margin-bottom: 10px;">
@@ -152,22 +165,25 @@ const emit = defineEmits<{
   save: [data: StyleUpdate]
 }>()
 
+// ComfyUI-native sampler names with friendly display labels
 const samplerOptions = [
-  'DPM++ 2M Karras',
-  'DPM++ 2M SDE Karras',
-  'DPM++ 2S a Karras',
-  'DPM++ SDE Karras',
-  'DPM++ 2M',
-  'Euler a',
-  'Euler',
-  'DDIM',
+  { value: 'euler', label: 'Euler — fast, clean lines' },
+  { value: 'euler_ancestral', label: 'Euler Ancestral — creative, varied' },
+  { value: 'dpmpp_2m', label: 'DPM++ 2M — balanced quality/speed' },
+  { value: 'dpmpp_2m_sde', label: 'DPM++ 2M SDE — detailed, slower' },
+  { value: 'dpmpp_2s_ancestral', label: 'DPM++ 2S Ancestral — artistic' },
+  { value: 'dpmpp_sde', label: 'DPM++ SDE — smooth gradients' },
+  { value: 'ddim', label: 'DDIM — deterministic, fast' },
+  { value: 'uni_pc', label: 'UniPC — fast, 10-15 steps' },
+  { value: 'lcm', label: 'LCM — ultra-fast, 4-8 steps' },
 ]
 
 const editStyle = reactive<StyleUpdate>({
   checkpoint_model: '',
   cfg_scale: 7,
   steps: 25,
-  sampler: 'DPM++ 2M Karras',
+  sampler: 'dpmpp_2m',
+  scheduler: 'karras',
   width: 768,
   height: 768,
   positive_prompt_template: '',
@@ -175,7 +191,7 @@ const editStyle = reactive<StyleUpdate>({
 })
 
 const savedSnapshot = ref({
-  checkpoint_model: '', cfg_scale: 7, steps: 25, sampler: '',
+  checkpoint_model: '', cfg_scale: 7, steps: 25, sampler: '', scheduler: 'karras',
   width: 768, height: 768, positive_prompt_template: '', negative_prompt_template: '',
 })
 
@@ -187,6 +203,7 @@ function snapshot() {
     cfg_scale: editStyle.cfg_scale || 7,
     steps: editStyle.steps || 25,
     sampler: editStyle.sampler || '',
+    scheduler: editStyle.scheduler || 'karras',
     width: editStyle.width || 768,
     height: editStyle.height || 768,
     positive_prompt_template: editStyle.positive_prompt_template || '',
@@ -200,6 +217,7 @@ const dirty = computed(() => {
     || editStyle.cfg_scale !== s.cfg_scale
     || editStyle.steps !== s.steps
     || editStyle.sampler !== s.sampler
+    || editStyle.scheduler !== s.scheduler
     || editStyle.width !== s.width
     || editStyle.height !== s.height
     || editStyle.positive_prompt_template !== s.positive_prompt_template
@@ -211,7 +229,8 @@ watch(() => props.styleProp, (s) => {
   editStyle.checkpoint_model = s.checkpoint_model || ''
   editStyle.cfg_scale = s.cfg_scale || 7
   editStyle.steps = s.steps || 25
-  editStyle.sampler = s.sampler || 'DPM++ 2M Karras'
+  editStyle.sampler = s.sampler || 'dpmpp_2m'
+  editStyle.scheduler = (s as any).scheduler || 'karras'
   editStyle.width = s.width || 768
   editStyle.height = s.height || 768
   editStyle.positive_prompt_template = s.positive_prompt_template || ''
@@ -338,6 +357,24 @@ watch(() => props.projectId, (id) => {
 .field-input:focus {
   border-color: var(--border-focus);
   outline: none;
+}
+.field-hint {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+.field-range {
+  width: calc(100% - 40px);
+  vertical-align: middle;
+  accent-color: var(--accent-primary);
+}
+.range-value {
+  display: inline-block;
+  width: 35px;
+  text-align: right;
+  font-size: 12px;
+  color: var(--accent-primary);
+  font-weight: 500;
 }
 .btn-saved {
   background: var(--status-success) !important;

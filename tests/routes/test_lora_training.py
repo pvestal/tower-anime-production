@@ -6,12 +6,17 @@ from datetime import datetime
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+# Approval endpoints live in router_approval.py (not router.py)
+_APPROVAL = "packages.lora_training.router_approval"
+# Feedback endpoint lives in training_jobs.py
+_JOBS = "packages.lora_training.training_jobs"
+
 
 @pytest.mark.unit
 async def test_get_pending_approvals_empty(app_client):
     mock_base = MagicMock()
     mock_base.exists.return_value = False
-    with patch("packages.lora_training.router.BASE_PATH", mock_base):
+    with patch(f"{_APPROVAL}.BASE_PATH", mock_base):
         resp = await app_client.get("/api/training/approval/pending")
         assert resp.status_code == 200
         data = resp.json()
@@ -30,11 +35,11 @@ async def test_get_pending_approvals_with_images(app_client, mock_filesystem):
         },
     }
     with patch(
-        "packages.lora_training.router.get_char_project_map",
+        f"{_APPROVAL}.get_char_project_map",
         new_callable=AsyncMock,
         return_value=mock_char_map,
     ), patch(
-        "packages.lora_training.router.BASE_PATH",
+        f"{_APPROVAL}.BASE_PATH",
         mock_filesystem,
     ):
         resp = await app_client.get("/api/training/approval/pending")
@@ -51,9 +56,9 @@ async def test_get_pending_approvals_with_images(app_client, mock_filesystem):
 
 @pytest.mark.unit
 async def test_approve_image(app_client, mock_filesystem):
-    with patch("packages.lora_training.router.BASE_PATH", mock_filesystem), \
-         patch("packages.lora_training.router.record_rejection"), \
-         patch("packages.lora_training.router.queue_regeneration"):
+    with patch(f"{_APPROVAL}.BASE_PATH", mock_filesystem), \
+         patch(f"{_APPROVAL}.record_rejection"), \
+         patch(f"{_APPROVAL}.queue_regeneration"):
         resp = await app_client.post("/api/training/approval/approve", json={
             "character_name": "Luigi",
             "character_slug": "luigi",
@@ -73,9 +78,10 @@ async def test_approve_image(app_client, mock_filesystem):
 
 @pytest.mark.unit
 async def test_reject_image_queues_regeneration(app_client, mock_filesystem):
-    with patch("packages.lora_training.router.BASE_PATH", mock_filesystem), \
-         patch("packages.lora_training.router.record_rejection") as mock_record, \
-         patch("packages.lora_training.router.queue_regeneration") as mock_regen:
+    with patch(f"{_APPROVAL}.BASE_PATH", mock_filesystem), \
+         patch(f"{_APPROVAL}.record_rejection") as mock_record, \
+         patch(f"{_APPROVAL}.queue_regeneration") as mock_regen, \
+         patch("packages.core.replenishment._enabled", True):
         resp = await app_client.post("/api/training/approval/approve", json={
             "character_name": "Luigi",
             "character_slug": "luigi",
@@ -94,7 +100,7 @@ async def test_reject_image_queues_regeneration(app_client, mock_filesystem):
 @pytest.mark.unit
 async def test_get_feedback(app_client, mock_filesystem):
     with patch(
-        "packages.lora_training.training_router.BASE_PATH",
+        f"{_JOBS}.BASE_PATH",
         mock_filesystem,
     ):
         resp = await app_client.get("/api/training/feedback/luigi")
@@ -108,7 +114,7 @@ async def test_get_feedback(app_client, mock_filesystem):
 @pytest.mark.unit
 async def test_get_feedback_no_file(app_client, tmp_path):
     with patch(
-        "packages.lora_training.training_router.BASE_PATH",
+        f"{_JOBS}.BASE_PATH",
         tmp_path,
     ):
         resp = await app_client.get("/api/training/feedback/nonexistent")

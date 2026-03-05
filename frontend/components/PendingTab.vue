@@ -97,8 +97,8 @@
       @batch-reassign="openBulkReassign"
     />
 
-    <!-- Replenishment Panel (collapsible) -->
-    <div class="card" style="margin-bottom: 16px;" v-if="replenishVisible">
+    <!-- Replenishment Panel (collapsible) — advanced only -->
+    <div class="card" style="margin-bottom: 16px;" v-if="replenishVisible && authStore.isAdvanced">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
         <div style="display: flex; align-items: center; gap: 12px;">
           <h3 style="margin: 0; color: var(--text-primary); font-size: 14px;">Replenishment Loop</h3>
@@ -300,6 +300,7 @@
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useApprovalStore } from '@/stores/approval'
 import { useCharactersStore } from '@/stores/characters'
+import { useAuthStore } from '@/stores/auth'
 import { api } from '@/api/client'
 import { learningApi } from '@/api/learning'
 import type { PendingImage, ReplenishmentStatus, ReadinessResponse } from '@/types'
@@ -315,6 +316,7 @@ const MIN_TRAINING = 10
 const RECENT_THRESHOLD_MS = 60 * 60 * 1000 // 1 hour
 const approvalStore = useApprovalStore()
 const charactersStore = useCharactersStore()
+const authStore = useAuthStore()
 const filterModel = ref('')
 const filterSource = ref('')
 const sortBy = ref('newest')

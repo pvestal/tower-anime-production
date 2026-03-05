@@ -19,37 +19,55 @@ MAX_SCENES = 30
 
 async def load_project_context(project_id: int, character_slugs: list[str] | None = None) -> dict:
     """Load project + character data from DB for session initialization."""
-    async with get_connection() as conn:
+    async with await get_connection() as conn:
         project = await conn.fetchrow(
-            """SELECT p.id, p.name, p.storyline, p.world_settings,
+            """SELECT p.id, p.name, p.premise, p.description,
                       gs.checkpoint_model, gs.cfg_scale, gs.steps,
                       gs.sampler, gs.scheduler, gs.width, gs.height,
-                      gs.positive_prompt_template, gs.negative_prompt
+                      gs.positive_prompt_template, gs.negative_prompt_template
                FROM projects p
-               LEFT JOIN generation_styles gs ON gs.name = p.default_style
+               LEFT JOIN generation_styles gs ON gs.style_name = p.default_style
                WHERE p.id = $1""",
             project_id,
         )
         if not project:
             raise ValueError(f"Project {project_id} not found")
 
+        # Load storyline if exists
+        storyline_row = await conn.fetchrow(
+            "SELECT summary, theme, tone, themes FROM storylines WHERE project_id = $1 LIMIT 1",
+            project_id,
+        )
+
+        # Load world_settings if exists
+        ws_row = await conn.fetchrow(
+            """SELECT style_preamble, art_style, world_location, time_period, production_notes
+               FROM world_settings WHERE project_id = $1 LIMIT 1""",
+            project_id,
+        )
+
         # Load characters
-        query = """SELECT c.name, c.slug, c.design_prompt, c.description,
+        query = """SELECT c.name, c.design_prompt, c.description,
                           c.personality, c.background, c.role, c.character_role,
-                          c.appearance_data, c.relationships
+                          c.appearance_data, c.personality_tags, c.lora_trigger
                    FROM characters c WHERE c.project_id = $1"""
         params = [project_id]
         if character_slugs:
-            query += " AND c.slug = ANY($2)"
-            params.append(character_slugs)
+            # Match by lowercased name since there's no slug column
+            query += " AND lower(c.name) = ANY($2)"
+            params.append([s.lower() for s in character_slugs])
         characters = await conn.fetch(query, *params)
 
     char_list = []
     for c in characters:
-        appearance_data = json.loads(c["appearance_data"]) if c["appearance_data"] else None
+        appearance_data = c["appearance_data"] if c["appearance_data"] else None
+        # If appearance_data is a string (shouldn't be with jsonb), parse it
+        if isinstance(appearance_data, str):
+            appearance_data = json.loads(appearance_data)
+        slug = c["name"].lower().replace(" ", "_").replace("-", "_")
         char_list.append({
             "name": c["name"],
-            "slug": c["slug"],
+            "slug": slug,
             "design_prompt": c["design_prompt"] or "",
             "description": c["description"] or "",
             "personality": c["personality"] or "",
@@ -57,18 +75,35 @@ async def load_project_context(project_id: int, character_slugs: list[str] | Non
             "role": c["character_role"] or c["role"] or "",
             "appearance_data": appearance_data,
             "appearance_summary": build_appearance_summary(appearance_data, c["design_prompt"] or ""),
-            "relationships": json.loads(c["relationships"]) if c["relationships"] else {},
         })
 
-    world_settings = json.loads(project["world_settings"]) if project["world_settings"] else {}
-    world_context = _build_world_context(project["name"], project["storyline"], world_settings)
+    # Build storyline text
+    storyline_text = project["premise"] or project["description"] or ""
+    if storyline_row:
+        if storyline_row["summary"]:
+            storyline_text = storyline_row["summary"]
+
+    # Build world settings dict
+    world_settings = {}
+    if ws_row:
+        if ws_row["world_location"]:
+            world_settings["setting"] = ws_row["world_location"]
+        if ws_row["time_period"]:
+            world_settings["time_period"] = ws_row["time_period"]
+    if storyline_row:
+        if storyline_row["tone"]:
+            world_settings["tone"] = storyline_row["tone"]
+        if storyline_row["themes"]:
+            world_settings["themes"] = storyline_row["themes"]
+
+    world_context = _build_world_context(project["name"], storyline_text, world_settings)
 
     return {
         "project_name": project["name"],
         "characters": char_list,
         "character_slugs": [c["slug"] for c in char_list],
         "world_context": world_context,
-        "checkpoint_model": project["checkpoint_model"] or "Counterfeit-V3.0_fp16.safetensors",
+        "checkpoint_model": project["checkpoint_model"] or "waiIllustriousSDXL_v160.safetensors",
         "generation_params": {
             "cfg_scale": float(project["cfg_scale"] or 7.0),
             "steps": int(project["steps"] or 25),
@@ -76,7 +111,7 @@ async def load_project_context(project_id: int, character_slugs: list[str] | Non
             "scheduler": project["scheduler"] or "normal",
             "width": int(project["width"] or 512),
             "height": int(project["height"] or 768),
-            "negative_prompt": project["negative_prompt"] or "worst quality, low quality, blurry, deformed",
+            "negative_prompt": project["negative_prompt_template"] or "worst quality, low quality, blurry, deformed",
         },
     }
 

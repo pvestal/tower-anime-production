@@ -52,3 +52,14 @@ class ImageStatus(BaseModel):
     status: str  # pending, generating, ready, failed
     progress: float = 0.0
     url: str | None = None
+
+
+# --- Director mode models ---
+
+class MessageRequest(BaseModel):
+    text: str
+
+class EditSceneRequest(BaseModel):
+    scene_index: int
+    field: str  # narration, image_prompt
+    value: str

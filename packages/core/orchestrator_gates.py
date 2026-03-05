@@ -8,7 +8,7 @@ import json
 import logging
 from pathlib import Path
 
-from .config import BASE_PATH
+from .config import BASE_PATH, COMFYUI_URL
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +110,17 @@ async def _gate_shot_preparation(conn, project_id: int) -> dict:
     }
 
 
+def _check_comfyui_health() -> bool:
+    """Quick check if ComfyUI is reachable."""
+    import urllib.request
+    try:
+        req = urllib.request.Request(f"{COMFYUI_URL}/system_stats")
+        urllib.request.urlopen(req, timeout=3)
+        return True
+    except Exception:
+        return False
+
+
 async def _gate_video_generation(conn, project_id: int) -> dict:
     """Check if all shots have completed video generation."""
     total = await conn.fetchval("""
@@ -123,9 +134,13 @@ async def _gate_video_generation(conn, project_id: int) -> dict:
         WHERE sc.project_id = $1
           AND s.status IN ('completed', 'accepted_best')
     """, project_id)
+    comfyui_online = _check_comfyui_health()
     return {
         "passed": total > 0 and completed >= total,
-        "action_needed": completed < total,
+        "action_needed": completed < total and comfyui_online,
+        "blocked": not comfyui_online and completed < total,
+        "blocked_reason": "ComfyUI offline" if not comfyui_online else None,
+        "comfyui_online": comfyui_online,
         "total_shots": total,
         "completed_shots": completed,
     }

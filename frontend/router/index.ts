@@ -5,6 +5,35 @@ const routes = [
     path: '/',
     redirect: '/story',
   },
+  // ===== Auth routes (no guard) =====
+  {
+    path: '/login',
+    name: 'Login',
+    component: () => import('@/components/auth/LoginPage.vue'),
+    meta: { public: true },
+  },
+  {
+    path: '/profiles',
+    name: 'Profiles',
+    component: () => import('@/components/auth/ProfilePicker.vue'),
+    meta: { public: true },
+  },
+  {
+    path: '/onboarding',
+    name: 'Onboarding',
+    component: () => import('@/components/auth/OnboardingCarousel.vue'),
+  },
+  {
+    path: '/settings',
+    name: 'Settings',
+    component: () => import('@/components/auth/SettingsPage.vue'),
+  },
+  {
+    path: '/shared/:token',
+    name: 'SharedProject',
+    component: () => import('@/components/shared/SharedProjectView.vue'),
+    meta: { public: true },
+  },
   // ===== Primary routes (creative pipeline order) =====
   {
     path: '/story',
@@ -124,4 +153,28 @@ const routes = [
 export const router = createRouter({
   history: createWebHistory('/anime-studio/'),
   routes,
+})
+
+// Navigation guard — check auth state
+router.beforeEach(async (to, _from, next) => {
+  // Public routes skip auth check
+  if (to.meta?.public) {
+    return next()
+  }
+
+  // Import auth store lazily to avoid circular deps
+  const { useAuthStore } = await import('@/stores/auth')
+  const authStore = useAuthStore()
+
+  // Only check session once (on first navigation)
+  if (authStore.loading) {
+    await authStore.checkSession()
+  }
+
+  // Onboarding redirect
+  if (authStore.needsOnboarding && to.name !== 'Onboarding') {
+    return next('/onboarding')
+  }
+
+  next()
 })

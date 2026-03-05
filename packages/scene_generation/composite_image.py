@@ -338,7 +338,7 @@ async def generate_composite_source(
     project_id: int,
     characters: list[str],
     scene_prompt: str,
-    checkpoint_model: str = "realistic_vision_v51.safetensors",
+    checkpoint_model: str = "waiIllustriousSDXL_v160.safetensors",
 ) -> Path | None:
     """Generate a composite image with multiple characters for use as FramePack source.
 
@@ -415,4 +415,193 @@ async def generate_composite_source(
         return result
     else:
         logger.error(f"Composite generation failed for {char_a} + {char_b}")
+        return None
+
+
+async def generate_simple_keyframe(
+    conn,
+    project_id: int,
+    characters: list[str],
+    scene_prompt: str,
+    checkpoint_model: str = "waiIllustriousSDXL_v160.safetensors",
+    shot_type: str = "medium",
+    camera_angle: str = "eye-level",
+) -> Path | None:
+    """Generate a keyframe image that matches the shot's composition requirements.
+
+    Uses shot_type and camera_angle to drive framing — not just a character portrait.
+
+    Args:
+        conn: DB connection
+        project_id: Project ID for character lookups
+        characters: List of character slugs
+        scene_prompt: Text describing the scene
+        checkpoint_model: SD1.5/SDXL checkpoint to use
+        shot_type: establishing, wide, medium, close-up, action
+        camera_angle: eye-level, low-angle, high-angle, dutch, overhead
+
+    Returns:
+        Path to generated keyframe image, or None on failure.
+    """
+    if not characters:
+        return None
+
+    # Build character descriptions (kept SHORT — scene prompt drives composition)
+    char_names = []
+    primary_lora = None
+    for slug in characters[:2]:
+        row = await conn.fetchrow(
+            "SELECT name, design_prompt, lora_path FROM characters "
+            "WHERE REGEXP_REPLACE(LOWER(REPLACE(name, ' ', '_')), '[^a-z0-9_-]', '', 'g') = $1 "
+            "AND project_id = $2",
+            slug, project_id,
+        )
+        if row:
+            char_names.append(row["name"])
+            if not primary_lora and row["lora_path"]:
+                primary_lora = row["lora_path"]
+
+    if not char_names:
+        # Characters not in DB (extras like "villagers", "corporate_security")
+        # Use slug as display name — the scene_prompt already has full descriptions
+        char_names = [slug.replace("_", " ").title() for slug in characters[:2]]
+        logger.info(f"generate_simple_keyframe: using slug names for {characters[:2]} (not in DB)")
+
+    # Shot-type composition prefixes — tells the model WHAT to draw
+    composition_prefix = {
+        "establishing": "wide establishing shot, full environment, distant figures, cityscape, panoramic view",
+        "wide": "wide shot, full body visible, environment context, dynamic scene",
+        "medium": "medium shot, waist-up, character interacting with environment",
+        "close-up": "close-up shot, face and upper body, intense expression, dramatic lighting",
+        "action": "dynamic action pose, motion blur, dramatic angle, combat scene, intense movement",
+    }.get(shot_type, "medium shot")
+
+    # Camera angle modifiers
+    angle_modifier = {
+        "low-angle": "low angle looking up, imposing, dramatic perspective",
+        "high-angle": "high angle looking down, overhead perspective",
+        "dutch": "dutch angle, tilted camera, tension, unease",
+        "overhead": "birds eye view, top-down perspective",
+        "eye-level": "",
+    }.get(camera_angle, "")
+
+    # Build prompt: COMPOSITION first, then SCENE ACTION, then character name (not full description)
+    # LoRA handles character appearance — prompt should drive the scene
+    parts = [composition_prefix]
+    if angle_modifier:
+        parts.append(angle_modifier)
+    parts.append(scene_prompt)
+    # Only add character names (not full design_prompt) — LoRA provides appearance
+    if len(char_names) > 1:
+        parts.append(f"{' and '.join(char_names)}")
+    else:
+        parts.append(char_names[0])
+    parts.append("anime style, detailed, cinematic lighting, masterpiece, best quality")
+
+    full_prompt = ", ".join(parts)
+
+    # Stronger negative for establishing/wide to prevent portrait mode
+    negative_parts = ["worst quality, low quality, blurry, deformed, extra limbs, bad anatomy, watermark, text"]
+    if shot_type in ("establishing", "wide"):
+        negative_parts.append("portrait, headshot, close-up face, bust shot, white background, simple background")
+    elif shot_type == "action":
+        negative_parts.append("static pose, standing still, portrait, peaceful, calm")
+
+    negative = ", ".join(negative_parts)
+
+    # Resolution based on shot type — landscape for establishing/wide, portrait for rest
+    # Illustrious SDXL native resolution
+    if shot_type in ("establishing", "wide"):
+        kf_width, kf_height = 1216, 832   # landscape
+    else:
+        kf_width, kf_height = 832, 1216   # portrait
+
+    # LoRA strength — OFF for establishing (env matters), low for wide, normal for close-up
+    lora_strength = {
+        "establishing": 0.0,  # no LoRA — pure environment
+        "wide": 0.3,
+        "action": 0.5,
+        "medium": 0.7,
+        "close-up": 0.85,
+    }.get(shot_type, 0.7)
+
+    # Build a simple txt2img workflow with optional LoRA
+    ts = int(time.time())
+    prefix = f"keyframe_{'_'.join(characters[:2])}_{ts}"
+
+    workflow = {
+        "3": {
+            "inputs": {
+                "seed": ts % (2**31),
+                "steps": 25,
+                "cfg": 5.0,
+                "sampler_name": "euler_ancestral",
+                "scheduler": "normal",
+                "denoise": 1,
+                "model": ["4", 0],
+                "positive": ["6", 0],
+                "negative": ["7", 0],
+                "latent_image": ["5", 0],
+            },
+            "class_type": "KSampler",
+        },
+        "4": {
+            "inputs": {"ckpt_name": checkpoint_model},
+            "class_type": "CheckpointLoaderSimple",
+        },
+        "5": {
+            "inputs": {"width": kf_width, "height": kf_height, "batch_size": 1},
+            "class_type": "EmptyLatentImage",
+        },
+        "6": {
+            "inputs": {"text": full_prompt, "clip": ["4", 1]},
+            "class_type": "CLIPTextEncode",
+        },
+        "7": {
+            "inputs": {"text": negative, "clip": ["4", 1]},
+            "class_type": "CLIPTextEncode",
+        },
+        "8": {
+            "inputs": {"samples": ["3", 0], "vae": ["4", 2]},
+            "class_type": "VAEDecode",
+        },
+        "9": {
+            "inputs": {"filename_prefix": prefix, "images": ["8", 0]},
+            "class_type": "SaveImage",
+        },
+    }
+
+    # Inject LoRA if available (with shot-type-aware strength)
+    if primary_lora:
+        lora_file = Path(f"/opt/ComfyUI/models/loras/{primary_lora}")
+        if not lora_file.exists():
+            lora_file = Path(f"/opt/ComfyUI/models/loras/{primary_lora}.safetensors")
+        if lora_file.exists():
+            workflow["10"] = {
+                "inputs": {
+                    "lora_name": lora_file.name,
+                    "strength_model": lora_strength,
+                    "strength_clip": lora_strength,
+                    "model": ["4", 0],
+                    "clip": ["4", 1],
+                },
+                "class_type": "LoraLoader",
+            }
+            workflow["3"]["inputs"]["model"] = ["10", 0]
+            workflow["6"]["inputs"]["clip"] = ["10", 1]
+            workflow["7"]["inputs"]["clip"] = ["10", 1]
+            logger.info(f"Keyframe: LoRA {lora_file.name} @ {lora_strength} ({shot_type})")
+
+    logger.info(f"Submitting simple keyframe workflow for {characters[:2]}")
+    prompt_id = submit_workflow(workflow)
+    if not prompt_id:
+        logger.error("Failed to submit keyframe workflow")
+        return None
+
+    result = poll_completion(prompt_id, timeout=120)
+    if result and result.exists():
+        logger.info(f"Simple keyframe generated: {result}")
+        return result
+    else:
+        logger.error(f"Simple keyframe generation failed for {characters[:2]}")
         return None

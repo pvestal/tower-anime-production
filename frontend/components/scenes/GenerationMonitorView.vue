@@ -42,16 +42,19 @@
         }"
       >
         <div style="display: flex; justify-content: space-between; align-items: center;">
-          <div>
+          <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
             <span style="font-weight: 500;">Shot {{ shot.shot_number }}</span>
-            <span :class="statusBadgeClass(shot.status)" style="margin-left: 8px; font-size: 11px; padding: 2px 8px; border-radius: 3px;">
+            <span :class="statusBadgeClass(shot.status)" style="font-size: 11px; padding: 2px 8px; border-radius: 3px;">
               {{ shot.status === 'generating' ? 'generating...' : shot.status }}
             </span>
-            <span v-if="shot.generation_time_seconds" style="margin-left: 8px; font-size: 11px; color: var(--text-muted);">
+            <span v-if="shot.video_engine" :class="['engine-badge', `engine-${shot.video_engine}`]">
+              {{ engineLabel(shot.video_engine) }}
+            </span>
+            <span v-if="shot.generation_time_seconds" style="font-size: 11px; color: var(--text-muted);">
               {{ Math.round(shot.generation_time_seconds / 60) }}min
             </span>
-            <span v-if="shot.quality_score" style="margin-left: 8px; font-size: 11px; color: var(--text-muted);">
-              Q:{{ shot.quality_score.toFixed(2) }}
+            <span v-if="shot.quality_score" style="font-size: 11px;" :style="{ color: qualityColor(shot.quality_score) }">
+              Q:{{ (shot.quality_score * 100).toFixed(0) }}%
             </span>
           </div>
           <div>
@@ -120,6 +123,25 @@ const overallProgress = computed(() => {
   return (completed / total) * 100
 })
 
+const ENGINE_LABELS: Record<string, string> = {
+  framepack: 'FramePack',
+  framepack_f1: 'FP F1',
+  ltx: 'LTX',
+  wan: 'Wan 2.1',
+  wan22: 'Wan 2.2',
+  wan22_14b: 'Wan 14B',
+}
+
+function engineLabel(engine: string): string {
+  return ENGINE_LABELS[engine] || engine
+}
+
+function qualityColor(score: number): string {
+  if (score >= 0.7) return 'var(--status-success)'
+  if (score >= 0.4) return 'var(--status-warning)'
+  return 'var(--status-error)'
+}
+
 function statusBadgeClass(status: string): string {
   const map: Record<string, string> = {
     draft: 'badge-draft',
@@ -154,4 +176,18 @@ function statusBadgeClass(status: string): string {
   background: rgba(160, 80, 80, 0.2);
   color: var(--status-error);
 }
+
+.engine-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 3px;
+  color: #fff;
+}
+.engine-framepack { background: #2d8a4e; }
+.engine-framepack_f1 { background: #3ba55d; }
+.engine-ltx { background: #4e7dd4; }
+.engine-wan { background: #d4844e; }
+.engine-wan22 { background: #c46e3a; }
+.engine-wan22_14b { background: #a04e2a; }
 </style>

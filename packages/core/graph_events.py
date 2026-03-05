@@ -117,6 +117,76 @@ async def on_generation_submitted(data: dict):
         await conn.close()
 
 
+async def on_shot_generated(data: dict):
+    """Handle shot.generated event — create Generation vertex + edges in AGE graph.
+
+    Creates:
+    - (:Generation) node with parameters from the generation
+    - [:FOR_SHOT] edge → Shot
+    - [:IN_PROJECT] edge → Project (if project_id present)
+    - (:Evaluation) + [:EVALUATED_AS] if quality data present
+    """
+    conn = await _get_conn()
+    try:
+        shot_id = data.get("shot_id")
+        if not shot_id:
+            return
+
+        gen_id = f"gen_{shot_id}"
+        engine = data.get("video_engine", "unknown")
+        gen_time = data.get("generation_time_seconds") or data.get("generation_time") or 0
+
+        # Create Generation vertex
+        query = f"""
+            MERGE (g:Generation {{gen_id: {_esc(gen_id)}}})
+            SET g.video_engine = {_esc(engine)},
+                g.generation_time_seconds = {_esc(gen_time)},
+                g.ts = {_esc(data.get('_timestamp', ''))}
+            RETURN g
+        """
+        await _cypher(conn, query)
+
+        # FOR_SHOT edge → Shot
+        query = f"""
+            MATCH (g:Generation {{gen_id: {_esc(gen_id)}}}),
+                  (sh:Shot {{shot_id: {_esc(shot_id)}}})
+            MERGE (g)-[r:FOR_SHOT]->(sh)
+            RETURN r
+        """
+        try:
+            await _cypher(conn, query)
+        except Exception:
+            pass
+
+        # IN_PROJECT edge → Project (lookup project name from project_id)
+        project_id = data.get("project_id")
+        if project_id:
+            try:
+                # Need a regular SQL query to look up project name
+                proj_name = await conn.execute(
+                    "SET search_path TO public"
+                )
+                proj_row = await conn.fetchval(
+                    "SELECT name FROM projects WHERE id = $1", project_id
+                )
+                await conn.execute('SET search_path = ag_catalog, "$user", public')
+                if proj_row:
+                    query = f"""
+                        MATCH (g:Generation {{gen_id: {_esc(gen_id)}}}),
+                              (p:Project {{name: {_esc(proj_row)}}})
+                        MERGE (g)-[r:IN_PROJECT]->(p)
+                        RETURN r
+                    """
+                    await _cypher(conn, query)
+            except Exception:
+                pass
+
+    except Exception as e:
+        logger.warning(f"graph_sync on_shot_generated failed: {e}")
+    finally:
+        await conn.close()
+
+
 async def on_regeneration_queued(data: dict):
     """Handle regeneration.queued event — create REGENERATED_FROM edge."""
     conn = await _get_conn()

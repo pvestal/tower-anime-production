@@ -266,6 +266,17 @@ async def _evaluate_entry(conn, entry: dict):
 
     if gate_result["passed"]:
         await _advance_phase_impl(conn, entry, CHARACTER_PHASES, PROJECT_PHASES)
+    elif gate_result.get("blocked"):
+        # Gate reports a blocker (e.g. ComfyUI offline) — mark blocked
+        if status != "blocked":
+            await conn.execute("""
+                UPDATE production_pipeline
+                SET status = 'blocked',
+                    blocked_reason = $1,
+                    last_checked_at = $2, updated_at = $2
+                WHERE id = $3
+            """, gate_result.get("blocked_reason", "External dependency unavailable"),
+                now, entry["id"])
     elif gate_result.get("action_needed"):
         work_key = f"{entity_type}:{entity_id}:{phase}"
         task_running = work_key in _active_work and not _active_work[work_key].done()
@@ -285,6 +296,14 @@ async def _evaluate_entry(conn, entry: dict):
                 )
             )
             _active_work[work_key] = task
+    elif status == "blocked" and not gate_result.get("blocked"):
+        # Was blocked but blocker cleared — revert to pending
+        await conn.execute("""
+            UPDATE production_pipeline
+            SET status = 'pending', blocked_reason = NULL,
+                last_checked_at = $1, updated_at = $1
+            WHERE id = $2
+        """, now, entry["id"])
 
 
 async def tick():

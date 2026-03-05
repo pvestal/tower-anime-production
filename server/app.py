@@ -49,6 +49,9 @@ from packages.episode_assembly.router import router as episode_router
 from packages.core.graph_router import router as graph_router
 from packages.testing import testing_router
 from packages.core.orchestrator_router import router as orchestrator_router
+from packages.core.user_routes import router as user_router
+from packages.core.admin_routes import router as admin_router
+from packages.core.share_routes import router as share_router
 from packages.narrative_state import narrative_router
 from packages.interactive import interactive_router
 
@@ -95,6 +98,11 @@ app.include_router(interactive_router, prefix="/api/interactive", tags=["interac
 
 # Prompt testing harness:
 app.include_router(testing_router, prefix="/api/testing", tags=["testing"])  # /api/testing/*
+
+# Multi-user auth + admin + sharing (under /api/studio/* to avoid nginx /api/auth collision):
+app.include_router(user_router, prefix="/api", tags=["auth"])        # /api/studio/auth/*
+app.include_router(admin_router, prefix="/api", tags=["admin"])      # /api/studio/admin/*
+app.include_router(share_router, prefix="/api", tags=["sharing"])    # /api/studio/shared/*
 
 
 @app.on_event("startup")

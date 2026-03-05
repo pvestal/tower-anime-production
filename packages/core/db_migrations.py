@@ -775,7 +775,134 @@ async def run_migrations():
             "CREATE INDEX IF NOT EXISTS idx_regen_queue_scene ON regeneration_queue(scene_id)"
         )
 
+        # --- Multi-User Support (Phase 004) ---
+
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS studio_users (
+                id SERIAL PRIMARY KEY,
+                auth_user_id VARCHAR(16) UNIQUE,
+                display_name VARCHAR(255) NOT NULL,
+                email VARCHAR(255),
+                avatar_url TEXT,
+                pin_hash VARCHAR(255),
+                role VARCHAR(20) NOT NULL DEFAULT 'viewer',
+                max_rating VARCHAR(10) NOT NULL DEFAULT 'PG',
+                ui_mode VARCHAR(10) NOT NULL DEFAULT 'easy',
+                onboarded BOOLEAN NOT NULL DEFAULT FALSE,
+                preferences JSONB DEFAULT '{}',
+                created_at TIMESTAMP DEFAULT NOW(),
+                last_login TIMESTAMP
+            )
+        """)
+
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS user_project_access (
+                user_id INTEGER NOT NULL REFERENCES studio_users(id) ON DELETE CASCADE,
+                project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                access_level VARCHAR(20) NOT NULL DEFAULT 'view',
+                granted_at TIMESTAMP DEFAULT NOW(),
+                PRIMARY KEY (user_id, project_id)
+            )
+        """)
+
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS share_links (
+                id SERIAL PRIMARY KEY,
+                token VARCHAR(64) NOT NULL UNIQUE,
+                project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                created_by INTEGER NOT NULL REFERENCES studio_users(id),
+                label VARCHAR(255),
+                max_rating VARCHAR(10) DEFAULT 'PG-13',
+                expires_at TIMESTAMP NOT NULL,
+                is_active BOOLEAN DEFAULT TRUE,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
+
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS review_comments (
+                id SERIAL PRIMARY KEY,
+                share_link_id INTEGER REFERENCES share_links(id) ON DELETE SET NULL,
+                project_id INTEGER NOT NULL REFERENCES projects(id),
+                user_id INTEGER REFERENCES studio_users(id),
+                reviewer_name VARCHAR(255),
+                comment_text TEXT NOT NULL,
+                asset_type VARCHAR(20),
+                asset_id VARCHAR(255),
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
+
+        for idx_sql in [
+            "CREATE INDEX IF NOT EXISTS idx_studio_users_auth ON studio_users(auth_user_id)",
+            "CREATE INDEX IF NOT EXISTS idx_studio_users_role ON studio_users(role)",
+            "CREATE INDEX IF NOT EXISTS idx_share_links_token ON share_links(token)",
+            "CREATE INDEX IF NOT EXISTS idx_share_links_project ON share_links(project_id)",
+            "CREATE INDEX IF NOT EXISTS idx_review_comments_project ON review_comments(project_id)",
+            "CREATE INDEX IF NOT EXISTS idx_review_comments_share ON review_comments(share_link_id)",
+        ]:
+            await conn.execute(idx_sql)
+
+        # Seed Patrick admin profile if not exists
+        existing_admin = await conn.fetchval(
+            "SELECT id FROM studio_users WHERE display_name = 'Patrick' AND role = 'admin'"
+        )
+        if not existing_admin:
+            await conn.execute("""
+                INSERT INTO studio_users (display_name, role, max_rating, ui_mode, onboarded)
+                VALUES ('Patrick', 'admin', 'XXX', 'advanced', TRUE)
+            """)
+            await conn.execute("""
+                INSERT INTO studio_users (display_name, role, max_rating, ui_mode)
+                VALUES ('Kid', 'viewer', 'PG', 'easy')
+            """)
+            logger.info("Seeded initial studio_users (Patrick admin + Kid viewer)")
+
+        # Normalize content ratings (idempotent — only updates non-standard values)
+        await conn.execute("""
+            UPDATE projects SET content_rating = 'NC-17'
+            WHERE content_rating ILIKE '%TV-MA%' OR content_rating ILIKE '%18+%'
+        """)
+        await conn.execute("""
+            UPDATE projects SET content_rating = 'XXX'
+            WHERE content_rating ILIKE '%XXX%' OR content_rating ILIKE '%Adults Only%'
+        """)
+        await conn.execute("""
+            UPDATE projects SET content_rating = 'R'
+            WHERE content_rating ILIKE '%explicit%'
+        """)
+        await conn.execute("""
+            UPDATE projects SET content_rating = 'PG'
+            WHERE content_rating ILIKE '%PG%' AND content_rating NOT ILIKE '%PG-13%'
+               AND content_rating NOT IN ('PG', 'PG-13', 'R', 'NC-17', 'XXX', 'G')
+        """)
+        await conn.execute("""
+            UPDATE projects SET content_rating = 'R'
+            WHERE content_rating IS NULL OR content_rating = ''
+        """)
+
+        # --- Quality Loop: Shot Spec Enrichment ---
+        for col, coltype in [
+            ("pose_type", "VARCHAR(50)"),
+            ("pose_vocabulary", "TEXT[]"),
+            ("must_differ_from", "UUID[]"),
+        ]:
+            await conn.execute(f"""
+                DO $$ BEGIN
+                    ALTER TABLE shots ADD COLUMN {col} {coltype};
+                EXCEPTION WHEN duplicate_column THEN NULL;
+                END $$
+            """)
+
+        # --- Quality Loop: Project Generation Mode ---
+        await conn.execute("""
+            DO $$ BEGIN
+                ALTER TABLE projects ADD COLUMN generation_mode VARCHAR(20) DEFAULT 'autopilot';
+            EXCEPTION WHEN duplicate_column THEN NULL;
+            END $$
+        """)
+
         await conn.close()
-        logger.info("Schema migrations completed successfully (incl. Phase 1 autonomy + NSM tables)")
+        logger.info("Schema migrations completed successfully (incl. Phase 1 autonomy + NSM + multi-user + quality loop tables)")
     except Exception as e:
         logger.warning(f"Schema migration failed (non-fatal): {e}")

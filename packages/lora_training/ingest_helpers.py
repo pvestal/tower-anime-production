@@ -49,6 +49,7 @@ class LocalVideoIngestRequest(BaseModel):
     project_name: str
     max_frames: int = 200
     fps: float = 4
+    target_slug: str | None = None  # Skip classification, assign all frames to this character
 
 
 class MovieExtractRequest(BaseModel):

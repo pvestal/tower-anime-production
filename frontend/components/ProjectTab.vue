@@ -195,8 +195,9 @@
           <span v-if="!detailsDirty && !detailsSaved" style="font-size: 11px; color: var(--text-muted); margin-left: 8px;">no changes</span>
         </div>
 
-        <!-- Right: Generation Style -->
+        <!-- Right: Generation Style (advanced only) -->
         <GenerationStylePanel
+          v-if="authStore.isAdvanced"
           :style-prop="projectStore.currentProject.style"
           :checkpoints="projectStore.checkpoints"
           :saving="projectStore.saving"
@@ -225,8 +226,8 @@
         </div>
       </div>
 
-      <!-- Section 3: World & Art Direction (collapsible) -->
-      <div class="collapsible-section" style="margin-bottom: 20px;">
+      <!-- Section 3: World & Art Direction (collapsible, advanced only) -->
+      <div v-if="authStore.isAdvanced" class="collapsible-section" style="margin-bottom: 20px;">
         <button class="collapsible-header" @click="worldOpen = !worldOpen">
           <span class="section-heading" style="margin: 0;">World &amp; Art Direction</span>
           <span class="collapse-indicator" :class="{ open: worldOpen }">&#9654;</span>
@@ -288,6 +289,7 @@ import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { useProjectStore } from '@/stores/project'
 import { useCharactersStore } from '@/stores/characters'
 import { useTrainingStore } from '@/stores/training'
+import { useAuthStore } from '@/stores/auth'
 import type { ProjectCreate, ProjectUpdate, StyleUpdate, StorylineUpsert, WorldSettingsUpsert } from '@/types'
 import { api } from '@/api/client'
 import EchoAssistButton from './EchoAssistButton.vue'
@@ -304,6 +306,7 @@ const emit = defineEmits<{
 const projectStore = useProjectStore()
 const charactersStore = useCharactersStore()
 const trainingStore = useTrainingStore()
+const authStore = useAuthStore()
 
 const showNewForm = ref(false)
 const newFormRef = ref<InstanceType<typeof NewProjectForm> | null>(null)

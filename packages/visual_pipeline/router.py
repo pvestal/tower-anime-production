@@ -6,11 +6,12 @@ Vision quality review endpoints are in visual_review.py (included as sub-router)
 import logging
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 
 from packages.core.config import BASE_PATH, COMFYUI_OUTPUT_DIR, normalize_sampler
 from packages.core.db import get_char_project_map
+from packages.core.auth import get_user_projects
 from packages.core.models import GenerateRequest
 from packages.core.audit import log_generation
 from packages.core.events import event_bus, GENERATION_SUBMITTED
@@ -25,12 +26,17 @@ router.include_router(review_router)
 
 
 @router.post("/generate/{character_slug}")
-async def generate_for_character(character_slug: str, body: GenerateRequest):
+async def generate_for_character(character_slug: str, body: GenerateRequest, allowed_projects: list[int] = Depends(get_user_projects)):
     """Generate an image or video for a character using SSOT profile."""
     char_map = await get_char_project_map()
     db_info = char_map.get(character_slug)
     if not db_info:
         raise HTTPException(status_code=404, detail=f"Character '{character_slug}' not found")
+
+    # Check project access
+    project_id = db_info.get("project_id")
+    if project_id and project_id not in allowed_projects:
+        raise HTTPException(status_code=403, detail="Access denied to this character's project")
 
     # Use style_override if provided, otherwise use project default
     style_info = db_info

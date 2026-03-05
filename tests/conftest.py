@@ -272,15 +272,22 @@ async def app_client(patch_get_pool):
     """httpx.AsyncClient wrapping the FastAPI app for endpoint tests.
 
     The DB pool is mocked — no real database needed.
+    Auth dependency is overridden to grant access to all projects.
     """
     import httpx
     from server.app import app
+    from packages.core.auth import get_user_projects
 
     # Skip startup event (it tries to connect to real DB)
     app.router.on_startup.clear()
+
+    # Override auth dependency — all unit tests get access to all project IDs
+    app.dependency_overrides[get_user_projects] = lambda: list(range(1, 1000))
 
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
         yield client
+
+    app.dependency_overrides.pop(get_user_projects, None)

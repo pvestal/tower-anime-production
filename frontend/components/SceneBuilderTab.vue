@@ -63,6 +63,7 @@
       :source-image-url="store.sourceImageUrl"
       :characters="projectCharacters"
       :gap-characters="gapByCharSlug"
+      :keyframe-blitz-busy="store.keyframeBlitzBusy"
       @save="store.saveScene"
       @confirm-generate="store.confirmGenerate"
       @back="store.backToLibrary"
@@ -75,6 +76,7 @@
       @update-scene="store.onUpdateScene"
       @audio-changed="store.onAudioChanged"
       @go-to-training="goToTraining"
+      @keyframe-blitz="store.runKeyframeBlitz"
     />
 
     <!-- VIEW 3: Generation Monitor -->
