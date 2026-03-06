@@ -201,7 +201,7 @@ def build_composite_workflow(
             "prompt_weight": 1.0,
             "weight_type": "linear",
             "start_at": 0.0,
-            "end_at": 0.85,
+            "end_at": 0.80,
             "mask": ["7", 0],
             "positive": ["5", 0],
             "negative": ["6", 0],
@@ -217,7 +217,7 @@ def build_composite_workflow(
             "prompt_weight": 1.0,
             "weight_type": "linear",
             "start_at": 0.0,
-            "end_at": 0.85,
+            "end_at": 0.80,
             "mask": ["8", 0],
             "positive": ["9", 1],  # Chain from region A
             "negative": ["9", 2],
@@ -426,6 +426,10 @@ async def generate_simple_keyframe(
     checkpoint_model: str = "waiIllustriousSDXL_v160.safetensors",
     shot_type: str = "medium",
     camera_angle: str = "eye-level",
+    extra_loras: list[tuple[str, float]] | None = None,
+    controlnet_image: str | None = None,
+    controlnet_strength: float = 0.7,
+    controlnet_type: str = "openpose",
 ) -> Path | None:
     """Generate a keyframe image that matches the shot's composition requirements.
 
@@ -591,6 +595,66 @@ async def generate_simple_keyframe(
             workflow["6"]["inputs"]["clip"] = ["10", 1]
             workflow["7"]["inputs"]["clip"] = ["10", 1]
             logger.info(f"Keyframe: LoRA {lora_file.name} @ {lora_strength} ({shot_type})")
+
+    # Chain extra LoRAs (pose/action/environment) after character LoRA
+    if extra_loras:
+        # Find the current model/clip source (either node "10" if char LoRA, or "4" if none)
+        _has_primary = "10" in workflow
+        _prev_node = "10" if _has_primary else "4"
+        for _i, (_lora_file, _lora_str) in enumerate(extra_loras):
+            _lora_path = Path(f"/opt/ComfyUI/models/loras/{_lora_file}")
+            if not _lora_path.exists():
+                logger.warning(f"Extra LoRA not found: {_lora_file}")
+                continue
+            _node_id = str(20 + _i)  # nodes 20, 21, 22...
+            workflow[_node_id] = {
+                "inputs": {
+                    "lora_name": _lora_path.name,
+                    "strength_model": _lora_str,
+                    "strength_clip": _lora_str,
+                    "model": [_prev_node, 0],
+                    "clip": [_prev_node, 1],
+                },
+                "class_type": "LoraLoader",
+            }
+            workflow["3"]["inputs"]["model"] = [_node_id, 0]
+            workflow["6"]["inputs"]["clip"] = [_node_id, 1]
+            workflow["7"]["inputs"]["clip"] = [_node_id, 1]
+            _prev_node = _node_id
+            logger.info(f"Keyframe: extra LoRA {_lora_path.name} @ {_lora_str}")
+
+    # Inject ControlNet if a pose/depth reference is provided
+    if controlnet_image:
+        controlnet_models = {
+            "openpose": "controlnet-openpose-sdxl-1.0.safetensors",
+            "depth": "controlnet-depth-sdxl-1.0.safetensors",
+        }
+        cn_model = controlnet_models.get(controlnet_type)
+        cn_path = Path(f"/opt/ComfyUI/models/controlnet/{cn_model}") if cn_model else None
+        if cn_path and cn_path.exists():
+            workflow["40"] = {
+                "inputs": {"control_net_name": cn_model},
+                "class_type": "ControlNetLoader",
+            }
+            workflow["41"] = {
+                "inputs": {"image": controlnet_image, "upload": "image"},
+                "class_type": "LoadImage",
+            }
+            workflow["42"] = {
+                "inputs": {
+                    "strength": controlnet_strength,
+                    "start_percent": 0.0,
+                    "end_percent": 0.8,
+                    "positive": workflow["3"]["inputs"]["positive"],
+                    "negative": workflow["3"]["inputs"]["negative"],
+                    "control_net": ["40", 0],
+                    "image": ["41", 0],
+                },
+                "class_type": "ControlNetApplyAdvanced",
+            }
+            workflow["3"]["inputs"]["positive"] = ["42", 0]
+            workflow["3"]["inputs"]["negative"] = ["42", 1]
+            logger.info(f"Keyframe ControlNet: {controlnet_type} @ {controlnet_strength}")
 
     logger.info(f"Submitting simple keyframe workflow for {characters[:2]}")
     prompt_id = submit_workflow(workflow)

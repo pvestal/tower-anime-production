@@ -43,7 +43,8 @@ async def get_shared_project(token: str, request: Request):
 
         # Get approved images for this project's characters
         char_rows = await conn.fetch("""
-            SELECT c.id, c.name, c.slug
+            SELECT c.id, c.name,
+                   LOWER(REPLACE(c.name, ' ', '_')) AS slug
             FROM characters c WHERE c.project_id = $1
         """, project_id)
 

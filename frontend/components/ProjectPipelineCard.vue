@@ -25,220 +25,7 @@
 
     <!-- Expanded detail -->
     <template v-if="expanded">
-      <!-- Warnings banner -->
-      <div v-if="project.warnings.length > 0" class="model-warnings">
-        <div v-for="(w, i) in project.warnings" :key="i" class="model-warning-row">
-          <span class="warning-icon">!</span> {{ w }}
-        </div>
-      </div>
-
-      <!-- Characters & LoRAs -->
-      <div class="detail-section">
-        <div class="detail-section-header">
-          <span>Characters &amp; LoRAs</span>
-          <span class="detail-count">{{ project.loraCount }}/{{ project.charCount }} trained</span>
-        </div>
-        <div class="char-grid">
-          <div v-for="ch in project.characters" :key="ch.slug" class="char-row" :class="{ 'char-row-warn': ch.isMixedModels || ch.loraModelMismatch }">
-            <span class="char-status-dot" :class="ch.loraStatus"></span>
-            <span class="char-name">{{ ch.name }}</span>
-            <span class="char-images">{{ ch.approved }} imgs</span>
-            <span class="char-model-info">
-              <template v-if="ch.loraStatus === 'lora-trained'">
-                <span class="lora-badge">LoRA</span>
-                <span class="model-name" :class="{ 'model-mismatch': ch.loraModelMismatch }"
-                      :title="ch.loraModelMismatch ? `Trained on ${ch.loraCheckpoint} but images mostly from ${ch.dominantModel}` : ch.loraCheckpoint || ''">
-                  {{ shortModel(ch.loraCheckpoint) }}
-                </span>
-                <span v-if="ch.loraLoss" class="lora-loss">loss {{ ch.loraLoss.toFixed(3) }}</span>
-              </template>
-              <template v-else-if="ch.loraStatus === 'lora-training'">
-                <span class="training-badge">training...</span>
-              </template>
-              <template v-else-if="ch.approved >= 10">ready to train</template>
-              <template v-else>needs {{ 10 - ch.approved }} more images</template>
-            </span>
-            <!-- Approval rate -->
-            <span v-if="ch.approvalRate != null" class="char-approval" :class="rateClass(ch.approvalRate)">
-              {{ (ch.approvalRate * 100).toFixed(0) }}%
-            </span>
-            <!-- Drift indicator -->
-            <span v-if="ch.driftStatus" class="drift-dot" :class="'drift-' + ch.driftStatus"
-                  :title="ch.driftStatus === 'critical' ? 'Quality drifting down significantly' : 'Quality drift detected'"></span>
-            <span v-if="ch.isMixedModels" class="mixed-badge" :title="modelBreakdownText(ch.modelBreakdown)">mixed</span>
-            <span v-else-if="ch.dominantModel" class="char-dominant-model" :title="ch.dominantModel || ''">{{ shortModel(ch.dominantModel) }}</span>
-            <!-- Manage button -->
-            <button class="btn-manage" @click.stop="$emit('openTraining', { projectName: project.name, characterSlug: ch.slug })" title="Manage training">
-              Manage
-            </button>
-          </div>
-        </div>
-        <div v-if="project.charsNeedingLora.length > 0" class="detail-actions">
-          <button class="btn btn-action" @click.stop="$emit('trainAll', project)" :disabled="actionLoading === 'train-' + project.id">
-            Train {{ project.charsNeedingLora.length }} Ready LoRAs
-          </button>
-        </div>
-      </div>
-
-      <!-- Quality Insights (lazy-loaded) -->
-      <div v-if="qualityLoading" class="detail-section" style="text-align: center; padding: 20px;">
-        <div class="spinner" style="width: 20px; height: 20px; margin: 0 auto;"></div>
-        <p style="font-size: 11px; color: var(--text-muted); margin-top: 8px;">Loading quality data...</p>
-      </div>
-      <div v-else-if="hasQualityData" class="detail-section">
-        <div class="detail-section-header">
-          <span>Quality Insights</span>
-        </div>
-        <div class="quality-row-container">
-          <!-- Top checkpoint -->
-          <div v-if="checkpointRankings.length > 0" class="quality-item">
-            <div class="quality-item-label">Top Checkpoint</div>
-            <div class="quality-item-value">
-              {{ shortModel(checkpointRankings[0].checkpoint) }}
-              <span class="quality-pct">{{ (checkpointRankings[0].avg_quality * 100).toFixed(0) }}% avg</span>
-            </div>
-            <div v-for="(ckpt, idx) in checkpointRankings.slice(1, 3)" :key="ckpt.checkpoint" class="quality-sub">
-              #{{ idx + 2 }} {{ shortModel(ckpt.checkpoint) }} {{ (ckpt.avg_quality * 100).toFixed(0) }}%
-            </div>
-          </div>
-
-          <!-- Drift alerts -->
-          <div v-if="driftAlerts.length > 0" class="quality-item">
-            <div class="quality-item-label">Drift Alerts</div>
-            <div v-for="alert in driftAlerts.slice(0, 3)" :key="alert.character_slug" class="drift-card-mini"
-                 :class="{ 'drift-critical': alert.alert }">
-              <strong>{{ alert.character_slug }}</strong>
-              <span class="drift-badge-mini" :class="alert.alert ? 'badge-critical' : 'badge-warn'">
-                {{ alert.drift > 0 ? '+' : '' }}{{ (alert.drift * 100).toFixed(1) }}%
-              </span>
-            </div>
-          </div>
-
-          <!-- Mini quality trend chart -->
-          <div v-if="trendData.length > 1" class="quality-item quality-item-chart">
-            <div class="quality-item-label">14d Trend</div>
-            <svg :viewBox="`0 0 ${chartW} ${chartH}`" class="trend-chart-mini">
-              <line v-for="y in [0.4, 0.6, 0.8]" :key="y"
-                    :x1="10" :x2="chartW - 10"
-                    :y1="trendY(y)" :y2="trendY(y)"
-                    class="grid-line-mini" />
-              <polyline :points="trendLinePoints" class="trend-line-mini" />
-              <circle v-for="(pt, i) in trendPointsMapped" :key="i"
-                      :cx="pt.x" :cy="pt.y" r="2" class="trend-dot-mini" />
-            </svg>
-          </div>
-        </div>
-      </div>
-
-      <!-- Scenes & Shots -->
-      <div class="detail-section">
-        <div class="detail-section-header">
-          <span>Scenes &amp; Shots</span>
-          <span class="detail-count">{{ project.scenes.length }} scenes, {{ project.totalShots }} shots</span>
-        </div>
-        <div v-if="project.scenes.length > 0" class="scene-list">
-          <div v-for="scene in project.scenes" :key="scene.id" class="scene-row">
-            <span class="scene-status-dot" :class="'scene-' + scene.generation_status"></span>
-            <span class="scene-title">{{ scene.title }}</span>
-            <span class="scene-shots">{{ scene.completed_shots }}/{{ scene.total_shots }} shots done</span>
-            <span class="scene-video" v-if="scene.final_video_path" style="color: var(--status-success);">assembled</span>
-            <span class="scene-status-label">{{ scene.generation_status }}</span>
-          </div>
-        </div>
-        <div v-else style="color: var(--text-muted); font-size: 12px; padding: 8px 0;">
-          No scenes yet.
-        </div>
-        <div v-if="project.scenes.length === 0" class="detail-actions">
-          <button class="btn btn-action" @click.stop="$emit('generateScenes', project)" :disabled="actionLoading === 'scenes-' + project.id">
-            Generate Scenes from Story
-          </button>
-        </div>
-      </div>
-
-      <!-- Episodes -->
-      <div class="detail-section">
-        <div class="detail-section-header">
-          <span>Episodes</span>
-          <span class="detail-count">{{ project.episodes.length }} episodes</span>
-        </div>
-        <div v-if="project.episodes.length > 0" class="episode-list">
-          <div v-for="ep in project.episodes" :key="ep.id" class="episode-row">
-            <span class="episode-num">E{{ ep.episode_number }}</span>
-            <span class="episode-title">{{ ep.title }}</span>
-            <span class="episode-status" :class="'ep-' + ep.status">{{ ep.status }}</span>
-            <span v-if="ep.scene_count" class="episode-scenes">{{ ep.scene_count }} scenes</span>
-            <span v-if="ep.actual_duration_seconds" class="episode-duration">{{ Math.round(ep.actual_duration_seconds) }}s</span>
-          </div>
-        </div>
-        <div v-else style="color: var(--text-muted); font-size: 12px; padding: 8px 0;">
-          No episodes yet.
-        </div>
-      </div>
-
-      <!-- Orchestrator Pipeline (per-project) -->
-      <div v-if="pipelineEntries.length > 0" class="detail-section">
-        <div class="detail-section-header">
-          <span>Production Pipeline</span>
-        </div>
-        <!-- Project phases -->
-        <div v-if="projectPhases.length > 0" class="orch-card" :class="{ 'orch-card-dim': projectPhases.every(p => p.status === 'completed') }">
-          <div class="orch-card-header">
-            <span class="orch-card-title">Project</span>
-            <span class="pipeline-status-badge" :class="'pstatus-' + currentPhase(projectPhases).status">
-              {{ currentPhase(projectPhases).status }}
-            </span>
-          </div>
-          <div class="phase-pills">
-            <span v-for="p in projectPhases" :key="p.phase" class="phase-pill" :class="'pstatus-' + p.status"
-                  :title="p.phase.replace(/_/g, ' ') + ': ' + p.status">
-              {{ p.phase.replace(/_/g, ' ') }}
-            </span>
-          </div>
-          <div class="orch-card-footer">
-            <span class="orch-card-actions">
-              <template v-for="p in projectPhases" :key="'a-' + p.phase">
-                <button v-if="p.status === 'failed'" class="btn btn-sm orch-action-btn" @click.stop="$emit('overrideEntry', p, 'reset')">Reset</button>
-                <button v-if="p.status === 'active' || p.status === 'pending'" class="btn btn-sm orch-action-btn" @click.stop="$emit('overrideEntry', p, 'skip')">Skip</button>
-              </template>
-            </span>
-          </div>
-        </div>
-        <!-- Character phases -->
-        <div v-if="characterCards.length > 0" class="orch-grid">
-          <div v-for="card in characterCards" :key="card.slug" class="orch-card" :class="{ 'orch-card-dim': card.phases.every(p => p.status === 'completed') }">
-            <div class="orch-card-header">
-              <span class="orch-card-title">{{ card.slug }}</span>
-              <span class="pipeline-status-badge" :class="'pstatus-' + currentPhase(card.phases).status">
-                {{ currentPhase(card.phases).status }}
-              </span>
-            </div>
-            <div class="phase-pills">
-              <span v-for="p in card.phases" :key="p.phase" class="phase-pill" :class="'pstatus-' + p.status"
-                    :title="p.phase.replace(/_/g, ' ') + ': ' + p.status">
-                {{ p.phase.replace(/_/g, ' ') }}
-              </span>
-            </div>
-            <div class="orch-card-footer">
-              <span class="orch-card-actions">
-                <template v-for="p in card.phases" :key="'a-' + p.phase">
-                  <button v-if="p.status === 'failed'" class="btn btn-sm orch-action-btn" @click.stop="$emit('overrideEntry', p, 'reset')">Reset</button>
-                  <button v-if="p.status === 'active'" class="btn btn-sm orch-action-btn" @click.stop="$emit('overrideEntry', p, 'skip')">Skip</button>
-                </template>
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div v-else-if="expanded && !qualityLoading" class="detail-section">
-        <div class="detail-section-header">
-          <span>Production Pipeline</span>
-        </div>
-        <div style="color: var(--text-muted); font-size: 12px; padding: 4px 0;">
-          No pipeline entries. <button class="btn-link" @click.stop="$emit('initOrchestrator', project.id)">Initialize</button>
-        </div>
-      </div>
-
-      <!-- Next Step -->
+      <!-- Next Step (moved to top for visibility) -->
       <div class="next-step" v-if="project.nextAction">
         <div style="display: flex; justify-content: space-between; align-items: center;">
           <span><strong>Next:</strong> {{ project.nextAction }}</span>
@@ -257,6 +44,204 @@
           </div>
         </div>
       </div>
+
+      <!-- Easy mode: compact summary -->
+      <template v-if="easyMode">
+        <div class="detail-section easy-summary">
+          <div class="easy-line">{{ project.charCount }} characters, {{ project.loraCount }} trained</div>
+          <div v-if="project.scenes.length > 0" class="easy-progress">
+            <div class="easy-progress-label">Scenes</div>
+            <div class="easy-bar">
+              <div class="easy-bar-fill" :style="{ width: sceneCompletionPct + '%' }"></div>
+            </div>
+            <span class="easy-pct">{{ sceneCompletionPct }}%</span>
+          </div>
+          <div class="easy-line" style="color: var(--text-muted);">{{ project.episodes.length }} episodes</div>
+        </div>
+      </template>
+
+      <!-- Advanced mode: full detail -->
+      <template v-else>
+        <!-- Warnings banner -->
+        <div v-if="project.warnings.length > 0" class="model-warnings">
+          <div v-for="(w, i) in project.warnings" :key="i" class="model-warning-row">
+            <span class="warning-icon">!</span> {{ w }}
+          </div>
+        </div>
+
+        <!-- Characters & LoRAs — mini-cards -->
+        <div class="detail-section">
+          <div class="detail-section-header">
+            <span>Characters &amp; LoRAs</span>
+            <span class="detail-count">{{ project.loraCount }}/{{ project.charCount }} trained</span>
+          </div>
+          <div class="char-card-grid">
+            <div v-for="ch in project.characters" :key="ch.slug" class="char-card" :class="{ 'char-card-warn': ch.isMixedModels || ch.loraModelMismatch }">
+              <div class="char-card-top">
+                <span class="char-status-dot" :class="ch.loraStatus"></span>
+                <span class="char-card-name">{{ ch.name }}</span>
+              </div>
+              <div class="char-card-body">
+                <span class="char-images">{{ ch.approved }} imgs</span>
+                <span v-if="ch.loraStatus === 'lora-trained'" class="lora-badge">LoRA</span>
+                <span v-else-if="ch.loraStatus === 'lora-training'" class="training-badge">training</span>
+              </div>
+              <div class="char-card-footer">
+                <span v-if="ch.approvalRate != null" class="char-approval-ring" :class="rateClass(ch.approvalRate)">
+                  {{ (ch.approvalRate * 100).toFixed(0) }}%
+                </span>
+                <span v-if="ch.driftStatus" class="drift-dot" :class="'drift-' + ch.driftStatus"></span>
+                <button class="btn-manage" @click.stop="$emit('openTraining', { projectName: project.name, characterSlug: ch.slug })">
+                  Manage
+                </button>
+              </div>
+            </div>
+          </div>
+          <div v-if="project.charsNeedingLora.length > 0" class="detail-actions">
+            <button class="btn btn-action" @click.stop="$emit('trainAll', project)" :disabled="actionLoading === 'train-' + project.id">
+              Train {{ project.charsNeedingLora.length }} Ready LoRAs
+            </button>
+          </div>
+        </div>
+
+        <!-- Pipeline Stepper -->
+        <div v-if="projectPhases.length > 0" class="detail-section">
+          <div class="detail-section-header"><span>Pipeline</span></div>
+          <div class="pipeline-stepper">
+            <div v-for="(p, i) in projectPhases" :key="p.phase" class="step-item" :class="'step-' + p.status">
+              <div class="step-circle">
+                <span v-if="p.status === 'completed'" class="step-check">&#10003;</span>
+                <span v-else>{{ i + 1 }}</span>
+              </div>
+              <div class="step-label">{{ phaseLabel(p.phase) }}</div>
+              <div v-if="i < projectPhases.length - 1" class="step-connector" :class="{ 'step-connector-done': p.status === 'completed' }"></div>
+              <div v-if="p.status === 'failed' || p.status === 'active'" class="step-actions">
+                <button v-if="p.status === 'failed'" class="btn btn-sm orch-action-btn" @click.stop="$emit('overrideEntry', p, 'reset')">Reset</button>
+                <button v-if="p.status === 'active'" class="btn btn-sm orch-action-btn" @click.stop="$emit('overrideEntry', p, 'skip')">Skip</button>
+              </div>
+            </div>
+          </div>
+          <!-- Character pipeline cards -->
+          <div v-if="characterCards.length > 0" class="orch-grid">
+            <div v-for="card in characterCards" :key="card.slug" class="orch-card" :class="{ 'orch-card-dim': card.phases.every(p => p.status === 'completed') }">
+              <div class="orch-card-header">
+                <span class="orch-card-title">{{ card.slug }}</span>
+                <span class="pipeline-status-badge" :class="'pstatus-' + currentPhase(card.phases).status">
+                  {{ currentPhase(card.phases).status }}
+                </span>
+              </div>
+              <div class="phase-pills">
+                <span v-for="p in card.phases" :key="p.phase" class="phase-pill" :class="'pstatus-' + p.status"
+                      :title="p.phase.replace(/_/g, ' ') + ': ' + p.status">
+                  {{ phaseLabel(p.phase) }}
+                </span>
+              </div>
+              <div class="orch-card-footer">
+                <span class="orch-card-actions">
+                  <template v-for="p in card.phases" :key="'a-' + p.phase">
+                    <button v-if="p.status === 'failed'" class="btn btn-sm orch-action-btn" @click.stop="$emit('overrideEntry', p, 'reset')">Reset</button>
+                    <button v-if="p.status === 'active'" class="btn btn-sm orch-action-btn" @click.stop="$emit('overrideEntry', p, 'skip')">Skip</button>
+                  </template>
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div v-else-if="expanded && !qualityLoading" class="detail-section">
+          <div class="detail-section-header"><span>Production Pipeline</span></div>
+          <div style="color: var(--text-muted); font-size: 12px; padding: 4px 0;">
+            No pipeline entries. <button class="btn-link" @click.stop="$emit('initOrchestrator', project.id)">Initialize</button>
+          </div>
+        </div>
+
+        <!-- Quality Insights (lazy-loaded) -->
+        <div v-if="qualityLoading" class="detail-section" style="text-align: center; padding: 20px;">
+          <div class="spinner" style="width: 20px; height: 20px; margin: 0 auto;"></div>
+          <p style="font-size: 11px; color: var(--text-muted); margin-top: 8px;">Loading quality data...</p>
+        </div>
+        <div v-else-if="hasQualityData" class="detail-section">
+          <div class="detail-section-header"><span>Quality Insights</span></div>
+          <div class="quality-row-container">
+            <div v-if="checkpointRankings.length > 0" class="quality-item">
+              <div class="quality-item-label">Top Checkpoint</div>
+              <div class="quality-item-value">
+                {{ shortModel(checkpointRankings[0].checkpoint) }}
+                <span class="quality-pct">{{ (checkpointRankings[0].avg_quality * 100).toFixed(0) }}% avg</span>
+              </div>
+              <div v-for="(ckpt, idx) in checkpointRankings.slice(1, 3)" :key="ckpt.checkpoint" class="quality-sub">
+                #{{ idx + 2 }} {{ shortModel(ckpt.checkpoint) }} {{ (ckpt.avg_quality * 100).toFixed(0) }}%
+              </div>
+            </div>
+            <div v-if="driftAlerts.length > 0" class="quality-item">
+              <div class="quality-item-label">Drift Alerts</div>
+              <div v-for="alert in driftAlerts.slice(0, 3)" :key="alert.character_slug" class="drift-card-mini"
+                   :class="{ 'drift-critical': alert.alert }">
+                <strong>{{ alert.character_slug }}</strong>
+                <span class="drift-badge-mini" :class="alert.alert ? 'badge-critical' : 'badge-warn'">
+                  {{ alert.drift > 0 ? '+' : '' }}{{ (alert.drift * 100).toFixed(1) }}%
+                </span>
+              </div>
+            </div>
+            <div v-if="trendData.length > 1" class="quality-item quality-item-chart">
+              <div class="quality-item-label">14d Trend</div>
+              <svg :viewBox="`0 0 ${chartW} ${chartH}`" class="trend-chart-mini">
+                <line v-for="y in [0.4, 0.6, 0.8]" :key="y"
+                      :x1="10" :x2="chartW - 10"
+                      :y1="trendY(y)" :y2="trendY(y)"
+                      class="grid-line-mini" />
+                <polyline :points="trendLinePoints" class="trend-line-mini" />
+                <circle v-for="(pt, i) in trendPointsMapped" :key="i"
+                        :cx="pt.x" :cy="pt.y" r="2" class="trend-dot-mini" />
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        <!-- Scenes & Shots -->
+        <div class="detail-section">
+          <div class="detail-section-header">
+            <span>Scenes &amp; Shots</span>
+            <span class="detail-count">{{ project.scenes.length }} scenes, {{ project.totalShots }} shots</span>
+          </div>
+          <div v-if="project.scenes.length > 0" class="scene-list">
+            <div v-for="scene in project.scenes" :key="scene.id" class="scene-row">
+              <span class="scene-status-dot" :class="'scene-' + scene.generation_status"></span>
+              <span class="scene-title">{{ scene.title }}</span>
+              <span class="scene-shots">{{ scene.completed_shots }}/{{ scene.total_shots }} shots done</span>
+              <span class="scene-video" v-if="scene.final_video_path" style="color: var(--status-success);">assembled</span>
+              <span class="scene-status-label">{{ scene.generation_status }}</span>
+            </div>
+          </div>
+          <div v-else style="color: var(--text-muted); font-size: 12px; padding: 8px 0;">
+            No scenes yet.
+          </div>
+          <div v-if="project.scenes.length === 0" class="detail-actions">
+            <button class="btn btn-action" @click.stop="$emit('generateScenes', project)" :disabled="actionLoading === 'scenes-' + project.id">
+              Generate Scenes from Story
+            </button>
+          </div>
+        </div>
+
+        <!-- Episodes -->
+        <div class="detail-section">
+          <div class="detail-section-header">
+            <span>Episodes</span>
+            <span class="detail-count">{{ project.episodes.length }} episodes</span>
+          </div>
+          <div v-if="project.episodes.length > 0" class="episode-list">
+            <div v-for="ep in project.episodes" :key="ep.id" class="episode-row">
+              <span class="episode-num">E{{ ep.episode_number }}</span>
+              <span class="episode-title">{{ ep.title }}</span>
+              <span class="episode-status" :class="'ep-' + ep.status">{{ ep.status }}</span>
+              <span v-if="ep.scene_count" class="episode-scenes">{{ ep.scene_count }} scenes</span>
+              <span v-if="ep.actual_duration_seconds" class="episode-duration">{{ Math.round(ep.actual_duration_seconds) }}s</span>
+            </div>
+          </div>
+          <div v-else style="color: var(--text-muted); font-size: 12px; padding: 8px 0;">
+            No episodes yet.
+          </div>
+        </div>
+      </template>
     </template>
   </div>
 </template>
@@ -264,6 +249,10 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { ProjectCard, ProjectQualityData, DriftAlert, QualityTrendPoint, CheckpointRanking, PipelineEntry, ModelBreakdown } from '@/types'
+import { useAuthStore } from '@/stores/auth'
+
+const authStore = useAuthStore()
+const easyMode = computed(() => !authStore.isAdvanced)
 
 const props = defineProps<{
   project: ProjectCard
@@ -372,6 +361,31 @@ function currentPhase(phases: PipelineEntry[]): PipelineEntry {
     || phases[phases.length - 1]
 }
 
+// Scene completion for easy mode
+const sceneCompletionPct = computed(() => {
+  const scenes = props.project.scenes
+  if (scenes.length === 0) return 0
+  const completed = scenes.filter(s => s.generation_status === 'completed').length
+  return Math.round((completed / scenes.length) * 100)
+})
+
+// Phase label shortener
+function phaseLabel(phase: string): string {
+  const labels: Record<string, string> = {
+    scene_planning_and_preparation: 'Planning',
+    scene_planning: 'Planning',
+    shot_prep: 'Shot Prep',
+    training_data: 'Data',
+    lora_training: 'Training',
+    video_gen: 'Video',
+    scene_assembly: 'Assembly',
+    episode: 'Episode',
+    publishing: 'Publish',
+    ready: 'Ready',
+  }
+  return labels[phase] || phase.replace(/_/g, ' ')
+}
+
 // Utilities
 function shortModel(name?: string | null): string {
   if (!name) return ''
@@ -455,22 +469,35 @@ function rateClass(rate: number): string {
 .detail-count { font-weight: 400; color: var(--text-muted); text-transform: none; }
 .detail-actions { margin-top: 8px; display: flex; gap: 8px; }
 
-/* Character grid */
-.char-grid { display: grid; gap: 0; }
-.char-row {
-  display: grid; grid-template-columns: 16px 1fr 70px 1.2fr 45px 16px auto auto; gap: 8px; align-items: center;
-  padding: 5px 0; font-size: 12px; border-bottom: 1px solid rgba(255,255,255,0.03);
+/* Easy mode summary */
+.easy-summary { font-size: 13px; color: var(--text-primary); }
+.easy-line { padding: 2px 0; }
+.easy-progress { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+.easy-progress-label { font-size: 12px; color: var(--text-secondary); min-width: 50px; }
+.easy-bar { flex: 1; height: 6px; background: var(--bg-primary); border-radius: 3px; overflow: hidden; }
+.easy-bar-fill { height: 100%; background: var(--status-success, #4caf50); border-radius: 3px; transition: width 300ms ease; }
+.easy-pct { font-size: 11px; color: var(--text-muted); min-width: 30px; text-align: right; }
+
+/* Character mini-cards */
+.char-card-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px;
 }
-.char-row:last-child { border-bottom: none; }
-.char-row-warn { background: rgba(255,152,0,0.04); }
-.char-status-dot { width: 8px; height: 8px; border-radius: 50%; }
+.char-card {
+  background: var(--bg-primary); border: 1px solid var(--border-primary); border-radius: 6px;
+  padding: 8px 10px; transition: border-color 150ms;
+}
+.char-card:hover { border-color: var(--accent-primary); }
+.char-card-warn { border-color: rgba(255,152,0,0.4); }
+.char-card-top { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.char-card-name { font-size: 12px; font-weight: 500; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.char-card-body { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.char-card-footer { display: flex; align-items: center; gap: 6px; }
+.char-status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .lora-trained { background: var(--status-success, #4caf50); box-shadow: 0 0 4px var(--status-success, #4caf50); }
 .lora-training { background: var(--status-warning, #ff9800); animation: pulse 2s infinite; }
 .lora-ready { background: var(--accent-primary); }
 .lora-none { background: var(--text-muted); opacity: 0.3; }
-.char-name { color: var(--text-primary); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.char-images { color: var(--text-muted); text-align: right; font-size: 11px; }
-.char-model-info { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-muted); overflow: hidden; }
+.char-images { color: var(--text-muted); font-size: 11px; }
 .lora-badge {
   font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 3px;
   background: rgba(80,160,80,0.15); color: var(--status-success, #4caf50); flex-shrink: 0;
@@ -479,23 +506,7 @@ function rateClass(rate: number): string {
   font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 3px;
   background: rgba(255,152,0,0.15); color: var(--status-warning, #ff9800); flex-shrink: 0;
 }
-.model-name {
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-family: 'SF Mono', 'Consolas', monospace; font-size: 10px;
-}
-.model-mismatch { color: var(--status-error, #f44336); font-weight: 600; }
-.lora-loss { font-size: 10px; font-family: 'SF Mono', monospace; color: var(--text-muted); flex-shrink: 0; }
-.mixed-badge {
-  font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 3px; cursor: help;
-  background: rgba(255,152,0,0.15); color: var(--status-warning, #ff9800); flex-shrink: 0;
-}
-.char-dominant-model {
-  font-size: 10px; font-family: 'SF Mono', 'Consolas', monospace; color: var(--text-muted);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: 0.6;
-}
-
-/* Approval rate column */
-.char-approval { font-size: 11px; text-align: center; font-weight: 500; }
+.char-approval-ring { font-size: 10px; font-weight: 500; }
 .rate-high { color: var(--status-success, #4caf50); }
 .rate-mid { color: var(--status-warning, #ff9800); }
 .rate-low { color: var(--status-error, #f44336); }
@@ -509,9 +520,31 @@ function rateClass(rate: number): string {
 .btn-manage {
   font-size: 10px; padding: 1px 8px; border-radius: 3px; cursor: pointer;
   background: transparent; border: 1px solid var(--border-primary); color: var(--text-muted);
-  font-family: var(--font-primary); transition: all 150ms ease;
+  font-family: var(--font-primary); transition: all 150ms ease; margin-left: auto;
 }
 .btn-manage:hover { border-color: var(--accent-primary); color: var(--accent-primary); }
+
+/* Pipeline Stepper */
+.pipeline-stepper { display: flex; align-items: flex-start; gap: 0; padding: 8px 0; position: relative; }
+.step-item { display: flex; flex-direction: column; align-items: center; position: relative; flex: 1; min-width: 0; }
+.step-circle {
+  width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 600; border: 2px solid var(--border-primary); background: var(--bg-primary);
+  color: var(--text-muted); position: relative; z-index: 1;
+}
+.step-completed .step-circle { background: var(--status-success, #4caf50); border-color: var(--status-success, #4caf50); color: #fff; }
+.step-active .step-circle { border-color: var(--accent-primary); color: var(--accent-primary); animation: pill-pulse 2s ease-in-out infinite; }
+.step-failed .step-circle { border-color: var(--status-error, #f44336); color: var(--status-error, #f44336); }
+.step-check { font-size: 12px; }
+.step-label { font-size: 10px; color: var(--text-muted); margin-top: 4px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.step-completed .step-label { color: var(--status-success, #4caf50); }
+.step-active .step-label { color: var(--accent-primary); font-weight: 500; }
+.step-connector {
+  position: absolute; top: 12px; left: calc(50% + 14px); right: calc(-50% + 14px);
+  height: 2px; background: var(--border-primary); z-index: 0;
+}
+.step-connector-done { background: var(--status-success, #4caf50); }
+.step-actions { margin-top: 4px; }
 
 /* Quality Insights row */
 .quality-row-container { display: flex; gap: 16px; flex-wrap: wrap; }
@@ -645,13 +678,13 @@ function rateClass(rate: number): string {
 @media (max-width: 900px) {
   .stage-pill { display: none; }
   .sparkline { display: none; }
-  .char-row { grid-template-columns: 16px 1fr 60px; }
-  .char-model-info, .char-approval, .drift-dot, .mixed-badge, .char-dominant-model, .btn-manage { display: none; }
+  .char-card-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
   .scene-row { grid-template-columns: 16px 1fr 80px; }
   .scene-video, .scene-status-label { display: none; }
   .episode-row { grid-template-columns: 30px 1fr 70px; }
   .episode-scenes, .episode-duration { display: none; }
   .orch-grid { grid-template-columns: 1fr; }
   .quality-row-container { flex-direction: column; }
+  .pipeline-stepper { flex-wrap: wrap; gap: 4px; }
 }
 </style>

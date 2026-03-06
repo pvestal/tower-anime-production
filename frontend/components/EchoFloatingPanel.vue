@@ -43,12 +43,11 @@
           <div v-if="subtab === 'chat'" style="display: flex; flex-direction: column; flex: 1; min-height: 0;">
             <!-- Character context selector -->
             <div style="margin-bottom: 12px;">
-              <select v-model="chatCharSlug" class="field-input" style="width: 100%; font-size: 12px;">
-                <option value="">No character context</option>
-                <option v-for="c in characters" :key="c.slug" :value="c.slug">
-                  {{ c.name }} ({{ c.project_name }})
-                </option>
-              </select>
+              <SearchableSelect
+                v-model="chatCharSlug"
+                :options="charSelectOptions"
+                placeholder="No character context"
+              />
             </div>
 
             <!-- Messages -->
@@ -105,12 +104,12 @@
             <!-- Character selector -->
             <div style="margin-bottom: 12px;">
               <label class="field-label">Character</label>
-              <select v-model="enhanceCharSlug" @change="loadDesignPrompt" class="field-input" style="width: 100%;">
-                <option value="">Select character...</option>
-                <option v-for="c in characters" :key="c.slug" :value="c.slug">
-                  {{ c.name }} ({{ c.project_name }})
-                </option>
-              </select>
+              <SearchableSelect
+                v-model="enhanceCharSlug"
+                :options="charSelectOptions"
+                placeholder="Select character..."
+                @update:model-value="loadDesignPrompt"
+              />
             </div>
 
             <!-- Current prompt -->
@@ -178,9 +177,19 @@ import { ref, computed, onMounted, nextTick } from 'vue'
 import { useCharactersStore } from '@/stores/characters'
 import { api } from '@/api/client'
 import type { EchoEnhanceResponse } from '@/types'
+import SearchableSelect from './shared/SearchableSelect.vue'
 
 const charactersStore = useCharactersStore()
 const characters = computed(() => charactersStore.characters)
+
+const charSelectOptions = computed(() => [
+  { value: '', label: 'None' },
+  ...characters.value.map(c => ({
+    value: c.slug,
+    label: c.name,
+    detail: c.project_name,
+  })),
+])
 
 // Panel state
 const open = ref(false)

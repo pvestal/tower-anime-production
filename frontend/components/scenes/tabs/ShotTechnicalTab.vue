@@ -3,18 +3,12 @@
     <!-- Video Engine -->
     <div v-if="authStore.isAdvanced" class="field-group">
       <label class="field-label">Video Engine</label>
-      <select
-        :value="shot.video_engine || 'framepack'"
-        @change="updateField('video_engine', ($event.target as HTMLSelectElement).value)"
-        class="field-input"
-      >
-        <option value="framepack">FramePack (I2V, solo + LoRA, highest quality)</option>
-        <option value="framepack_f1">FramePack F1 (I2V, faster)</option>
-        <option value="wan">Wan 2.1 T2V (text-only, multi-char, environments)</option>
-        <option value="wan22">Wan 2.2 5B (T2V/I2V, fast, good quality)</option>
-        <option value="wan22_14b">Wan 2.2 14B (I2V, best quality, needs source image)</option>
-        <option value="ltx">LTX-Video (I2V/T2V, LoRA support)</option>
-      </select>
+      <SegmentedControl
+        :model-value="shot.video_engine || 'framepack'"
+        :options="engineOptions"
+        size="sm"
+        @update:model-value="updateField('video_engine', $event)"
+      />
       <div v-if="engineHint" style="font-size: 10px; color: var(--text-muted); margin-top: 3px;">
         {{ engineHint }}
       </div>
@@ -24,18 +18,12 @@
     <div v-if="authStore.isAdvanced" class="field-row">
       <div class="field-group">
         <label class="field-label">Steps</label>
-        <select
-          :value="shot.steps"
-          @change="updateField('steps', ($event.target as HTMLSelectElement).value ? Number(($event.target as HTMLSelectElement).value) : null)"
-          class="field-input"
-        >
-          <option :value="null">Default ({{ stepsDefault }})</option>
-          <option :value="4">4 (lightx2v)</option>
-          <option :value="15">15</option>
-          <option :value="20">20</option>
-          <option :value="25">25</option>
-          <option :value="30">30</option>
-        </select>
+        <SegmentedControl
+          :model-value="shot.steps ?? null"
+          :options="stepsOptions"
+          size="sm"
+          @update:model-value="updateField('steps', $event)"
+        />
       </div>
       <div class="field-group">
         <label class="field-label">Pose</label>
@@ -88,16 +76,12 @@
     <div class="field-row">
       <div class="field-group">
         <label class="field-label">Transition</label>
-        <select
-          :value="shot.transition_type || 'dissolve'"
-          @change="updateField('transition_type', ($event.target as HTMLSelectElement).value)"
-          class="field-input"
-        >
-          <option value="dissolve">Dissolve</option>
-          <option value="fade">Fade</option>
-          <option value="fadeblack">Fade Black</option>
-          <option value="wipeleft">Wipe Left</option>
-        </select>
+        <SegmentedControl
+          :model-value="shot.transition_type || 'dissolve'"
+          :options="transitionOptions"
+          size="sm"
+          @update:model-value="updateField('transition_type', $event)"
+        />
       </div>
       <div class="field-group">
         <label class="field-label">Transition (s)</label>
@@ -199,8 +183,25 @@ import { ref, computed, watch } from 'vue'
 import type { BuilderShot, CharacterSceneState } from '@/types'
 import { scenesApi } from '@/api/scenes'
 import { useAuthStore } from '@/stores/auth'
+import SegmentedControl from '../../shared/SegmentedControl.vue'
 
 const authStore = useAuthStore()
+
+const engineOptions = [
+  { value: 'framepack', label: 'FP', hint: 'FramePack I2V — solo + LoRA' },
+  { value: 'framepack_f1', label: 'FP-F1', hint: 'FramePack F1 — faster' },
+  { value: 'wan', label: 'Wan', hint: 'Wan 2.1 T2V — multi-char' },
+  { value: 'wan22', label: 'Wan22', hint: 'Wan 2.2 5B — fast' },
+  { value: 'wan22_14b', label: 'Wan14B', hint: 'Wan 2.2 14B — best quality' },
+  { value: 'ltx', label: 'LTX', hint: 'LTX-Video — LoRA support' },
+]
+
+const transitionOptions = [
+  { value: 'dissolve', label: 'Dissolve' },
+  { value: 'fade', label: 'Fade' },
+  { value: 'fadeblack', label: 'Fade Black' },
+  { value: 'wipeleft', label: 'Wipe Left' },
+]
 
 const props = defineProps<{
   shot: Partial<BuilderShot>
@@ -233,6 +234,15 @@ const stepsDefault = computed(() => {
   if (engine === 'wan22_14b') return 4
   return 25
 })
+
+const stepsOptions = computed(() => [
+  { value: null, label: `Default (${stepsDefault.value})` },
+  { value: 4, label: '4' },
+  { value: 15, label: '15' },
+  { value: 20, label: '20' },
+  { value: 25, label: '25' },
+  { value: 30, label: '30' },
+])
 
 // Fetch character states when shot changes
 watch(() => (props.shot as any)?.id, async () => {

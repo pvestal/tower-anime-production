@@ -545,6 +545,8 @@ async def get_scene(scene_id: str):
                 "transition_duration": float(sh.get("transition_duration") or 0.3),
                 "generation_prompt": sh.get("generation_prompt"),
                 "generation_negative": sh.get("generation_negative"),
+                "clip_score": sh.get("clip_score"),
+                "clip_variety_score": sh.get("clip_variety_score"),
             })
         return {
             "id": str(scene["id"]), "project_id": scene["project_id"],
@@ -879,9 +881,11 @@ async def generate_scene_endpoint(scene_id: str, auto_approve: bool = False):
         if shot_count == 0:
             raise HTTPException(status_code=400, detail="Scene has no shots")
         await conn.execute(
-            "UPDATE shots SET status = 'pending', error_message = NULL WHERE scene_id = $1", sid)
+            "UPDATE shots SET status = 'pending', error_message = NULL WHERE scene_id = $1 AND status != 'completed'", sid)
+        completed = await conn.fetchval(
+            "SELECT COUNT(*) FROM shots WHERE scene_id = $1 AND status = 'completed'", sid)
         await conn.execute(
-            "UPDATE scenes SET completed_shots = 0, current_generating_shot_id = NULL WHERE id = $1", sid)
+            "UPDATE scenes SET completed_shots = $1, current_generating_shot_id = NULL WHERE id = $2", completed, sid)
         shots = await conn.fetch(
             "SELECT duration_seconds FROM shots WHERE scene_id = $1 ORDER BY shot_number", sid)
         est_minutes = 0
@@ -1022,12 +1026,16 @@ async def regenerate_shot(scene_id: str, shot_id: str):
 
                 from .composite_image import generate_composite_source, generate_simple_keyframe
                 _kf = None
+                _extra_loras = []
+                if shot.get("image_lora"):
+                    _extra_loras.append((shot["image_lora"], shot.get("image_lora_strength") or 0.7))
                 # Simple keyframe first (txt2img + LoRA) — reliable full scene
                 try:
                     _kf = await generate_simple_keyframe(
                         conn, _proj_id, list(chars), prompt_text, _ckpt,
                         shot_type=shot.get("shot_type", "medium"),
                         camera_angle=shot.get("camera_angle", "eye-level"),
+                        extra_loras=_extra_loras or None,
                     )
                 except Exception:
                     pass
@@ -1693,6 +1701,44 @@ async def select_engine_for_shot(scene_id: str, shot_id: str, body: SelectEngine
             "video_engine": body.video_engine,
             "lora_name": body.lora_name,
             "lora_strength": body.lora_strength,
+        }
+    finally:
+        await conn.close()
+
+
+class SetImageLoraRequest(BaseModel):
+    image_lora: str | None = None
+    image_lora_strength: float = 0.7
+
+
+@router.post("/scenes/{scene_id}/shots/{shot_id}/set-image-lora")
+async def set_image_lora(scene_id: str, shot_id: str, body: SetImageLoraRequest):
+    """Set a supplementary image LoRA on a shot for keyframe generation.
+
+    This LoRA is stacked alongside the character's LoRA during txt2img keyframe
+    generation. Useful for pose, action, or environment LoRAs.
+    """
+    sid = uuid.UUID(scene_id)
+    shot_uuid = uuid.UUID(shot_id)
+    if body.image_lora:
+        lora_path = Path(f"/opt/ComfyUI/models/loras/{body.image_lora}")
+        if not lora_path.exists():
+            raise HTTPException(status_code=404, detail=f"LoRA not found: {body.image_lora}")
+    conn = await connect_direct()
+    try:
+        shot = await conn.fetchrow(
+            "SELECT id FROM shots WHERE id = $1 AND scene_id = $2", shot_uuid, sid,
+        )
+        if not shot:
+            raise HTTPException(status_code=404, detail="Shot not found in this scene")
+        await conn.execute(
+            "UPDATE shots SET image_lora = $1, image_lora_strength = $2 WHERE id = $3",
+            body.image_lora, body.image_lora_strength, shot_uuid,
+        )
+        return {
+            "shot_id": shot_id,
+            "image_lora": body.image_lora,
+            "image_lora_strength": body.image_lora_strength,
         }
     finally:
         await conn.close()

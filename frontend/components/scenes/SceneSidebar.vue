@@ -1,15 +1,13 @@
 <template>
   <div class="scene-sidebar">
     <!-- Project selector -->
-    <div class="sidebar-section">
-      <select
-        class="sidebar-select"
-        :value="store.selectedProjectId"
-        @change="onProjectChange"
-      >
-        <option :value="0" disabled>Select project...</option>
-        <option v-for="p in store.projects" :key="p.id" :value="p.id">{{ p.name }}</option>
-      </select>
+    <div class="sidebar-section" style="padding: 8px 12px;">
+      <SearchableSelect
+        :model-value="store.selectedProjectId"
+        :options="projectOptions"
+        placeholder="Select project..."
+        @update:model-value="store.selectedProjectId = Number($event)"
+      />
     </div>
 
     <!-- Generation Mode Toggle -->
@@ -85,16 +83,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useSceneEditorStore } from '@/stores/sceneEditor'
+import SearchableSelect from '../shared/SearchableSelect.vue'
 
 const store = useSceneEditorStore()
-const generationMode = ref<'autopilot' | 'direct'>('autopilot')
 
-function onProjectChange(e: Event) {
-  const val = Number((e.target as HTMLSelectElement).value)
-  store.selectedProjectId = val
-}
+const projectOptions = computed(() =>
+  store.projects.map(p => ({ value: p.id, label: p.name }))
+)
+const generationMode = ref<'autopilot' | 'direct'>('autopilot')
 
 async function setMode(mode: 'autopilot' | 'direct') {
   generationMode.value = mode

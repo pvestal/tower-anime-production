@@ -1,189 +1,197 @@
 <template>
   <div style="display: flex; gap: 0; height: 100%; overflow: hidden;">
-    <!-- Left: Scene Details -->
+    <!-- Left: Scene Details (collapsible sections) -->
     <div class="card" style="width: 280px; flex-shrink: 0; overflow-y: auto; height: 100%; border-radius: 0; border-right: 1px solid var(--border-primary);">
-      <div style="font-size: 13px; font-weight: 500; margin-bottom: 12px; color: var(--accent-primary);">Scene Details</div>
-
-      <div class="field-group">
-        <label class="field-label">Title</label>
-        <input v-model="localScene.title" type="text" placeholder="Scene title" class="field-input" />
-      </div>
-      <div class="field-group">
-        <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
-          <label class="field-label" style="margin-bottom: 0;">Description</label>
-          <EchoAssistButton
-            context-type="concept"
-            :context-payload="echoScenePayload"
-            :current-value="localScene.description || ''"
-            compact
-            @accept="localScene.description = $event.suggestion"
-          />
-        </div>
-        <textarea v-model="localScene.description" rows="3" class="field-input field-textarea"></textarea>
-      </div>
-      <div class="field-group">
-        <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
-          <label class="field-label" style="margin-bottom: 0;">Location</label>
-          <EchoAssistButton
-            context-type="scene_location"
-            :context-payload="{
-              project_name: projectStore.currentProject?.name,
-              project_genre: projectStore.currentProject?.genre ?? undefined,
-              storyline_summary: storyline?.summary ?? undefined,
-              scene_description: localScene.description ?? undefined,
-            }"
-            :current-value="localScene.location || ''"
-            compact
-            @accept="localScene.location = $event.suggestion"
-          />
-        </div>
-        <input v-model="localScene.location" type="text" placeholder="dark alley, rooftop..." class="field-input" />
-      </div>
-      <div class="field-row">
+      <!-- Scene Info (always open) -->
+      <div class="sidebar-group">
+        <div style="font-size: 13px; font-weight: 500; margin-bottom: 12px; color: var(--accent-primary);">Scene Details</div>
         <div class="field-group">
-          <label class="field-label">Time</label>
-          <select v-model="localScene.time_of_day" class="field-input">
-            <option value="">--</option>
-            <option v-for="t in timeOptions" :key="t" :value="t">{{ t }}</option>
-          </select>
+          <label class="field-label">Title</label>
+          <input v-model="localScene.title" type="text" placeholder="Scene title" class="field-input" />
         </div>
         <div class="field-group">
-          <label class="field-label">Weather</label>
-          <select v-model="localScene.weather" class="field-input">
-            <option value="">--</option>
-            <option v-for="w in weatherOptions" :key="w" :value="w">{{ w }}</option>
-          </select>
-        </div>
-      </div>
-      <div class="field-group">
-        <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
-          <label class="field-label" style="margin-bottom: 0;">Mood</label>
-          <EchoAssistButton
-            context-type="scene_mood"
-            :context-payload="{
-              project_name: projectStore.currentProject?.name,
-              project_genre: projectStore.currentProject?.genre ?? undefined,
-              storyline_theme: storyline?.tone ?? undefined,
-              scene_description: localScene.description ?? undefined,
-            }"
-            :current-value="localScene.mood || ''"
-            compact
-            @accept="localScene.mood = $event.suggestion"
-          />
-        </div>
-        <input v-model="localScene.mood" type="text" placeholder="tense, peaceful..." class="field-input" />
-      </div>
-      <div class="field-group">
-        <label class="field-label">Target Duration (s)</label>
-        <input v-model.number="localScene.target_duration_seconds" type="number" min="5" max="300" class="field-input" />
-      </div>
-
-      <!-- Post-processing -->
-      <div style="border-top: 1px solid var(--border-primary); padding-top: 8px; margin-top: 8px;">
-        <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase; margin-bottom: 6px;">Post-Processing</div>
-        <div class="field-group">
-          <label class="field-label">Frame Interpolation</label>
-          <select v-model="localPostInterpolate" class="field-input">
-            <option :value="null">Off</option>
-            <option :value="60">30 → 60 fps</option>
-          </select>
+          <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
+            <label class="field-label" style="margin-bottom: 0;">Description</label>
+            <EchoAssistButton
+              context-type="concept"
+              :context-payload="echoScenePayload"
+              :current-value="localScene.description || ''"
+              compact
+              @accept="localScene.description = $event.suggestion"
+            />
+          </div>
+          <textarea v-model="localScene.description" rows="3" class="field-input field-textarea"></textarea>
         </div>
         <div class="field-group">
-          <label class="field-label">Upscale</label>
-          <select v-model="localPostUpscale" class="field-input">
-            <option :value="null">Off</option>
-            <option :value="2">2x (max 1080p)</option>
-          </select>
+          <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
+            <label class="field-label" style="margin-bottom: 0;">Location</label>
+            <EchoAssistButton
+              context-type="scene_location"
+              :context-payload="{
+                project_name: projectStore.currentProject?.name,
+                project_genre: projectStore.currentProject?.genre ?? undefined,
+                storyline_summary: storyline?.summary ?? undefined,
+                scene_description: localScene.description ?? undefined,
+              }"
+              :current-value="localScene.location || ''"
+              compact
+              @accept="localScene.location = $event.suggestion"
+            />
+          </div>
+          <input v-model="localScene.location" type="text" placeholder="dark alley, rooftop..." class="field-input" />
         </div>
       </div>
 
-      <div style="font-size: 12px; color: var(--text-muted); margin-top: 12px;">
-        {{ shots.length }} shots, est. {{ estimateMinutes(shots) }} min gen time
-      </div>
-
-      <!-- Training readiness warning -->
-      <div v-if="unreadyCharacters.length > 0" style="border-left: 3px solid var(--status-warning); background: rgba(160, 128, 80, 0.1); padding: 8px 10px; margin-top: 10px; border-radius: 0 4px 4px 0;">
-        <div style="font-size: 11px; font-weight: 500; color: var(--status-warning); margin-bottom: 4px;">Characters without LoRA</div>
-        <div v-for="c in unreadyCharacters" :key="c.slug" style="font-size: 11px; color: var(--text-secondary); margin-bottom: 2px;">
-          {{ c.name }} — {{ c.reason }}
-        </div>
-        <button
-          class="btn"
-          style="font-size: 11px; padding: 2px 8px; margin-top: 6px;"
-          @click="emit('go-to-training')"
-        >Go to Training tab</button>
-      </div>
-
-      <!-- Story Arc dropdown (optional tag) -->
-      <div v-if="storyArcs.length > 0" class="field-group" style="margin-top: 10px;">
-        <label class="field-label">Story Arc</label>
-        <select v-model="localStoryArc" class="field-input">
-          <option value="">None</option>
-          <option v-for="arc in storyArcs" :key="arc" :value="arc">{{ arc }}</option>
-        </select>
-      </div>
-
-      <div style="display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap;">
-        <button class="btn btn-primary" @click="emit('save')" :disabled="saving">Save</button>
-        <button
-          class="btn btn-success"
-          :disabled="shots.length === 0 || generating"
-          @click="emit('confirm-generate')"
-        >Generate</button>
-        <button
-          class="btn"
-          :disabled="shots.length === 0 || allShotsHaveImages"
-          @click="emit('auto-assign')"
-          title="Auto-assign best source images to all unassigned shots"
-        >Auto-assign Images</button>
-        <button class="btn" @click="emit('back')">Back</button>
-      </div>
-
-      <!-- Audio Track Panel -->
-      <SceneAudioPanel
-        v-if="sceneId"
-        :scene-id="sceneId"
-        :audio="scene.audio ?? null"
-        :scene-mood="(scene as any).mood || ''"
-        :scene-description="(scene as any).description || ''"
-        :time-of-day="(scene as any).time_of_day || ''"
-        :has-dialogue="shots.some((s: any) => s.dialogue_text)"
-        @audio-changed="(a: SceneAudio | null) => emit('audio-changed', a)"
-      />
-
-      <!-- Story Context (collapsible) -->
-      <div v-if="hasStoryContext" style="margin-top: 16px; border-top: 1px solid var(--border-primary); padding-top: 12px;">
-        <button
-          style="display: flex; align-items: center; gap: 6px; background: none; border: none; cursor: pointer; color: var(--text-secondary); font-size: 12px; font-family: var(--font-primary); padding: 0;"
-          @click="storyContextOpen = !storyContextOpen"
-        >
-          <span style="font-size: 10px;">{{ storyContextOpen ? '\u25BC' : '\u25B6' }}</span>
-          Story Context
+      <!-- Environment (collapsible) -->
+      <div class="sidebar-group">
+        <button class="section-toggle" @click="sectionOpen.environment = !sectionOpen.environment">
+          <span class="toggle-chevron">{{ sectionOpen.environment ? '\u25BE' : '\u25B8' }}</span>
+          Environment
         </button>
-        <div v-if="storyContextOpen" style="margin-top: 8px; font-size: 12px;">
-          <div v-if="storyline?.summary" style="margin-bottom: 8px;">
-            <div style="color: var(--text-muted); font-size: 10px; text-transform: uppercase; margin-bottom: 2px;">Summary</div>
-            <div style="color: var(--text-secondary); line-height: 1.4;">{{ storyline.summary }}</div>
+        <div v-if="sectionOpen.environment" class="section-body">
+          <div class="field-group">
+            <label class="field-label">Time</label>
+            <SegmentedControl
+              :model-value="localScene.time_of_day || ''"
+              :options="timeSegmentOptions"
+              size="sm"
+              @update:model-value="localScene.time_of_day = $event as string"
+            />
           </div>
-          <div v-if="storyline?.theme" style="margin-bottom: 8px;">
-            <div style="color: var(--text-muted); font-size: 10px; text-transform: uppercase; margin-bottom: 2px;">Theme</div>
-            <div style="color: var(--text-secondary);">{{ storyline.theme }}</div>
+          <div class="field-group">
+            <label class="field-label">Weather</label>
+            <SegmentedControl
+              :model-value="localScene.weather || ''"
+              :options="weatherSegmentOptions"
+              size="sm"
+              @update:model-value="localScene.weather = $event as string"
+            />
           </div>
-          <div v-if="storyline?.tone" style="margin-bottom: 8px;">
-            <div style="color: var(--text-muted); font-size: 10px; text-transform: uppercase; margin-bottom: 2px;">Tone</div>
-            <div style="color: var(--text-secondary);">{{ storyline.tone }}</div>
-          </div>
-          <div v-if="worldLocation" style="margin-bottom: 8px;">
-            <div style="color: var(--text-muted); font-size: 10px; text-transform: uppercase; margin-bottom: 2px;">World</div>
-            <div style="color: var(--text-secondary);">{{ worldLocation }}</div>
-          </div>
-          <div v-if="storyArcs.length > 0" style="margin-bottom: 8px;">
-            <div style="color: var(--text-muted); font-size: 10px; text-transform: uppercase; margin-bottom: 2px;">Story Arcs</div>
-            <div style="display: flex; flex-wrap: wrap; gap: 4px;">
-              <span v-for="arc in storyArcs" :key="arc" style="padding: 1px 6px; background: var(--bg-primary); border-radius: 3px; font-size: 11px; color: var(--text-secondary);">{{ arc }}</span>
+          <div class="field-group">
+            <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
+              <label class="field-label" style="margin-bottom: 0;">Mood</label>
+              <EchoAssistButton
+                context-type="scene_mood"
+                :context-payload="{
+                  project_name: projectStore.currentProject?.name,
+                  project_genre: projectStore.currentProject?.genre ?? undefined,
+                  storyline_theme: storyline?.tone ?? undefined,
+                  scene_description: localScene.description ?? undefined,
+                }"
+                :current-value="localScene.mood || ''"
+                compact
+                @accept="localScene.mood = $event.suggestion"
+              />
             </div>
+            <input v-model="localScene.mood" type="text" placeholder="tense, peaceful..." class="field-input" />
           </div>
         </div>
+      </div>
+
+      <!-- Technical (collapsed by default) -->
+      <div class="sidebar-group">
+        <button class="section-toggle" @click="sectionOpen.technical = !sectionOpen.technical">
+          <span class="toggle-chevron">{{ sectionOpen.technical ? '\u25BE' : '\u25B8' }}</span>
+          Technical
+        </button>
+        <div v-if="sectionOpen.technical" class="section-body">
+          <div class="field-group">
+            <label class="field-label">Target Duration (s)</label>
+            <input v-model.number="localScene.target_duration_seconds" type="number" min="5" max="300" class="field-input" />
+          </div>
+          <div class="field-group">
+            <label class="field-label">Interpolation</label>
+            <SegmentedControl
+              :model-value="localPostInterpolate"
+              :options="[{ value: null, label: 'Off' }, { value: 60, label: '60fps' }]"
+              size="sm"
+              @update:model-value="localPostInterpolate = $event as number | null"
+            />
+          </div>
+          <div class="field-group">
+            <label class="field-label">Upscale</label>
+            <SegmentedControl
+              :model-value="localPostUpscale"
+              :options="[{ value: null, label: 'Off' }, { value: 2, label: '2x' }]"
+              size="sm"
+              @update:model-value="localPostUpscale = $event as number | null"
+            />
+          </div>
+          <div style="font-size: 12px; color: var(--text-muted); margin-top: 8px;">
+            {{ shots.length }} shots, est. {{ estimateMinutes(shots) }} min gen time
+          </div>
+          <!-- Training readiness warning -->
+          <div v-if="unreadyCharacters.length > 0" style="border-left: 3px solid var(--status-warning); background: rgba(160, 128, 80, 0.1); padding: 8px 10px; margin-top: 10px; border-radius: 0 4px 4px 0;">
+            <div style="font-size: 11px; font-weight: 500; color: var(--status-warning); margin-bottom: 4px;">Characters without LoRA</div>
+            <div v-for="c in unreadyCharacters" :key="c.slug" style="font-size: 11px; color: var(--text-secondary); margin-bottom: 2px;">
+              {{ c.name }} — {{ c.reason }}
+            </div>
+            <button class="btn" style="font-size: 11px; padding: 2px 8px; margin-top: 6px;" @click="emit('go-to-training')">Go to Training tab</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Story Arc (collapsed) -->
+      <div v-if="storyArcs.length > 0 || hasStoryContext" class="sidebar-group">
+        <button class="section-toggle" @click="sectionOpen.storyArc = !sectionOpen.storyArc">
+          <span class="toggle-chevron">{{ sectionOpen.storyArc ? '\u25BE' : '\u25B8' }}</span>
+          Story Arc
+        </button>
+        <div v-if="sectionOpen.storyArc" class="section-body">
+          <div v-if="storyArcs.length > 0" class="field-group">
+            <label class="field-label">Story Arc</label>
+            <select v-model="localStoryArc" class="field-input">
+              <option value="">None</option>
+              <option v-for="arc in storyArcs" :key="arc" :value="arc">{{ arc }}</option>
+            </select>
+          </div>
+          <template v-if="hasStoryContext">
+            <div v-if="storyline?.summary" style="margin-bottom: 8px;">
+              <div style="color: var(--text-muted); font-size: 10px; text-transform: uppercase; margin-bottom: 2px;">Summary</div>
+              <div style="color: var(--text-secondary); line-height: 1.4; font-size: 12px;">{{ storyline.summary }}</div>
+            </div>
+            <div v-if="storyline?.theme" style="margin-bottom: 8px;">
+              <div style="color: var(--text-muted); font-size: 10px; text-transform: uppercase; margin-bottom: 2px;">Theme</div>
+              <div style="color: var(--text-secondary); font-size: 12px;">{{ storyline.theme }}</div>
+            </div>
+            <div v-if="storyline?.tone" style="margin-bottom: 8px;">
+              <div style="color: var(--text-muted); font-size: 10px; text-transform: uppercase; margin-bottom: 2px;">Tone</div>
+              <div style="color: var(--text-secondary); font-size: 12px;">{{ storyline.tone }}</div>
+            </div>
+            <div v-if="worldLocation" style="margin-bottom: 8px;">
+              <div style="color: var(--text-muted); font-size: 10px; text-transform: uppercase; margin-bottom: 2px;">World</div>
+              <div style="color: var(--text-secondary); font-size: 12px;">{{ worldLocation }}</div>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- Audio (collapsible) -->
+      <div class="sidebar-group">
+        <button class="section-toggle" @click="sectionOpen.audio = !sectionOpen.audio">
+          <span class="toggle-chevron">{{ sectionOpen.audio ? '\u25BE' : '\u25B8' }}</span>
+          Audio
+        </button>
+        <div v-if="sectionOpen.audio" class="section-body">
+          <SceneAudioPanel
+            v-if="sceneId"
+            :scene-id="sceneId"
+            :audio="scene.audio ?? null"
+            :scene-mood="(scene as any).mood || ''"
+            :scene-description="(scene as any).description || ''"
+            :time-of-day="(scene as any).time_of_day || ''"
+            :has-dialogue="shots.some((s: any) => s.dialogue_text)"
+            @audio-changed="(a: SceneAudio | null) => emit('audio-changed', a)"
+          />
+        </div>
+      </div>
+
+      <!-- Action buttons -->
+      <div style="display: flex; gap: 8px; padding: 12px; flex-wrap: wrap; border-top: 1px solid var(--border-primary);">
+        <button class="btn btn-primary" @click="emit('save')" :disabled="saving">Save</button>
+        <button class="btn btn-success" :disabled="shots.length === 0 || generating" @click="emit('confirm-generate')">Generate</button>
+        <button class="btn" :disabled="shots.length === 0 || allShotsHaveImages" @click="emit('auto-assign')" title="Auto-assign best source images to all unassigned shots">Auto-assign</button>
+        <button class="btn" @click="emit('back')">Back</button>
       </div>
     </div>
 
@@ -216,13 +224,14 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, computed, watch } from 'vue'
+import { reactive, ref, computed, watch, type Reactive } from 'vue'
 import type { BuilderScene, BuilderShot, SceneAudio, GapAnalysisCharacter } from '@/types'
 import { useProjectStore } from '@/stores/project'
 import ShotInspectorPanel from './ShotInspectorPanel.vue'
 import StoryboardGrid from './StoryboardGrid.vue'
 import EchoAssistButton from '../EchoAssistButton.vue'
 import SceneAudioPanel from './SceneAudioPanel.vue'
+import SegmentedControl from '../shared/SegmentedControl.vue'
 
 const projectStore = useProjectStore()
 
@@ -286,8 +295,18 @@ const unreadyCharacters = computed((): Array<{ slug: string; name: string; reaso
 const timeOptions = ['dawn', 'morning', 'midday', 'afternoon', 'sunset', 'evening', 'night']
 const weatherOptions = ['clear', 'cloudy', 'rain', 'snow', 'fog', 'storm']
 
+const timeSegmentOptions = [{ value: '', label: '--' }, ...timeOptions.map(t => ({ value: t, label: t }))]
+const weatherSegmentOptions = [{ value: '', label: '--' }, ...weatherOptions.map(w => ({ value: w, label: w }))]
+
+// Collapsible section state
+const sectionOpen = reactive({
+  environment: true,
+  technical: false,
+  storyArc: false,
+  audio: false,
+})
+
 // Story context
-const storyContextOpen = ref(false)
 const localStoryArc = ref('')
 
 const storyline = computed(() => projectStore.currentProject?.storyline)
@@ -383,6 +402,38 @@ function estimateMinutes(shots: Partial<BuilderShot>[]): number {
 }
 .field-row .field-group {
   flex: 1;
+}
+
+/* Collapsible sidebar sections */
+.sidebar-group {
+  border-bottom: 1px solid var(--border-primary);
+  padding: 10px 12px;
+}
+.section-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  font-family: var(--font-primary);
+  padding: 0;
+  width: 100%;
+  text-align: left;
+}
+.section-toggle:hover {
+  color: var(--text-primary);
+}
+.toggle-chevron {
+  font-size: 10px;
+  width: 12px;
+  display: inline-block;
+}
+.section-body {
+  margin-top: 8px;
 }
 
 .badge-draft {

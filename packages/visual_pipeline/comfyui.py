@@ -42,6 +42,9 @@ def build_comfyui_workflow(
     project_name: str | None = None,
     pose: str | None = None,
     multi_character: bool = False,
+    controlnet_image: str | None = None,
+    controlnet_strength: float = 0.7,
+    controlnet_type: str = "openpose",
 ) -> dict:
     """Build a ComfyUI workflow dict for image or video generation.
 
@@ -176,11 +179,11 @@ def build_comfyui_workflow(
             # IP-Adapter Apply
             workflow["23"] = {
                 "inputs": {
-                    "weight": 0.7,
+                    "weight": profile.get("ip_adapter_weight", 0.6),
                     "weight_type": "linear",
                     "combine_embeds": "concat",
                     "start_at": 0.0,
-                    "end_at": 0.85,
+                    "end_at": profile.get("ip_adapter_end_at", 0.80),
                     "embeds_scaling": "K+V",
                     "model": ["22", 0],
                     "ipadapter": ["22", 1],
@@ -191,6 +194,45 @@ def build_comfyui_workflow(
             # Rewire KSampler to use IP-Adapter output model
             workflow["3"]["inputs"]["model"] = ["23", 0]
             logger.info(f"IP-Adapter injected: ref={ref_img.name} for {character_slug}")
+
+    # Inject ControlNet if a pose/depth reference image is provided
+    if controlnet_image and generation_type == "image":
+        controlnet_models = {
+            "openpose": "controlnet-openpose-sdxl-1.0.safetensors",
+            "depth": "controlnet-depth-sdxl-1.0.safetensors",
+        }
+        cn_model = controlnet_models.get(controlnet_type)
+        cn_path = Path(f"/opt/ComfyUI/models/controlnet/{cn_model}") if cn_model else None
+        if cn_path and cn_path.exists():
+            # Load ControlNet model
+            workflow["40"] = {
+                "inputs": {"control_net_name": cn_model},
+                "class_type": "ControlNetLoader",
+            }
+            # Load the reference pose/depth image
+            workflow["41"] = {
+                "inputs": {"image": controlnet_image, "upload": "image"},
+                "class_type": "LoadImage",
+            }
+            # Apply ControlNet — chains onto positive conditioning
+            workflow["42"] = {
+                "inputs": {
+                    "strength": controlnet_strength,
+                    "start_percent": 0.0,
+                    "end_percent": 0.8,
+                    "positive": workflow["3"]["inputs"]["positive"],
+                    "negative": workflow["3"]["inputs"]["negative"],
+                    "control_net": ["40", 0],
+                    "image": ["41", 0],
+                },
+                "class_type": "ControlNetApplyAdvanced",
+            }
+            # Rewire KSampler to use ControlNet-conditioned outputs
+            workflow["3"]["inputs"]["positive"] = ["42", 0]
+            workflow["3"]["inputs"]["negative"] = ["42", 1]
+            logger.info(f"ControlNet injected: {controlnet_type} @ {controlnet_strength}")
+        else:
+            logger.warning(f"ControlNet model not found: {cn_path}")
 
     # Inject RescaleCFG node for v-prediction models (prevents oversaturation)
     rescale_cfg = profile.get("rescale_cfg")

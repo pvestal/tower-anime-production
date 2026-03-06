@@ -1,4 +1,4 @@
-# Anime Studio v0.4.0 Architecture
+# Anime Studio v0.4.1 Architecture
 
 ## System Overview
 
@@ -34,7 +34,7 @@ graph TB
 
     subgraph "External Services"
         ComfyUI[ComfyUI<br/>port 8188<br/>NVIDIA RTX 3060]
-        Ollama[Ollama<br/>port 11434<br/>AMD RX 9070 XT<br/>Gemma3:12b]
+        Ollama[Ollama<br/>port 11434<br/>AMD RX 9070 XT Vulkan<br/>Gemma3:12b ~3s/query]
         Echo[Echo Brain<br/>port 8309<br/>AMD RX 9070 XT]
         ACEStep[ACE-Step<br/>port 8440<br/>AMD RX 9070 XT]
         Jellyfin[Jellyfin<br/>port 8096<br/>media server]
@@ -101,10 +101,13 @@ packages/
     wan_video.py      # Wan 2.1 T2V workflow, GGUF support, environment/establishing shots
     framepack_refine.py # FramePack vid2vid refinement for Wan output (V2V: Wan 480p → FramePack 544x704, optional HunyuanVideo LoRA)
     engine_selector.py # Auto engine selection: shot type + LoRA availability + blacklist → wan/ltx/framepack
+    shot_spec.py      # AI shot enrichment: pose/camera/emotion via Ollama gemma3:12b
+    variety_check.py  # CLIP embedding similarity vs recent shots (ViT-B-32, 0.85 threshold)
     scene_crud.py     # Scene/shot CRUD, episode-aware generation, continuity frames API, manual engine override
     scene_review.py   # Shot review + engine blacklist management
     scene_audio.py    # Dialogue synthesis, music mixing, audio ducking
     scene_video_utils.py # Crossfade concat, frame interpolation, upscaling
+    composite_image.py # Simple keyframe generation (txt2img + LoRA) + composite source (IP-Adapter regional)
     scene_comparison.py # Multi-engine video comparison
     video_qc.py       # QC loop with vision review, prompt refinement, progressive gates
     video_vision.py   # Video frame quality assessment via Ollama
@@ -549,7 +552,7 @@ graph TD
     STORY --> PROJ_SUB[ProjectTab<br/>project carousel, storyline,<br/>world settings, generation style]
     CAST --> CAST_SUB[3 sub-tabs:<br/>Characters — CharactersTab<br/>Ingest — IngestTab<br/>Voice — VoiceTab]
     CAST_SUB --> CHAR_DETAIL[CharacterDetailPanel<br/>profile editor, test generation,<br/>ChipInput, KeyValueEditor]
-    SCRIPT --> SCRIPT_SUB[2 sub-tabs:<br/>Scenes — SceneBuilderTab<br/>Screenplay — ScreenplayView]
+    SCRIPT --> SCRIPT_SUB[3-column layout:<br/>SceneSidebar 260px<br/>StoryboardGrid flex<br/>ShotInspectorPanel 360px]
     PRODUCE --> PRODUCE_SUB[3 sub-tabs:<br/>Status — ProductionStatusTab<br/>Training — TrainingTab<br/>Analytics — AnalyticsTab]
     PRODUCE_SUB --> STATUS[ProductionStatusTab<br/>GPU status, active jobs,<br/>per-project pipeline cards,<br/>model lineage warnings]
     REVIEW --> PEND_SUB[pending/<br/>ImageApprovalModal<br/>ImageCard, PendingFilters<br/>ProjectCharacterGrid]
@@ -578,8 +581,8 @@ graph TD
 
 | GPU | Service | Purpose |
 |-----|---------|---------|
-| NVIDIA RTX 3060 12GB | ComfyUI | Image/video generation (FramePack, FramePack F1, LTX-Video, Wan 2.1 T2V) |
-| AMD RX 9070 XT 16GB | Ollama, Echo Brain, ACE-Step | Vision review (Gemma3, Vulkan), embedding generation, AI music generation (ROCm 7.2) |
+| NVIDIA RTX 3060 12GB | ComfyUI | Image/video generation (FramePack, LTX-Video, Wan 2.1 T2V, Wan 2.2 14B I2V) |
+| AMD RX 9070 XT 16GB | Ollama, Echo Brain, ACE-Step | LLM inference via RADV Vulkan (gemma3:12b ~3s), embedding generation, AI music (ROCm) |
 
 ## Ingestion → Production Pipeline (End-to-End)
 
@@ -761,11 +764,11 @@ Multi-character shots use Wan T2V for composition, then optionally refine throug
 graph TD
     subgraph "Engine Selection (engine_selector.py)"
         SHOT[Shot metadata] --> ES{select_engine}
-        ES -->|establishing / no chars| WAN_E[wan]
-        ES -->|multi-character| WAN_MC[wan]
+        ES -->|multi-char + source image| WAN22_14B[wan22_14b I2V]
+        ES -->|establishing / no chars| WAN_E[wan T2V]
         ES -->|solo + LoRA| LTX[ltx]
         ES -->|solo + source image| FP[framepack I2V]
-        ES -->|no source image| WAN_NS[wan]
+        ES -->|no source image| WAN_NS[wan T2V]
     end
 
     subgraph "Wan T2V Generation"
@@ -838,6 +841,49 @@ Auto-detected by `builder.py` during V2V refinement. Training via musubi-tuner a
 | `packages/scene_generation/engine_selector.py` | Unchanged — Wan still handles multi-char; V2V is a post-generation step |
 | `packages/scene_generation/framepack.py` | Original FramePack I2V (solo shots from source images) |
 
+## Keyframe Blitz Pipeline (Two-Pass Generation)
+
+```mermaid
+sequenceDiagram
+    participant Script as generate_all_keyframes.py
+    participant API as FastAPI (8401)
+    participant DB as PostgreSQL
+    participant Ollama as Ollama gemma3:12b
+    participant ComfyUI as ComfyUI (8188)
+
+    Script->>API: POST /scenes/{id}/keyframe-blitz
+    API->>DB: Fetch scene + shots
+
+    loop For each shot
+        API->>DB: Fetch recent shots (variety)
+        API->>Ollama: Enrich shot spec (pose/camera/emotion) ~3s
+        Ollama-->>API: {pose_type, enhanced_prompt, enhanced_negative}
+        API->>DB: UPDATE shots SET enriched fields
+
+        API->>ComfyUI: txt2img workflow (checkpoint + LoRA)
+        ComfyUI-->>API: Keyframe image ~18s
+        API->>DB: SET source_image_path
+    end
+
+    API-->>Script: {generated, skipped, failed}
+
+    Note over Script: Later: I2V video from keyframes
+```
+
+### Shot Spec Enrichment
+
+Pose vocabulary per shot type (close-up, medium, wide, establishing, action, extreme_close) with anti-repetition filtering. Emotion-camera mapping (tension→dutch-angle, vulnerability→high-angle, etc.). Ollama gemma3:12b generates enriched prompts in ~3s on AMD RX 9070 XT (Vulkan).
+
+## Quality Loop (CLIP Scoring)
+
+Post-generation quality assessment via Echo Brain CLIP endpoint:
+- **Semantic score**: CLIP ViT-B-32 embedding alignment with character description
+- **Variety score**: Cosine distance from recent generations (Qdrant `generation_clip` collection, 512D)
+- **Text alignment**: Prompt-image similarity
+- **MHP bucket**: Composite quality classification (S/A/B/C/D)
+- **Threshold**: 0.85 similarity = too similar, triggers variety warning
+- **Advisory only**: Never blocks generation, logged for analytics
+
 ## Key Design Decisions
 
 - **Modular packages**: 7 domain packages under `packages/` (+ core), each with own router. Entry point `src/app.py` mounts all routers.
@@ -860,7 +906,10 @@ Auto-detected by `builder.py` during V2V refinement. Training via musubi-tuner a
 - **Multi-engine video**: Per-shot `video_engine` column selects generation engine — FramePack (I2V, highest quality), FramePack F1 (faster I2V), LTX-Video (I2V+T2V, LoRA support), Wan 2.1 T2V (environment shots, no source image needed, GGUF for low VRAM)
 - **ACE-Step music generation**: AI music (3.5B model) on AMD RX 9070 XT via ROCm 7.2 nightly. ~20s for 30s of 48kHz stereo WAV. Scene assembly auto-generates from mood if no track assigned
 - **Model-aware generation**: `model_profiles.py` maps checkpoint filenames to structured profiles (architecture, prompt_format, quality tags, style stripping, vision hints). `translate_prompt()` adapts design_prompts at generation time — booru tag models get score_9 prefixes and style tag stripping, prose models keep prompts as-is. DB design_prompts never modified. Param cascade: `recommend_params()` (medium+ confidence) > DB `generation_styles` > model profile defaults
-- **Dual GPU architecture**: NVIDIA RTX 3060 for ComfyUI (image/video gen), AMD RX 9070 XT for Ollama (Vulkan) + ACE-Step (music gen, ROCm) + Echo Brain (embeddings). No GPU conflicts, parallel execution
+- **Illustrious SDXL migration**: All projects migrated to WAI-Illustrious-SDXL v16 (832x1216, CFG 5.0, euler_ancestral, booru_tags format). Fury stays on nova_animal_xl. All SD1.5 LoRAs incompatible, must retrain
+- **Keyframe blitz**: Two-pass generation — fast txt2img keyframes (~18s/shot) before committing to slow I2V video (~5min/shot). Shot spec enrichment via Ollama gemma3:12b adds pose/camera/emotion awareness
+- **CLIP quality loop**: Post-generation CLIP scoring (semantic + variety + text alignment) via Echo Brain endpoint. Advisory only, never blocks. Qdrant `generation_clip` collection (512D) for variety checking
+- **Dual GPU architecture**: NVIDIA RTX 3060 for ComfyUI (image/video gen), AMD RX 9070 XT for Ollama (RADV Vulkan, VK_ICD_FILENAMES forced) + ACE-Step (music gen, ROCm) + Echo Brain (embeddings). No GPU conflicts, parallel execution
 - **Episode assembly**: ffmpeg xfade crossfade between scenes (fadeblack default, 0.5s overlap) with fallback to hard-cut concat
 - **Jellyfin publishing**: Symlinks (not copies) to avoid doubling disk usage; S01E01 naming convention
 - **Audio mixing**: Non-fatal — if TTS or music download fails, scene video is kept without audio

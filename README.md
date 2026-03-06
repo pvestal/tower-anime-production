@@ -1,4 +1,4 @@
-# Anime Studio v3.5
+# Anime Studio v3.6
 
 End-to-end anime production pipeline: project management, character design, dataset approval, LoRA training, image/video generation, scene assembly, episode composition, production orchestration, and Jellyfin publishing.
 
@@ -35,9 +35,10 @@ checkpoints. They cannot cross architectures.
 | **SD 1.5**  | 512x768   | ~3-4 GB         | ~6-8 GB      | ~22s/image | ~12 MB |
 | **SDXL**    | 832x1216  | ~6-8 GB         | ~10-12 GB    | ~55s/image | ~186 MB |
 
-SD1.5 is the workhorse — fast to generate, fast to train, fits easily on the
-RTX 3060. SDXL produces higher quality (better anatomy, more detail) but is
-3x slower and LoRA training is tight on 12GB VRAM.
+**Current standard: Illustrious SDXL** (WAI-Illustrious-SDXL v16). All projects
+migrated from SD1.5 to Illustrious as of 2026-03-04. SDXL produces higher quality
+(better anatomy, more detail) but is 3x slower and LoRA training is tight on 12GB.
+Old SD1.5 LoRAs are incompatible and must be retrained against Illustrious.
 
 ### How to Do Common Tasks
 
@@ -179,15 +180,18 @@ word, all examples identical, comments saying "doesn't work".
 
 ### Current Projects
 
-| Project | Checkpoint | Arch | Characters |
-|---------|-----------|------|------------|
-| Tokyo Debt Desire | cyberrealistic_v9 | SD1.5 | Mei, Rina, Yuki, Takeshi, Beth |
-| Cyberpunk Goblin Slayer | Counterfeit-V3.0_fp16 | SD1.5 | 15 characters |
-| Fury | nova_animal_xl_v11 | SDXL | Roxy, Lilith, Zara, Buck + others |
-| Mario Galaxy | realcartoonPixar_v12 | SD1.5 | Mario, Luigi, Peach + others |
-| Rosa Caliente | cyberrealistic_v9 | SD1.5 | Rosa |
-| Echo Chamber | cyberrealistic_v9 | SD1.5 | 5 characters |
-| Small Wonders | realistic_vision_v51 | SD1.5 | 4 characters |
+| Project | Style | Checkpoint | Arch | Characters |
+|---------|-------|-----------|------|------------|
+| Cyberpunk Goblin Slayer | illustrious_anime | waiIllustriousSDXL_v160 | SDXL | 15 characters |
+| Tokyo Debt Desire | illustrious_realistic | waiIllustriousSDXL_v160 | SDXL | Mei, Rina, Yuki, Takeshi, Beth |
+| Mario Galaxy | illustrious_stylized | waiIllustriousSDXL_v160 | SDXL | Mario, Luigi, Peach + others |
+| Echo Chamber | illustrious_anime | waiIllustriousSDXL_v160 | SDXL | 5 characters |
+| Rosa Caliente | illustrious_realistic | waiIllustriousSDXL_v160 | SDXL | Rosa |
+| Small Wonders | illustrious_nature | waiIllustriousSDXL_v160 | SDXL | 4 characters |
+| Fury | nova_animal_xl | nova_animal_xl_v11 | SDXL | Roxy, Lilith, Zara, Buck + others |
+
+**Note**: All projects migrated to Illustrious SDXL (2026-03-04). Fury stays on nova_animal_xl (anthro-specific).
+All SD1.5 LoRAs are incompatible with Illustrious and need retraining.
 
 ### File Locations
 
@@ -305,6 +309,21 @@ Generation runs as a background async task with one-at-a-time ComfyUI queueing (
 
 ### Story-to-Scenes AI
 `POST /scenes/generate-from-story` sends the project storyline + world settings + character list to Ollama (gemma3:12b) and returns structured scene breakdowns with suggested shots, locations, moods, and motion prompts. The frontend shows a "Generate Scenes from Story" button when no scenes exist.
+
+### Keyframe Blitz (Two-Pass Generation)
+Fast keyframe preview (~18s/shot) before committing to slow video (~5min/shot):
+1. `POST /scenes/{id}/keyframe-blitz?skip_existing=true` — generates txt2img keyframes for all shots
+2. Shot spec enrichment via Ollama gemma3:12b (pose/camera/emotion-aware prompts, ~3s/shot)
+3. Sets `source_image_path` on each shot for subsequent I2V video generation
+4. Frontend: "Keyframe All" button in StoryboardGrid topbar
+5. CLI: `scripts/generate_all_keyframes.py [start_scene_num]` — sequential with crash recovery
+
+### Shot Spec Enrichment
+Before keyframe/video generation, each shot is enriched via Ollama gemma3:12b (`packages/scene_generation/shot_spec.py`):
+- **Pose selection**: From shot-type-specific vocabulary, avoiding recently used poses
+- **Camera/lighting**: Emotion-based suggestions (tension→dutch-angle, intimacy→warm soft lighting, etc.)
+- **Anti-sameness**: `must_differ_from` UUIDs + negative prompt terms from recent poses
+- **Enhanced prompts**: Adds pose, body language, and emotion-specific visual cues to generation prompt
 
 ## Episodes & Publishing
 

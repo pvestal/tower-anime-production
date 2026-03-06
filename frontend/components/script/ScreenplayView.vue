@@ -26,9 +26,20 @@
       <p style="font-size: 13px;">Go to the <strong>Scenes</strong> tab and use "Generate from Story" to create scenes.</p>
     </div>
 
+    <!-- Scene jump bar -->
+    <div v-else-if="scenesWithShots.length > 0" class="scene-jump-bar">
+      <button
+        v-for="scene in scenesWithShots"
+        :key="'jump-' + scene.id"
+        class="jump-pill"
+        :class="{ active: activeSceneId === scene.id }"
+        @click="scrollToScene(scene.id)"
+      >{{ scene.scene_number }}</button>
+    </div>
+
     <!-- Screenplay body -->
-    <div v-else class="screenplay">
-      <div v-for="scene in scenesWithShots" :key="scene.id" class="scene-block">
+    <div v-if="scenesWithShots.length > 0" class="screenplay">
+      <div v-for="scene in scenesWithShots" :key="scene.id" :ref="el => { if (el) sceneEls[scene.id] = el as HTMLElement }" class="scene-block">
         <!-- Scene header -->
         <div class="scene-header">
           <span class="scene-label">SCENE {{ scene.scene_number }}</span>
@@ -119,7 +130,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch } from 'vue'
+import { ref, reactive, watch, onUnmounted } from 'vue'
 import { storyApi } from '@/api/story'
 import { scenesApi } from '@/api/scenes'
 import type { BuilderScene } from '@/types'
@@ -155,6 +166,41 @@ const loading = ref(false)
 const generatingAllDialogue = ref(false)
 const characters = ref<{ slug: string; name: string }[]>([])
 const projectName = ref('')
+
+// --- Scene jump bar ---
+const sceneEls = reactive<Record<string, HTMLElement>>({})
+const activeSceneId = ref<string>('')
+let jumpObserver: IntersectionObserver | null = null
+
+function scrollToScene(sceneId: string) {
+  const el = sceneEls[sceneId]
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+function setupObserver() {
+  if (jumpObserver) jumpObserver.disconnect()
+  jumpObserver = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) {
+          const id = Object.entries(sceneEls).find(([, el]) => el === entry.target)?.[0]
+          if (id) activeSceneId.value = id
+        }
+      }
+    },
+    { rootMargin: '-20% 0px -60% 0px', threshold: 0 }
+  )
+  for (const el of Object.values(sceneEls)) {
+    jumpObserver.observe(el)
+  }
+}
+
+watch(scenesWithShots, () => {
+  // Re-observe after scenes load
+  setTimeout(setupObserver, 100)
+}, { flush: 'post' })
+
+onUnmounted(() => { jumpObserver?.disconnect() })
 
 // --- Audio playback state ---
 const shotSynthBusy = reactive<Record<string, boolean>>({})
@@ -336,6 +382,46 @@ function exportScript() {
   gap: 8px;
   margin-bottom: 16px;
   padding: 0 4px;
+}
+
+/* --- Scene jump bar --- */
+.scene-jump-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 8px 4px;
+  margin-bottom: 12px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-primary);
+}
+.jump-pill {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid var(--border-primary);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: var(--font-primary);
+  transition: all 150ms;
+}
+.jump-pill:hover {
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
+}
+.jump-pill.active {
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+  color: #fff;
+  font-weight: 700;
 }
 
 /* --- Screenplay --- */

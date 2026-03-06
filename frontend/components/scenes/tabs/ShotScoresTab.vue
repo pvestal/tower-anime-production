@@ -71,8 +71,17 @@
     <div class="scores-section">
       <div class="section-header">Quality</div>
 
-      <div v-if="shot.quality_score != null" class="score-grid">
-        <div class="score-row">
+      <div v-if="shot.quality_score != null || shot.clip_score != null" class="score-grid">
+        <div v-if="shot.clip_score != null" class="score-row">
+          <span class="score-label">CLIP</span>
+          <div class="score-bar-container">
+            <div class="score-bar" :style="clipBarStyle(shot.clip_score)" />
+          </div>
+          <span class="score-value" :class="clipScoreClass(shot.clip_score)">
+            {{ shot.clip_score.toFixed(0) }}
+          </span>
+        </div>
+        <div v-if="shot.quality_score != null" class="score-row">
           <span class="score-label">Overall (MHP)</span>
           <div class="score-bar-container">
             <div class="score-bar" :style="barStyle(shot.quality_score)" />
@@ -159,6 +168,20 @@ function barStyle(score: number | null | undefined) {
   const pct = Math.min(100, Math.max(0, s * 100))
   const color = s >= 0.75 ? '#50c878' : s >= 0.5 ? '#f0b43c' : '#c85050'
   return { width: `${pct}%`, background: color }
+}
+
+function clipBarStyle(score: number | null | undefined) {
+  const s = score ?? 0
+  const pct = Math.min(100, Math.max(0, s))
+  const color = s >= 70 ? '#50c878' : s >= 50 ? '#f0b43c' : '#c85050'
+  return { width: `${pct}%`, background: color }
+}
+
+function clipScoreClass(score: number | null | undefined) {
+  const s = score ?? 0
+  if (s >= 70) return 'score--good'
+  if (s >= 50) return 'score--ok'
+  return 'score--poor'
 }
 
 function scoreClass(score: number | null | undefined) {

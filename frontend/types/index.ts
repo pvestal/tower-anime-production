@@ -642,6 +642,8 @@ export interface BuilderShot {
   guidance_scale: number | null
   lora_name: string | null
   lora_strength: number | null
+  clip_score: number | null
+  clip_variety_score: number | null
 }
 
 export interface SceneCreateRequest {

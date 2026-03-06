@@ -121,7 +121,7 @@ def build_ipadapter_workflow(
                 "weight_type": "linear",
                 "combine_embeds": "concat",
                 "start_at": 0.0,
-                "end_at": 0.85,
+                "end_at": 0.80,
                 "embeds_scaling": "K+V",
                 "unfold_batch": False,
                 "model": ["11", 0],

@@ -724,12 +724,34 @@ async def generate_scene(scene_id: str, auto_approve: bool = False):
         _scene_generation_lock.release()
 
 
-async def keyframe_blitz(conn, scene_id: str, skip_existing: bool = True) -> dict:
+async def _clip_evaluate_keyframe(shot_id: str, image_path: str, prompt: str) -> dict:
+    """CLIP-score a keyframe image against its prompt via Echo Brain."""
+    import httpx
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                "http://localhost:8309/api/echo/generation-eval/evaluate",
+                json={"image_path": image_path, "prompt": prompt, "shot_id": shot_id},
+            )
+            if resp.status_code == 200:
+                return resp.json()
+    except Exception as e:
+        logger.debug(f"CLIP evaluation failed for shot {shot_id[:8]}: {e}")
+    return {}
+
+
+async def keyframe_blitz(conn, scene_id: str, skip_existing: bool = True,
+                          clip_evaluate: bool = True) -> dict:
     """Generate keyframe images for all shots in a scene (~18s each).
 
     Pass 1 of two-pass generation. Enriches shot specs via Ollama, then generates
     txt2img keyframes with project checkpoint + character LoRA. Skips shots that
     already have source_image_path when skip_existing=True.
+
+    When clip_evaluate=True (default), each generated keyframe is scored via
+    Echo Brain CLIP endpoint. Scores are advisory — low scores flag shots for
+    re-generation but don't block.
 
     Returns: {generated: int, skipped: int, failed: int, shots: [...]}
     """
@@ -804,12 +826,18 @@ async def keyframe_blitz(conn, scene_id: str, skip_existing: bool = True) -> dic
         except Exception as e:
             logger.debug(f"Shot {shot_id}: enrichment failed (continuing): {e}")
 
+        # Build extra LoRAs list from shot's image_lora field
+        _extra_loras = []
+        if shot.get("image_lora"):
+            _extra_loras.append((shot["image_lora"], shot.get("image_lora_strength") or 0.7))
+
         # Generate keyframe
         try:
             kf_path = await generate_simple_keyframe(
                 conn, project_id, chars, prompt, checkpoint,
                 shot_type=shot.get("shot_type") or "medium",
                 camera_angle=shot.get("camera_angle") or "eye-level",
+                extra_loras=_extra_loras or None,
             )
             if kf_path and kf_path.exists():
                 await conn.execute(
@@ -817,11 +845,32 @@ async def keyframe_blitz(conn, scene_id: str, skip_existing: bool = True) -> dic
                     shot["id"], str(kf_path),
                 )
                 generated += 1
-                shot_results.append({
+                shot_result = {
                     "shot_id": shot_id, "shot_number": shot["shot_number"],
                     "status": "generated", "source_image_path": str(kf_path),
-                })
-                logger.info(f"Keyframe blitz: shot {shot['shot_number']} → {kf_path.name}")
+                }
+
+                # CLIP evaluation (advisory)
+                if clip_evaluate and prompt:
+                    clip_result = await _clip_evaluate_keyframe(shot_id, str(kf_path), prompt)
+                    if clip_result:
+                        sem = clip_result.get("semantic_score")
+                        var = clip_result.get("variety_score")
+                        shot_result["clip_score"] = sem
+                        shot_result["variety_score"] = var
+                        shot_result["mhp_bucket"] = clip_result.get("mhp_bucket")
+                        # Persist to DB
+                        await conn.execute(
+                            "UPDATE shots SET clip_score = $2, clip_variety_score = $3 WHERE id = $1",
+                            shot["id"], sem, var,
+                        )
+                        logger.info(f"Keyframe blitz: shot {shot['shot_number']} → {kf_path.name} (CLIP={sem:.0f})")
+                    else:
+                        logger.info(f"Keyframe blitz: shot {shot['shot_number']} → {kf_path.name}")
+                else:
+                    logger.info(f"Keyframe blitz: shot {shot['shot_number']} → {kf_path.name}")
+
+                shot_results.append(shot_result)
             else:
                 failed += 1
                 shot_results.append({
@@ -1258,9 +1307,13 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                 _kf_path = None
                 # Simple keyframe first (txt2img + LoRA) — reliable, full scene
                 # Composite (IP-Adapter regional) has left/right split issues
+                _mc_extra = []
+                if _mc_shot.get("image_lora"):
+                    _mc_extra.append((_mc_shot["image_lora"], _mc_shot.get("image_lora_strength") or 0.7))
                 try:
                     _kf_path = await generate_simple_keyframe(
-                        conn, project_id, _mc_chars, _mc_prompt, _ckpt
+                        conn, project_id, _mc_chars, _mc_prompt, _ckpt,
+                        extra_loras=_mc_extra or None,
                     )
                 except Exception as _e:
                     logger.debug(f"Shot {_mc_shot['id']}: simple keyframe failed: {_e}")

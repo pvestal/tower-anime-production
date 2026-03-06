@@ -15,18 +15,22 @@
         </span>
       </div>
       <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-        <select :value="filterProject" @change="$emit('update:filterProject', ($event.target as HTMLSelectElement).value)" style="min-width: 200px;">
-          <option value="">All Projects</option>
-          <option v-for="name in projectNames" :key="name" :value="name">
-            {{ name }} ({{ projectImageCount(name) }})
-          </option>
-        </select>
-        <select :value="filterCharacter" @change="$emit('update:filterCharacter', ($event.target as HTMLSelectElement).value)" style="min-width: 180px;">
-          <option value="">All Characters</option>
-          <option v-for="name in characterNames" :key="name" :value="name">
-            {{ name }} ({{ characterImageCount(name) }})
-          </option>
-        </select>
+        <div style="min-width: 200px;">
+          <SearchableSelect
+            :model-value="filterProject"
+            :options="projectFilterOptions"
+            placeholder="All Projects"
+            @update:model-value="$emit('update:filterProject', $event as string)"
+          />
+        </div>
+        <div style="min-width: 180px;">
+          <SearchableSelect
+            :model-value="filterCharacter"
+            :options="characterFilterOptions"
+            placeholder="All Characters"
+            @update:model-value="$emit('update:filterCharacter', $event as string)"
+          />
+        </div>
         <select :value="sortBy" @change="$emit('update:sortBy', ($event.target as HTMLSelectElement).value)" style="min-width: 140px;">
           <option value="newest">Newest First</option>
           <option value="oldest">Oldest First</option>
@@ -115,6 +119,9 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
+import SearchableSelect from '../shared/SearchableSelect.vue'
+
 export interface SourceInfo {
   name: string
   count: number
@@ -128,7 +135,7 @@ export interface ModelInfo {
   short: string
 }
 
-defineProps<{
+const propsData = defineProps<{
   totalCount: number
   recentCount: number
   lastRefreshedAgo: string
@@ -147,6 +154,24 @@ defineProps<{
   projectImageCount: (name: string) => number
   characterImageCount: (name: string) => number
 }>()
+
+const projectFilterOptions = computed(() => [
+  { value: '', label: 'All Projects' },
+  ...propsData.projectNames.map(name => ({
+    value: name,
+    label: name,
+    detail: `${propsData.projectImageCount(name)}`,
+  })),
+])
+
+const characterFilterOptions = computed(() => [
+  { value: '', label: 'All Characters' },
+  ...propsData.characterNames.map(name => ({
+    value: name,
+    label: name,
+    detail: `${propsData.characterImageCount(name)}`,
+  })),
+])
 
 defineEmits<{
   (e: 'update:filterProject', value: string): void

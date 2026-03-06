@@ -34,19 +34,23 @@
     </div>
 
     <!-- Shot Type + Camera Angle -->
-    <div class="field-row">
-      <div class="field-group">
-        <label class="field-label">Shot Type</label>
-        <select :value="shot.shot_type" @change="updateField('shot_type', ($event.target as HTMLSelectElement).value)" class="field-input">
-          <option v-for="t in shotTypes" :key="t" :value="t">{{ t }}</option>
-        </select>
-      </div>
-      <div class="field-group">
-        <label class="field-label">Camera</label>
-        <select :value="shot.camera_angle" @change="updateField('camera_angle', ($event.target as HTMLSelectElement).value)" class="field-input">
-          <option v-for="a in cameraAngles" :key="a" :value="a">{{ a }}</option>
-        </select>
-      </div>
+    <div class="field-group">
+      <label class="field-label">Shot Type</label>
+      <SegmentedControl
+        :model-value="shot.shot_type || 'medium'"
+        :options="shotTypeOptions"
+        size="sm"
+        @update:model-value="updateField('shot_type', $event)"
+      />
+    </div>
+    <div class="field-group">
+      <label class="field-label">Camera</label>
+      <SegmentedControl
+        :model-value="shot.camera_angle || 'eye-level'"
+        :options="cameraAngleOptions"
+        size="sm"
+        @update:model-value="updateField('camera_angle', $event)"
+      />
     </div>
 
     <!-- Duration -->
@@ -105,15 +109,13 @@
           @click="$emit('auto-dialogue')"
         >{{ autoDialogueBusy ? 'Writing...' : 'Auto-Write' }}</button>
       </div>
-      <select
-        :value="shot.dialogue_character_slug || ''"
-        @change="updateField('dialogue_character_slug', ($event.target as HTMLSelectElement).value || null)"
-        class="field-input"
+      <SearchableSelect
+        :model-value="shot.dialogue_character_slug || ''"
+        :options="dialogueCharOptions"
+        placeholder="No dialogue"
         style="margin-bottom: 6px;"
-      >
-        <option value="">No dialogue</option>
-        <option v-for="c in characters" :key="c.slug" :value="c.slug">{{ c.name }}</option>
-      </select>
+        @update:model-value="updateField('dialogue_character_slug', $event || null)"
+      />
       <textarea
         v-if="shot.dialogue_character_slug"
         :value="shot.dialogue_text"
@@ -199,6 +201,8 @@ import { scenesApi } from '@/api/scenes'
 import { useProjectStore } from '@/stores/project'
 import { useAuthStore } from '@/stores/auth'
 import EchoAssistButton from '../../EchoAssistButton.vue'
+import SegmentedControl from '../../shared/SegmentedControl.vue'
+import SearchableSelect from '../../shared/SearchableSelect.vue'
 
 const projectStore = useProjectStore()
 const authStore = useAuthStore()
@@ -219,6 +223,14 @@ const emit = defineEmits<{
 
 const shotTypes = ['establishing', 'wide', 'medium', 'close-up', 'extreme_close-up', 'action']
 const cameraAngles = ['eye-level', 'high', 'low', 'dutch', 'pov']
+
+const shotTypeOptions = shotTypes.map(t => ({ value: t, label: t }))
+const cameraAngleOptions = cameraAngles.map(a => ({ value: a, label: a }))
+
+const dialogueCharOptions = computed(() => [
+  { value: '', label: 'No dialogue' },
+  ...props.characters.map(c => ({ value: c.slug, label: c.name })),
+])
 
 // Motion presets
 const motionPresets = ref<string[]>([])

@@ -1,7 +1,8 @@
-"""Tests for visual pipeline routes — generate, status, gallery, vision review."""
+"""Tests for visual pipeline routes — generate, status, gallery, vision review, thumbnails, dataset."""
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+from pathlib import Path
 
 
 @pytest.mark.unit
@@ -150,3 +151,115 @@ async def test_vision_review_character_not_found(app_client):
         )
         assert resp.status_code == 404
         assert "not found" in resp.json()["detail"]
+
+
+# ── Character thumbnails ──────────────────────────────────────────────
+
+
+@pytest.mark.unit
+async def test_character_thumbnails_empty(app_client):
+    """No characters → empty thumbnails dict."""
+    with patch(
+        "packages.visual_pipeline.router.get_char_project_map",
+        new_callable=AsyncMock,
+        return_value={},
+    ):
+        resp = await app_client.get("/api/visual/character-thumbnails")
+        assert resp.status_code == 200
+        assert resp.json()["thumbnails"] == {}
+
+
+@pytest.mark.unit
+async def test_character_thumbnails_with_data(app_client, tmp_path):
+    """Characters with images → returns one thumbnail per character."""
+    slug = "mei"
+    img_dir = tmp_path / slug / "images"
+    img_dir.mkdir(parents=True)
+    (img_dir / "img1.png").write_bytes(b"\x89PNG")
+    (img_dir / "img2.png").write_bytes(b"\x89PNG")
+
+    mock_char_map = {
+        slug: {"name": "Mei", "project_id": 1},
+    }
+    with patch(
+        "packages.visual_pipeline.router.get_char_project_map",
+        new_callable=AsyncMock,
+        return_value=mock_char_map,
+    ), patch(
+        "packages.visual_pipeline.router.BASE_PATH",
+        new=tmp_path,
+    ):
+        resp = await app_client.get("/api/visual/character-thumbnails")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert slug in data["thumbnails"]
+        assert data["thumbnails"][slug].startswith("dataset/mei/")
+
+
+@pytest.mark.unit
+async def test_character_thumbnails_no_images(app_client, tmp_path):
+    """Character dir exists but has no PNGs → not in thumbnails."""
+    slug = "zara"
+    img_dir = tmp_path / slug / "images"
+    img_dir.mkdir(parents=True)  # empty dir
+
+    mock_char_map = {
+        slug: {"name": "Zara", "project_id": 1},
+    }
+    with patch(
+        "packages.visual_pipeline.router.get_char_project_map",
+        new_callable=AsyncMock,
+        return_value=mock_char_map,
+    ), patch(
+        "packages.visual_pipeline.router.BASE_PATH",
+        new=tmp_path,
+    ):
+        resp = await app_client.get("/api/visual/character-thumbnails")
+        assert resp.status_code == 200
+        assert slug not in resp.json()["thumbnails"]
+
+
+# ── Dataset image endpoint ────────────────────────────────────────────
+
+
+@pytest.mark.unit
+async def test_dataset_image_success(app_client, tmp_path):
+    """Valid slug + existing file → 200."""
+    slug = "mei"
+    img_dir = tmp_path / slug / "images"
+    img_dir.mkdir(parents=True)
+    (img_dir / "ref.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 100)
+
+    with patch(
+        "packages.visual_pipeline.router.BASE_PATH",
+        new=tmp_path,
+    ):
+        resp = await app_client.get(f"/api/visual/dataset/{slug}/ref.png")
+        assert resp.status_code == 200
+
+
+@pytest.mark.unit
+async def test_dataset_image_not_found(app_client, tmp_path):
+    """Valid slug + missing file → 404."""
+    with patch(
+        "packages.visual_pipeline.router.BASE_PATH",
+        new=tmp_path,
+    ):
+        resp = await app_client.get("/api/visual/dataset/mei/missing.png")
+        assert resp.status_code == 404
+
+
+@pytest.mark.unit
+async def test_dataset_image_invalid_slug(app_client):
+    """Invalid slug chars → 400."""
+    resp = await app_client.get("/api/visual/dataset/AB%20CD/file.png")
+    assert resp.status_code == 400
+
+
+@pytest.mark.unit
+async def test_dataset_image_path_traversal(app_client):
+    """Path traversal attempt → rejected (400 or 404)."""
+    resp = await app_client.get("/api/visual/dataset/mei/..%2F..%2Fetc%2Fpasswd")
+    assert resp.status_code in (400, 404)
+    # Ensure no successful file serving
+    assert resp.status_code != 200
