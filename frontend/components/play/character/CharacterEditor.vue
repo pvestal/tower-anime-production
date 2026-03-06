@@ -1,22 +1,12 @@
 <template>
   <div class="character-editor">
-    <!-- Character selector -->
-    <div class="selector-row">
-      <select
-        class="char-select"
-        :value="selectedSlug"
-        @change="$emit('select', ($event.target as HTMLSelectElement).value)"
-      >
-        <option value="" disabled>Select character...</option>
-        <option
-          v-for="c in characters"
-          :key="c.slug"
-          :value="c.slug"
-        >
-          {{ c.name }} ({{ c.project_name }})
-        </option>
-      </select>
-    </div>
+    <!-- Character carousel selector -->
+    <CharacterCarousel
+      :cards="characterCards"
+      :project-names="projectNames"
+      :selected-slug="selectedSlug"
+      @select="$emit('select', $event)"
+    />
 
     <template v-if="character">
       <!-- Body part nav -->
@@ -66,12 +56,15 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import type { Character, AppearanceData } from '@/types'
-import type { BodyPart } from '@/stores/characterViewer'
+import type { BodyPart, CharacterCard } from '@/stores/characterViewer'
 import BodyPartNav from './BodyPartNav.vue'
 import EditorSection from './EditorSection.vue'
+import CharacterCarousel from './CharacterCarousel.vue'
 
 defineProps<{
   characters: { name: string; slug: string; project_name: string }[]
+  characterCards: CharacterCard[]
+  projectNames: string[]
   selectedSlug: string
   character: Character | null
   appearance: AppearanceData
@@ -104,37 +97,6 @@ function handleIdentityUpdate(field: string, value: any) {
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-}
-
-.selector-row {
-  padding: 12px 16px;
-  border-bottom: 1px solid rgba(255,255,255,0.06);
-}
-
-.char-select {
-  width: 100%;
-  padding: 10px 12px;
-  background: rgba(255,255,255,0.05);
-  border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 10px;
-  color: var(--text-primary, #e8e8e8);
-  font-size: 14px;
-  font-family: inherit;
-  cursor: pointer;
-  appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23888' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 12px center;
-}
-
-.char-select:focus {
-  outline: none;
-  border-color: rgba(99,102,241,0.5);
-}
-
-.char-select option {
-  background: #1a1a2e;
-  color: #e8e8e8;
 }
 
 .editor-body {

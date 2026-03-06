@@ -49,6 +49,16 @@ export const visualApi = {
     return `${proto}//${location.host}/comfyui/ws`
   },
 
+  // --- Character Thumbnails ---
+
+  async getCharacterThumbnails(): Promise<{ thumbnails: Record<string, string> }> {
+    return request('/character-thumbnails')
+  },
+
+  datasetImageUrl(path: string): string {
+    return `${VISUAL_BASE}/${path}`
+  },
+
   // --- Gallery ---
 
   async getGallery(limit: number = 50): Promise<{ images: GalleryImage[] }> {

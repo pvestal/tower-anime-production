@@ -18,6 +18,8 @@
       <CharacterEditor
         v-model:active-part="activePart"
         :characters="store.characters"
+        :character-cards="store.characterCards"
+        :project-names="store.projectNames"
         :selected-slug="store.slug"
         :character="store.character"
         :appearance="store.appearance"

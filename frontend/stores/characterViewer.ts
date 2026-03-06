@@ -5,6 +5,13 @@ import { storyApi } from '@/api/story'
 import { visualApi } from '@/api/visual'
 import type { GenerationStatus } from '@/types'
 
+export interface CharacterCard {
+  name: string
+  slug: string
+  project_name: string
+  thumbnailUrl: string | null
+}
+
 export type BodyPart = 'hair' | 'eyes' | 'face' | 'skin' | 'body' | 'outfit' | 'weapons' | 'accessories' | 'identity'
 
 export const BODY_PARTS: { key: BodyPart; label: string }[] = [
@@ -38,19 +45,39 @@ export const useCharacterViewerStore = defineStore('characterViewer', () => {
 
   // Character list for selector
   const characters = ref<{ name: string; slug: string; project_name: string }[]>([])
+  const thumbnails = ref<Record<string, string>>({})
 
   // Computed
   const slug = computed(() => character.value?.slug || '')
   const name = computed(() => character.value?.name || '')
   const designPrompt = computed(() => character.value?.design_prompt || '')
 
+  // Computed: characters enriched with thumbnail URLs
+  const characterCards = computed<CharacterCard[]>(() =>
+    characters.value.map(c => ({
+      ...c,
+      thumbnailUrl: thumbnails.value[c.slug]
+        ? visualApi.datasetImageUrl(thumbnails.value[c.slug])
+        : null,
+    }))
+  )
+
+  // Unique project names for filter pills
+  const projectNames = computed(() =>
+    [...new Set(characters.value.map(c => c.project_name))].sort()
+  )
+
   // Actions
   async function loadCharacters(projectId?: number) {
     try {
-      const resp = await storyApi.getCharacters()
-      characters.value = resp.characters
+      const [charResp, thumbResp] = await Promise.all([
+        storyApi.getCharacters(),
+        visualApi.getCharacterThumbnails(),
+      ])
+      characters.value = charResp.characters
         .filter((c: any) => !projectId || c.project_id === projectId)
         .map((c: any) => ({ name: c.name, slug: c.slug, project_name: c.project_name }))
+      thumbnails.value = thumbResp.thumbnails
     } catch (e) {
       console.error('Failed to load characters:', e)
     }
@@ -207,7 +234,8 @@ export const useCharacterViewerStore = defineStore('characterViewer', () => {
 
   return {
     character, appearance, activePart, dirty, loading, saving, error,
-    generating, genStatus, portraitUrl, characters,
+    generating, genStatus, portraitUrl, characters, thumbnails,
+    characterCards, projectNames,
     slug, name, designPrompt,
     loadCharacters, selectCharacter, setActivePart,
     updateAppearanceField, updateIdentityField,

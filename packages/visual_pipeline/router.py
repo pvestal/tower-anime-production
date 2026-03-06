@@ -155,6 +155,36 @@ async def get_generation_status(prompt_id: str):
     return get_comfyui_progress(prompt_id)
 
 
+@router.get("/character-thumbnails")
+async def get_character_thumbnails(
+    allowed_projects: list[int] = Depends(get_user_projects),
+):
+    """Return one thumbnail image filename per character (most recent image in dataset)."""
+    char_map = await get_char_project_map()
+    char_map = {k: v for k, v in char_map.items() if v.get("project_id") in allowed_projects}
+    thumbnails = {}
+    for slug, d in char_map.items():
+        img_dir = BASE_PATH / slug / "images"
+        if not img_dir.exists():
+            continue
+        pngs = sorted(img_dir.glob("*.png"), key=lambda p: p.stat().st_mtime, reverse=True)
+        if pngs:
+            thumbnails[slug] = f"dataset/{slug}/{pngs[0].name}"
+    return {"thumbnails": thumbnails}
+
+
+@router.get("/dataset/{slug}/{filename}")
+async def get_dataset_image(slug: str, filename: str):
+    """Serve a character dataset image."""
+    import re as _re
+    if not _re.match(r'^[a-z0-9_-]+$', slug) or '..' in filename:
+        raise HTTPException(status_code=400, detail="Invalid path")
+    image_path = BASE_PATH / slug / "images" / filename
+    if not image_path.exists():
+        raise HTTPException(status_code=404, detail="Image not found")
+    return FileResponse(image_path)
+
+
 @router.get("/gallery")
 async def get_gallery(limit: int = 50):
     """Get recent images from ComfyUI output directory."""
