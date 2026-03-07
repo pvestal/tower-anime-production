@@ -316,6 +316,280 @@ def build_ltx_workflow(
     return workflow, prefix
 
 
+def build_ltxv_looping_workflow(
+    prompt_text: str,
+    width: int = 512,
+    height: int = 320,
+    num_frames: int = 241,
+    fps: int = 24,
+    steps: int = 20,
+    seed: int | None = None,
+    negative_text: str = "low quality, blurry, distorted, watermark, text",
+    image_path: str | None = None,
+    lora_name: str | None = None,
+    lora_strength: float = 0.8,
+    output_prefix: str | None = None,
+    temporal_tile_size: int = 80,
+    temporal_overlap: int = 24,
+    temporal_overlap_cond_strength: float = 0.5,
+    guiding_strength: float = 1.0,
+    cond_image_strength: float = 1.0,
+    adain_factor: float = 0.0,
+) -> tuple[dict, str]:
+    """Build an LTX-Video workflow using LTXVLoopingSampler for long shots.
+
+    Uses temporal tiling with overlap for 30-60s+ continuous video generation.
+    Requires STGGuiderAdvanced (from ComfyUI-LTXVideo custom node).
+
+    Returns (workflow_dict, output_prefix).
+    """
+    import random as _random
+    if seed is None:
+        seed = _random.randint(0, 2**63 - 1)
+    if output_prefix is None:
+        output_prefix = f"ltx_long_{int(time.time())}"
+
+    workflow = {}
+    nid = 1
+
+    # Node 1: UNETLoader for LTX model
+    unet_node = str(nid)
+    workflow[unet_node] = {
+        "class_type": "UNETLoader",
+        "inputs": {
+            "unet_name": LTX_MODELS["checkpoint"],
+            "weight_dtype": "default",
+        },
+    }
+    nid += 1
+
+    # Node 2: CheckpointLoaderSimple — for embedded LTX-2 VAE
+    ckpt_node = str(nid)
+    workflow[ckpt_node] = {
+        "class_type": "CheckpointLoaderSimple",
+        "inputs": {"ckpt_name": LTX_MODELS["checkpoint"]},
+    }
+    nid += 1
+
+    # Node 3: CLIPLoader — T5-XXL FP8 text encoder
+    clip_loader_node = str(nid)
+    workflow[clip_loader_node] = {
+        "class_type": "CLIPLoader",
+        "inputs": {
+            "clip_name": LTX_MODELS["text_encoder"],
+            "type": "ltxv",
+        },
+    }
+    nid += 1
+
+    model_source = [unet_node, 0]
+    clip_source = [clip_loader_node, 0]
+    vae_source = [ckpt_node, 2]
+
+    # Optional: LoRA injection
+    if lora_name:
+        lora_node = str(nid)
+        workflow[lora_node] = {
+            "class_type": "LoraLoaderModelOnly",
+            "inputs": {
+                "model": model_source,
+                "lora_name": lora_name,
+                "strength_model": lora_strength,
+            },
+        }
+        model_source = [lora_node, 0]
+        nid += 1
+
+    # Positive CLIP encode
+    pos_node = str(nid)
+    workflow[pos_node] = {
+        "class_type": "CLIPTextEncode",
+        "inputs": {"text": prompt_text, "clip": clip_source},
+    }
+    nid += 1
+
+    # Negative CLIP encode
+    neg_node = str(nid)
+    workflow[neg_node] = {
+        "class_type": "CLIPTextEncode",
+        "inputs": {"text": negative_text, "clip": clip_source},
+    }
+    nid += 1
+
+    # LTXVConditioning (adds frame_rate info)
+    cond_node = str(nid)
+    workflow[cond_node] = {
+        "class_type": "LTXVConditioning",
+        "inputs": {
+            "positive": [pos_node, 0],
+            "negative": [neg_node, 0],
+            "frame_rate": fps,
+        },
+    }
+    nid += 1
+
+    # Latent: empty for t2v, or from image for i2v
+    if image_path:
+        load_img_node = str(nid)
+        workflow[load_img_node] = {
+            "class_type": "LoadImage",
+            "inputs": {"image": image_path},
+        }
+        nid += 1
+
+        i2v_node = str(nid)
+        workflow[i2v_node] = {
+            "class_type": "LTXVImgToVideo",
+            "inputs": {
+                "positive": [cond_node, 0],
+                "negative": [cond_node, 1],
+                "vae": vae_source,
+                "image": [load_img_node, 0],
+                "width": width,
+                "height": height,
+                "length": num_frames,
+                "batch_size": 1,
+                "strength": 1.0,
+            },
+        }
+        pos_source = [i2v_node, 0]
+        neg_source = [i2v_node, 1]
+        latent_source = [i2v_node, 2]
+        nid += 1
+    else:
+        latent_node = str(nid)
+        workflow[latent_node] = {
+            "class_type": "EmptyLTXVLatentVideo",
+            "inputs": {
+                "width": width,
+                "height": height,
+                "length": num_frames,
+                "batch_size": 1,
+            },
+        }
+        latent_source = [latent_node, 0]
+        pos_source = [cond_node, 0]
+        neg_source = [cond_node, 1]
+        nid += 1
+
+    # LTXVScheduler
+    scheduler_node = str(nid)
+    workflow[scheduler_node] = {
+        "class_type": "LTXVScheduler",
+        "inputs": {
+            "steps": steps,
+            "max_shift": 2.05,
+            "base_shift": 0.95,
+            "stretch": True,
+            "terminal": 0.1,
+        },
+    }
+    nid += 1
+
+    # RandomNoise
+    noise_node = str(nid)
+    workflow[noise_node] = {
+        "class_type": "RandomNoise",
+        "inputs": {"noise_seed": seed},
+    }
+    nid += 1
+
+    # KSamplerSelect
+    sampler_select_node = str(nid)
+    workflow[sampler_select_node] = {
+        "class_type": "KSamplerSelect",
+        "inputs": {"sampler_name": "euler"},
+    }
+    nid += 1
+
+    # STGGuiderAdvanced — required by LTXVLoopingSampler for best results
+    guider_node = str(nid)
+    workflow[guider_node] = {
+        "class_type": "STGGuiderAdvanced",
+        "inputs": {
+            "model": model_source,
+            "positive": pos_source,
+            "negative": neg_source,
+            "skip_steps_sigma_threshold": 0.998,
+            "cfg_star_rescale": True,
+            "sigmas": "1.0, 0.9933, 0.9850, 0.9767, 0.9008, 0.6180",
+            "cfg_values": "8, 6, 6, 4, 3, 1",
+            "stg_scale_values": "4, 4, 3, 2, 1, 0",
+            "stg_rescale_values": "1, 1, 1, 1, 1, 1",
+            "stg_layers_indices": "[29], [29], [29], [29], [29], [29]",
+        },
+    }
+    nid += 1
+
+    # LTXVLoopingSampler — the core long-shot node
+    sampler_node = str(nid)
+    looping_inputs = {
+        "model": model_source,
+        "vae": vae_source,
+        "noise": [noise_node, 0],
+        "sampler": [sampler_select_node, 0],
+        "sigmas": [scheduler_node, 0],
+        "guider": [guider_node, 0],
+        "latents": latent_source,
+        "temporal_tile_size": temporal_tile_size,
+        "temporal_overlap": temporal_overlap,
+        "guiding_strength": guiding_strength,
+        "temporal_overlap_cond_strength": temporal_overlap_cond_strength,
+        "cond_image_strength": cond_image_strength,
+        "horizontal_tiles": 1,
+        "vertical_tiles": 1,
+        "spatial_overlap": 1,
+    }
+    # Optional inputs — adain_factor is required by the node even though listed as optional
+    looping_inputs["adain_factor"] = adain_factor
+    if image_path:
+        looping_inputs["optional_cond_images"] = [load_img_node, 0]
+    workflow[sampler_node] = {
+        "class_type": "LTXVLoopingSampler",
+        "inputs": looping_inputs,
+    }
+    nid += 1
+
+    # Decode with tiled VAE
+    decode_node = str(nid)
+    workflow[decode_node] = {
+        "class_type": "LTXVSpatioTemporalTiledVAEDecode",
+        "inputs": {
+            "vae": vae_source,
+            "latents": [sampler_node, 0],
+            "spatial_tiles": 2,
+            "spatial_overlap": 1,
+            "temporal_tile_length": 16,
+            "temporal_overlap": 1,
+            "last_frame_fix": False,
+            "working_device": "auto",
+            "working_dtype": "auto",
+        },
+    }
+    nid += 1
+
+    # Save video
+    output_node = str(nid)
+    workflow[output_node] = {
+        "class_type": "VHS_VideoCombine",
+        "inputs": {
+            "images": [decode_node, 0],
+            "frame_rate": fps,
+            "loop_count": 0,
+            "filename_prefix": output_prefix,
+            "format": "video/h264-mp4",
+            "pix_fmt": "yuv420p",
+            "crf": 19,
+            "save_metadata": True,
+            "trim_to_audio": False,
+            "pingpong": False,
+            "save_output": True,
+        },
+    }
+
+    return workflow, output_prefix
+
+
 @router.post("/generate/ltx")
 async def generate_ltx_video(
     character_slug: str,

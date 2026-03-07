@@ -18,7 +18,7 @@ from packages.core.audit import log_decision
 from packages.core.events import event_bus, SHOT_GENERATED
 
 from .framepack import build_framepack_workflow, _submit_comfyui_workflow
-from .ltx_video import build_ltx_workflow, _submit_comfyui_workflow as _submit_ltx_workflow
+from .ltx_video import build_ltx_workflow, build_ltxv_looping_workflow, _submit_comfyui_workflow as _submit_ltx_workflow
 from .wan_video import build_wan_t2v_workflow, build_wan22_workflow, build_wan22_14b_i2v_workflow, _submit_comfyui_workflow as _submit_wan_workflow
 from .image_recommender import recommend_for_scene, batch_read_metadata
 
@@ -1436,7 +1436,7 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
             try:
                 from .video_qc import check_engine_blacklist
                 from .framepack import build_framepack_workflow, _submit_comfyui_workflow
-                from .ltx_video import build_ltx_workflow, _submit_comfyui_workflow as _submit_ltx_workflow
+                from .ltx_video import build_ltx_workflow, build_ltxv_looping_workflow, _submit_comfyui_workflow as _submit_ltx_workflow
                 from .wan_video import build_wan_t2v_workflow, build_wan22_workflow, build_wan22_14b_i2v_workflow, _submit_comfyui_workflow as _submit_wan_workflow
                 import time as _time_inner
 
@@ -2031,6 +2031,60 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                     )
                     logger.info(f"Shot {shot_id}: Wan seed={shot_seed} cfg={wan_cfg} frames={num_frames}")
                     comfyui_prompt_id = _submit_wan_workflow(workflow)
+                elif shot_engine == "ltx_long":
+                    # LTXVLoopingSampler — Pattern 3 long-shot engine (30-60s+)
+                    fps = 24
+                    num_frames = max(25, int(shot_seconds * fps) + 1)
+                    # Load engine defaults from video_models.yaml
+                    _ltx_tile_size = 80
+                    _ltx_overlap = 24
+                    _ltx_overlap_cond = 0.5
+                    _ltx_guiding = 1.0
+                    _ltx_cond_img = 1.0
+                    _ltx_adain = 0.0
+                    try:
+                        import yaml as _yaml
+                        _vm_path = Path(__file__).resolve().parent.parent.parent / "config" / "video_models.yaml"
+                        if _vm_path.exists():
+                            with open(_vm_path) as _f:
+                                _vm = _yaml.safe_load(_f) or {}
+                            _ltx_defaults = _vm.get("engine_defaults", {}).get("ltx_long", {})
+                            _ltx_tile_size = _ltx_defaults.get("temporal_tile_size", _ltx_tile_size)
+                            _ltx_overlap = _ltx_defaults.get("temporal_overlap", _ltx_overlap)
+                            _ltx_overlap_cond = _ltx_defaults.get("temporal_overlap_cond_strength", _ltx_overlap_cond)
+                            _ltx_guiding = _ltx_defaults.get("guiding_strength", _ltx_guiding)
+                            _ltx_cond_img = _ltx_defaults.get("cond_image_strength", _ltx_cond_img)
+                            _ltx_adain = _ltx_defaults.get("adain_factor", _ltx_adain)
+                    except Exception:
+                        pass
+                    wan_w, wan_h = 512, 320
+                    if _project_width and _project_height and _project_width > _project_height:
+                        wan_w, wan_h = 512, 320  # LTX landscape
+                    else:
+                        wan_w, wan_h = 320, 512  # LTX portrait
+                    logger.info(
+                        f"Shot {shot_id}: LTX_LONG dims={wan_w}x{wan_h} "
+                        f"tile_size={_ltx_tile_size} overlap={_ltx_overlap} "
+                        f"frames={num_frames} (~{num_frames/fps:.1f}s @ {fps}fps)"
+                    )
+                    workflow, prefix = build_ltxv_looping_workflow(
+                        prompt_text=current_prompt,
+                        width=wan_w, height=wan_h,
+                        num_frames=num_frames, fps=fps,
+                        steps=shot_steps, seed=shot_seed,
+                        negative_text=current_negative,
+                        image_path=image_filename if image_filename else None,
+                        lora_name=shot_dict.get("lora_name"),
+                        lora_strength=shot_dict.get("lora_strength", 0.8),
+                        output_prefix=_file_prefix,
+                        temporal_tile_size=_ltx_tile_size,
+                        temporal_overlap=_ltx_overlap,
+                        temporal_overlap_cond_strength=_ltx_overlap_cond,
+                        guiding_strength=_ltx_guiding,
+                        cond_image_strength=_ltx_cond_img,
+                        adain_factor=_ltx_adain,
+                    )
+                    comfyui_prompt_id = _submit_ltx_workflow(workflow)
                 elif shot_engine == "ltx":
                     fps = 24
                     num_frames = max(9, int(shot_seconds * fps) + 1)

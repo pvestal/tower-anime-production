@@ -22,7 +22,7 @@ import yaml
 logger = logging.getLogger(__name__)
 
 LORA_DIR = Path("/opt/ComfyUI/models/loras")
-VALID_ENGINES = {"framepack", "framepack_f1", "ltx", "wan", "wan22", "wan22_14b", "reference_v2v"}
+VALID_ENGINES = {"framepack", "framepack_f1", "ltx", "ltx_long", "wan", "wan22", "wan22_14b", "reference_v2v"}
 ESTABLISHING_SHOT_TYPES = {"establishing", "wide_establishing", "aerial", "environment"}
 
 # Motion keywords detected in motion_prompt text → preset name
@@ -140,6 +140,10 @@ def _check_engine_available(engine: str, video_models: dict) -> bool:
     if engine in ("wan22", "wan22_5b"):
         w = video_models.get("wan22_5b", {})
         return Path(w.get("path", "")).exists()
+    if engine == "ltx_long":
+        # LTX-Video 2B + LTXVLoopingSampler
+        return Path("/opt/ComfyUI/models/unet/ltxv-2b-fp8.safetensors").exists() or \
+               Path("/opt/ComfyUI/models/diffusion_models/ltxv-2b-fp8.safetensors").exists()
     # Assume available for engines we don't track
     return True
 
@@ -251,15 +255,35 @@ def select_engine(
             lora_strength=0.8,
         ))
 
-    # Rule 0.5: Project has Wan 2.2 LoRA → route ALL shots to wan22
+    # Rule 0.5: Project has Wan 2.2 LoRA → prefer wan22_14b I2V when source image available
     if project_wan_lora:
-        mode = "I2V" if (has_source_image and not is_multi_char and not is_establishing) else "T2V"
-        candidates.append(EngineSelection(
-            engine="wan22",
-            reason=f"project Wan LoRA ({project_wan_lora}), {mode} mode",
-            lora_name=project_wan_lora,
-            lora_strength=0.5,
-        ))
+        if has_source_image:
+            # 14B I2V + DR34ML4Y anime LoRA produces far better results than 5B T2V
+            from .wan_video import check_wan22_14b_ready
+            ready_14b, _ = check_wan22_14b_ready()
+            if ready_14b:
+                candidates.append(EngineSelection(
+                    engine="wan22_14b",
+                    reason=f"project Wan LoRA available, I2V mode via 14B (source image + DR34ML4Y style preservation)",
+                    lora_name=None,  # 14B uses DR34ML4Y instead of project LoRA
+                    lora_strength=0.0,
+                ))
+            else:
+                candidates.append(EngineSelection(
+                    engine="wan22",
+                    reason=f"project Wan LoRA ({project_wan_lora}), I2V mode (14B unavailable)",
+                    lora_name=project_wan_lora,
+                    lora_strength=0.5,
+                ))
+        else:
+            # No source image — T2V via 5B with project LoRA
+            candidates.append(EngineSelection(
+                engine="wan22",
+                reason=f"project Wan LoRA ({project_wan_lora}), T2V mode",
+                lora_name=project_wan_lora,
+                lora_strength=0.5,
+            ))
+
 
     # Rule 0.75: Motion preset detection → wan22_14b with motion LoRAs
     # Detected motion type overrides standard engine selection when Wan 2.2 14B is available.
