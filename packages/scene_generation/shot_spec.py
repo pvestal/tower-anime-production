@@ -211,11 +211,32 @@ POSE VARIETY:
 
 INSTRUCTIONS:
 1. Pick ONE pose_type from the available poses that best fits the emotional beat and shot type.
-2. Write an enhanced_prompt that adds the pose, body language, and emotion-specific visual cues to the current prompt. Keep the existing content, just enrich it.
+2. Write an enhanced_prompt that adds the pose, body language, and emotion-specific visual cues to the current prompt. Keep the existing content, just enrich it. The enhanced_prompt MUST be a flat comma-separated list of tags/phrases suitable for image generation. NO markdown, NO bold, NO headers, NO labels like "Subject:" or "Camera:". Just comma-separated visual descriptors.
 3. Write enhanced_negative with terms to avoid (including recently used poses and generic stiff poses).
 
-Respond ONLY with valid JSON:
-{{"pose_type": "chosen pose", "enhanced_prompt": "enriched prompt text", "enhanced_negative": "negative prompt text"}}"""
+Respond ONLY with valid JSON (no markdown fences, no explanation):
+{{"pose_type": "chosen pose", "enhanced_prompt": "tag1, tag2, tag3, ...", "enhanced_negative": "negative prompt text"}}"""
+
+
+def _sanitize_prompt(text: str) -> str:
+    """Strip markdown formatting and structured garbage from generation prompts.
+
+    Ollama sometimes returns markdown-formatted text (e.g. **Subject:**, **Camera:**)
+    inside JSON fields that should be clean comma-separated prompt tags.
+    """
+    import re
+    # Remove markdown bold/italic markers
+    text = re.sub(r'\*{1,3}', '', text)
+    # Remove markdown headers
+    text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
+    # Remove structured labels like "Subject:", "Camera:", "Appearance:", "Scene:", "Characters:"
+    text = re.sub(r'\b(Subject|Camera|Appearance|Scene|Characters|Setting|Lighting|Mood|Action|Notes?)\s*:\s*', '', text)
+    # Collapse newlines into commas (prompts should be single-line comma-separated)
+    text = re.sub(r'\s*\n+\s*', ', ', text)
+    # Collapse multiple commas/spaces
+    text = re.sub(r',\s*,+', ',', text)
+    text = re.sub(r'\s{2,}', ' ', text)
+    return text.strip().strip(',').strip()
 
 
 async def _call_ollama_enrichment(prompt: str) -> dict[str, Any]:
@@ -246,7 +267,11 @@ async def _call_ollama_enrichment(prompt: str) -> dict[str, Any]:
             elif "```" in json_str:
                 json_str = json_str.split("```")[1].split("```")[0].strip()
 
-            return json.loads(json_str)
+            result = json.loads(json_str)
+            # Sanitize prompt fields — Ollama loves to inject markdown formatting
+            if result.get("enhanced_prompt"):
+                result["enhanced_prompt"] = _sanitize_prompt(result["enhanced_prompt"])
+            return result
     except json.JSONDecodeError as e:
         logger.warning(f"Ollama enrichment: invalid JSON response: {e}")
         return {}

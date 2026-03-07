@@ -35,9 +35,22 @@ router.include_router(approval_router)
 # ===================================================================
 
 @router.get("/dataset/{character_name}")
-async def get_dataset_info(character_name: str):
+async def get_dataset_info(character_name: str, request: Request, allowed_projects: list[int] = Depends(get_user_projects)):
     """Get dataset images and approval status."""
     safe_name = character_name.lower().replace(" ", "_")
+
+    # _unclassified: admin only (may contain mature content)
+    if safe_name == "_unclassified":
+        user = getattr(request.state, "user", None)
+        if not user or user.get("role") != "admin":
+            raise HTTPException(status_code=403, detail="Access denied")
+
+    # Check project access for this character
+    char_map = await get_char_project_map()
+    char_info = char_map.get(safe_name)
+    if char_info and char_info.get("project_id") not in allowed_projects:
+        raise HTTPException(status_code=403, detail="Access denied to this character's dataset")
+
     dataset_path = BASE_PATH / safe_name
     images_path = dataset_path / "images"
 
@@ -125,9 +138,14 @@ async def remove_reference_image(character_slug: str, image_name: str):
     return {"message": f"Removed reference image {image_name}"}
 
 @router.get("/dataset/{character_name}/image/{image_name}")
-async def get_image(character_name: str, image_name: str):
+async def get_image(character_name: str, image_name: str, allowed_projects: list[int] = Depends(get_user_projects)):
     """Serve an image file."""
     safe_name = character_name.lower().replace(" ", "_")
+
+    char_map = await get_char_project_map()
+    char_info = char_map.get(safe_name)
+    if char_info and char_info.get("project_id") not in allowed_projects:
+        raise HTTPException(status_code=403, detail="Access denied")
     image_path = BASE_PATH / safe_name / "images" / image_name
 
     if not image_path.exists():

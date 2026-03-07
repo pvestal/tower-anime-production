@@ -8,10 +8,10 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
-
+from fastapi import APIRouter, Depends, HTTPException, Request
 from packages.core.config import BASE_PATH
 from packages.core.db import get_char_project_map, invalidate_char_cache, connect_direct
+from packages.core.auth import get_user_projects
 from packages.core.models import (
     ApprovalRequest,
     ReassignRequest,
@@ -35,7 +35,7 @@ router = APIRouter()
 # ===================================================================
 
 @router.get("/approval/pending")
-async def get_pending_approvals():
+async def get_pending_approvals(request: Request, allowed_projects: list[int] = Depends(get_user_projects)):
     """Get all pending images across all characters, with project info."""
     pending = []
     if not BASE_PATH.exists():
@@ -52,6 +52,10 @@ async def get_pending_approvals():
 
         slug = char_dir.name
         if slug == "_unclassified":
+            # Unclassified may contain mature content — admin only
+            user = getattr(request.state, "user", None)
+            if not user or user.get("role") != "admin":
+                continue
             db_info = {
                 "name": "Unclassified",
                 "project_name": "",
@@ -62,6 +66,9 @@ async def get_pending_approvals():
         else:
             db_info = char_map.get(slug)
             if not db_info:
+                continue
+            # Filter by project access
+            if db_info.get("project_id") not in allowed_projects:
                 continue
 
         approval_file = char_dir / "approval_status.json"
@@ -96,6 +103,7 @@ async def get_pending_approvals():
         design_prompt = db_info.get("design_prompt", "")
         checkpoint = db_info.get("checkpoint_model", "")
         style = db_info.get("default_style", "")
+        rating = db_info.get("content_rating", "")
 
         for name, ctime in file_ctimes.items():
             source = "generated"
@@ -116,6 +124,7 @@ async def get_pending_approvals():
                 "character_slug": slug,
                 "name": name,
                 "project_name": img_proj_name,
+                "content_rating": rating,
                 "checkpoint_model": checkpoint,
                 "default_style": style,
                 "status": "pending",

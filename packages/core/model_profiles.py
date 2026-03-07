@@ -408,6 +408,32 @@ def build_solo_suffix(profile: dict, design_prompt: str) -> str:
     return base_solo
 
 
+def _is_environment_prompt(design_prompt: str, appearance_data: dict | None) -> bool:
+    """Detect if a design_prompt describes an environment/location rather than a character.
+
+    Environment prompts get pose/solo/background tags stripped to avoid
+    nonsensical injections like 'dynamic pose, solo' on a landscape.
+    """
+    prompt_lower = (design_prompt or "").lower()
+    # Strong environment indicators
+    env_keywords = (
+        "diorama", "landscape", "cityscape", "scenery", "building",
+        "aerial view", "overhead", "tilt-shift", "miniature",
+        "forest", "town", "village", "suburb", "campus", "harbor",
+        "no humans", "no people",
+    )
+    has_env_keyword = any(kw in prompt_lower for kw in env_keywords)
+    # Character indicators — if present, it's not a pure environment
+    char_keywords = (
+        "1girl", "1boy", "girl", "boy", "woman", "man", "person",
+        "character", "portrait", "face", "hair", "eyes",
+    )
+    has_char_keyword = any(kw in prompt_lower for kw in char_keywords)
+    # Environment if: has environment keywords and no character keywords and no meaningful appearance data
+    has_appearance = bool(appearance_data) and any(appearance_data.values()) if isinstance(appearance_data, dict) else bool(appearance_data)
+    return has_env_keyword and not has_char_keyword and not has_appearance
+
+
 def translate_prompt(design_prompt: str, appearance_data: dict | None,
                      profile: dict, pose: str = "") -> str:
     """Model-aware prompt assembly.
@@ -422,10 +448,15 @@ def translate_prompt(design_prompt: str, appearance_data: dict | None,
         - Enriches with appearance data as natural language
         - Appends standard quality/solo/background
 
+    Environment prompts (locations, scenery, dioramas) skip pose/solo/background
+    injection since those tags are character-specific and corrupt the output.
+
     The design_prompt in the DB stays unchanged. Translation is at generation time only.
     """
     appearance_data = appearance_data or {}
     parts = []
+
+    is_env = _is_environment_prompt(design_prompt, appearance_data)
 
     # 1. Quality prefix from profile
     parts.append(profile["quality_prefix"])
@@ -446,14 +477,15 @@ def translate_prompt(design_prompt: str, appearance_data: dict | None,
         if appearance_tags:
             parts.append(appearance_tags)
 
-    # 4. Pose
-    if pose:
-        parts.append(pose)
-
-    # 5. Solo + background suffix
-    solo = build_solo_suffix(profile, design_prompt)
-    parts.append(solo)
-    parts.append(profile["background_suffix"])
+    # 4-5. Pose, solo, and background — skip for environments
+    if not is_env:
+        if pose:
+            parts.append(pose)
+        solo = build_solo_suffix(profile, design_prompt)
+        parts.append(solo)
+        parts.append(profile["background_suffix"])
+    else:
+        logger.debug(f"translate_prompt: skipping pose/solo/bg for environment prompt")
 
     return ", ".join(p for p in parts if p)
 

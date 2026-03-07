@@ -278,16 +278,34 @@ def register_pending_image(character_slug: str, image_name: str):
     register_image_status(character_slug, image_name, "pending")
 
 
+import fcntl as _fcntl
+
 def register_image_status(character_slug: str, image_name: str, status: str):
-    """Register a single image with given status in approval_status.json."""
+    """Register a single image with given status in approval_status.json.
+
+    Uses file locking to prevent concurrent writes from clobbering each other.
+    Only sets status if the image isn't already tracked (won't overwrite approved→pending).
+    """
     if status not in IMAGE_STATUSES:
         raise ValueError(f"Invalid image status '{status}'. Must be one of: {sorted(IMAGE_STATUSES)}")
     approval_file = BASE_PATH / character_slug / "approval_status.json"
-    approval_status = {}
-    if approval_file.exists():
+    lock_file = approval_file.with_suffix(".lock")
+    approval_file.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(lock_file, "w") as lf:
+        _fcntl.flock(lf, _fcntl.LOCK_EX)
         try:
-            approval_status = json.loads(approval_file.read_text())
-        except (json.JSONDecodeError, IOError):
-            pass
-    approval_status[image_name] = status
-    approval_file.write_text(json.dumps(approval_status, indent=2))
+            approval_status = {}
+            if approval_file.exists():
+                try:
+                    approval_status = json.loads(approval_file.read_text())
+                except (json.JSONDecodeError, IOError):
+                    pass
+            # Don't downgrade: never overwrite approved/rejected with pending
+            existing = approval_status.get(image_name)
+            if existing in ("approved", "rejected") and status == "pending":
+                return
+            approval_status[image_name] = status
+            approval_file.write_text(json.dumps(approval_status, indent=2))
+        finally:
+            _fcntl.flock(lf, _fcntl.LOCK_UN)

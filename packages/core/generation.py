@@ -366,6 +366,9 @@ async def generate_batch(
                 profile=profile,
                 pose=pose,
             )
+            # If translate_prompt skipped pose (environment prompt), clear it for meta logging
+            if not pose or (pose and pose not in full_prompt):
+                pose = ""
 
         use_seed = (seed + i) if seed is not None else None
 

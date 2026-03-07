@@ -1,5 +1,6 @@
 <template>
   <div
+    ref="cardRef"
     class="video-card"
     :class="{ selected: isSelected }"
   >
@@ -13,9 +14,10 @@
       {{ engineLabel }}
     </span>
 
-    <!-- Video player -->
+    <!-- Video player (lazy-loaded when visible) -->
     <div class="video-container">
       <video
+        v-if="isVisible"
         :src="videoUrl"
         controls
         preload="metadata"
@@ -24,6 +26,7 @@
         @mouseenter="($event.target as HTMLVideoElement)?.play()"
         @mouseleave="handleMouseLeave"
       />
+      <div v-else class="video-placeholder" />
     </div>
 
     <div class="meta">
@@ -106,7 +109,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import type { PendingVideo } from '@/types'
 import { scenesApi } from '@/api/scenes'
 
@@ -114,6 +117,27 @@ const props = defineProps<{
   video: PendingVideo
   isSelected: boolean
 }>()
+
+const cardRef = ref<HTMLElement | null>(null)
+const isVisible = ref(false)
+let observer: IntersectionObserver | null = null
+
+onMounted(() => {
+  const el = cardRef.value
+  if (!el) return
+  observer = new IntersectionObserver(
+    ([entry]) => {
+      if (entry.isIntersecting) {
+        isVisible.value = true
+        observer?.disconnect()
+      }
+    },
+    { rootMargin: '200px' },
+  )
+  observer.observe(el)
+})
+
+onUnmounted(() => observer?.disconnect())
 
 defineEmits<{
   (e: 'toggle-selection', id: string): void
@@ -230,6 +254,11 @@ function handleMouseLeave(e: Event) {
   width: 100%;
   height: 100%;
   object-fit: contain;
+}
+.video-placeholder {
+  width: 100%;
+  height: 100%;
+  background: var(--bg-primary);
 }
 
 .meta {
