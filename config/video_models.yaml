@@ -256,8 +256,8 @@ engine_defaults:
     scheduler: ltxv
     fps: 24
     num_frames: 241   # ~10s at 24fps
-    width: 512
-    height: 320
+    width: 1024
+    height: 576
     temporal_tile_size: 80
     temporal_overlap: 24
     temporal_overlap_cond_strength: 0.5
