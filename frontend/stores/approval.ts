@@ -10,11 +10,20 @@ export const useApprovalStore = defineStore('approval', () => {
   const error = ref<string | null>(null)
   const filterProject = ref<string>('')
   const filterCharacter = ref<string>('')
+  const hideKidsProjects = ref(true)
+
+  const KIDS_RATINGS = new Set(['G', 'PG'])
+
+  // Images after kids filter applied
+  const visibleImages = computed(() => {
+    if (!hideKidsProjects.value) return pendingImages.value
+    return pendingImages.value.filter(img => !KIDS_RATINGS.has((img as any).content_rating || ''))
+  })
 
   // All unique project names
   const projectNames = computed(() => {
     const names = new Set<string>()
-    for (const img of pendingImages.value) {
+    for (const img of visibleImages.value) {
       if (img.project_name) names.add(img.project_name)
     }
     return [...names].sort()
@@ -23,7 +32,7 @@ export const useApprovalStore = defineStore('approval', () => {
   // Character names filtered by selected project
   const characterNames = computed(() => {
     const names = new Set<string>()
-    for (const img of pendingImages.value) {
+    for (const img of visibleImages.value) {
       if (filterProject.value && img.project_name !== filterProject.value) continue
       names.add(img.character_name)
     }
@@ -33,7 +42,7 @@ export const useApprovalStore = defineStore('approval', () => {
   // Group images by character (used for counts in dropdown)
   const groupedImages = computed(() => {
     const groups: Record<string, PendingImage[]> = {}
-    for (const img of pendingImages.value) {
+    for (const img of visibleImages.value) {
       if (!groups[img.character_name]) {
         groups[img.character_name] = []
       }
@@ -44,7 +53,7 @@ export const useApprovalStore = defineStore('approval', () => {
 
   // Filtered images by project + character
   const filteredImages = computed(() => {
-    return pendingImages.value.filter(img => {
+    return visibleImages.value.filter(img => {
       if (filterProject.value && img.project_name !== filterProject.value) return false
       if (filterCharacter.value && img.character_name !== filterCharacter.value) return false
       return true
@@ -111,6 +120,7 @@ export const useApprovalStore = defineStore('approval', () => {
     error,
     filterProject,
     filterCharacter,
+    hideKidsProjects,
     projectNames,
     groupedImages,
     characterNames,

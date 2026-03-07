@@ -1,7 +1,7 @@
 <template>
   <div>
-    <!-- Sub-tab navigation -->
-    <div style="display: flex; gap: 0; margin-bottom: 16px; border-bottom: 1px solid var(--border-primary);">
+    <!-- Sub-tab navigation (hidden for viewers — they only see characters) -->
+    <div v-if="!isViewer" style="display: flex; gap: 0; margin-bottom: 16px; border-bottom: 1px solid var(--border-primary);">
       <RouterLink to="/cast/characters" class="cast-subtab" active-class="" exact-active-class="active">
         Characters
       </RouterLink>
@@ -18,6 +18,11 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
+import { useAuthStore } from '@/stores/auth'
+
+const authStore = useAuthStore()
+const isViewer = computed(() => authStore.user?.role === 'viewer')
 </script>
 
 <style scoped>

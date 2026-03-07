@@ -67,7 +67,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function selectProfile(userId: number): Promise<{ requires_pin?: boolean }> {
     const result = await request<{ selected?: boolean; requires_pin?: boolean }>(
-      `/auth/local/select?user_id=${userId}`,
+      `/studio/auth/local/select?user_id=${userId}`,
       { method: 'POST' }
     )
     if (result.selected) {

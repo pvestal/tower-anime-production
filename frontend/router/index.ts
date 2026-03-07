@@ -3,7 +3,8 @@ import { createRouter, createWebHistory } from 'vue-router'
 const routes = [
   {
     path: '/',
-    redirect: '/story',
+    name: 'Home',
+    component: () => import('@/components/kid/KidHome.vue'),
   },
   // ===== Auth routes (no guard) =====
   {
@@ -39,6 +40,7 @@ const routes = [
     path: '/story',
     name: 'Story',
     component: () => import('@/components/ProjectTab.vue'),
+    meta: { creatorOnly: true },
   },
   {
     path: '/cast',
@@ -56,11 +58,13 @@ const routes = [
         name: 'CastIngest',
         component: () => import('@/components/CharactersTab.vue'),
         props: { hideSubTabs: true, initialSubTab: 'ingest' },
+        meta: { creatorOnly: true },
       },
       {
         path: 'voice',
         name: 'CastVoice',
         component: () => import('@/components/VoiceTab.vue'),
+        meta: { creatorOnly: true },
       },
     ],
   },
@@ -68,6 +72,7 @@ const routes = [
     path: '/script',
     component: () => import('@/components/ScriptTab.vue'),
     redirect: '/script/scenes',
+    meta: { creatorOnly: true },
     children: [
       {
         path: 'scenes',
@@ -85,11 +90,13 @@ const routes = [
     path: '/produce',
     name: 'Produce',
     component: () => import('@/components/ProduceTab.vue'),
+    meta: { creatorOnly: true },
   },
   {
     path: '/review',
     component: () => import('@/components/ReviewTab.vue'),
     redirect: '/review/images',
+    meta: { creatorOnly: true },
     children: [
       {
         path: 'images',
@@ -117,6 +124,7 @@ const routes = [
         path: 'episodes',
         name: 'PublishEpisodes',
         component: () => import('@/components/publish/PublishEpisodesView.vue'),
+        meta: { creatorOnly: true },
       },
       {
         path: 'library',
@@ -174,6 +182,18 @@ router.beforeEach(async (to, _from, next) => {
   // Onboarding redirect
   if (authStore.needsOnboarding && to.name !== 'Onboarding') {
     return next('/onboarding')
+  }
+
+  const isViewer = authStore.user?.role === 'viewer'
+
+  // Viewers landing on / get KidHome; non-viewers skip to /story
+  if (to.name === 'Home' && !isViewer) {
+    return next('/story')
+  }
+
+  // Block creator/admin routes for viewers
+  if (to.meta?.creatorOnly && isViewer) {
+    return next('/')
   }
 
   next()

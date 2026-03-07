@@ -15,6 +15,10 @@
         </span>
       </div>
       <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+        <label class="hide-kids-toggle" title="Hide G/PG rated projects">
+          <input type="checkbox" :checked="hideKids" @change="$emit('update:hideKids', ($event.target as HTMLInputElement).checked)" />
+          <span>Hide Kids</span>
+        </label>
         <div style="min-width: 200px;">
           <SearchableSelect
             :model-value="filterProject"
@@ -139,6 +143,7 @@ const propsData = defineProps<{
   totalCount: number
   recentCount: number
   lastRefreshedAgo: string
+  hideKids: boolean
   filterProject: string
   filterCharacter: string
   filterSource: string
@@ -174,6 +179,7 @@ const characterFilterOptions = computed(() => [
 ])
 
 defineEmits<{
+  (e: 'update:hideKids', value: boolean): void
   (e: 'update:filterProject', value: string): void
   (e: 'update:filterCharacter', value: string): void
   (e: 'update:filterSource', value: string): void
@@ -227,6 +233,23 @@ defineEmits<{
   color: var(--status-warning);
   font-weight: 500;
 }
+
+/* Hide kids toggle */
+.hide-kids-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 5px 10px;
+  border: 1px solid var(--border-primary);
+  border-radius: 4px;
+  background: var(--bg-secondary);
+  white-space: nowrap;
+}
+.hide-kids-toggle:hover { border-color: var(--border-focus); }
+.hide-kids-toggle input { accent-color: var(--accent-primary); }
 
 /* Reassign button */
 .btn-reassign {
