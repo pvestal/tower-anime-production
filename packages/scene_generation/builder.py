@@ -681,15 +681,40 @@ async def recover_interrupted_generations():
 
         logger.warning(f"Recovery: found {len(stuck)} stuck shot(s) in 'generating' state")
 
-        # 2. Collect unique scene IDs (preserve order)
-        scene_ids = list(dict.fromkeys(row["scene_id"] for row in stuck))
+        # 2. Smart recovery: check if output already exists on disk
+        completed_count = 0
+        reset_ids = []
+        for row in stuck:
+            shot_id = row["id"]
+            # Check if this shot already has a valid output video
+            video_path = await conn.fetchval(
+                "SELECT output_video_path FROM shots WHERE id = $1", shot_id
+            )
+            if video_path and Path(video_path).exists():
+                # Output exists — mark as completed instead of resetting
+                await conn.execute("""
+                    UPDATE shots SET status = 'completed',
+                           review_status = 'pending_review',
+                           error_message = 'recovered: output found on disk'
+                    WHERE id = $1
+                """, shot_id)
+                completed_count += 1
+                logger.info(f"Recovery: shot {shot_id} has valid output, marked completed")
+            else:
+                # No output — reset to pending for re-generation
+                await conn.execute("""
+                    UPDATE shots SET status = 'pending',
+                           comfyui_prompt_id = NULL,
+                           error_message = 'reset by startup recovery'
+                    WHERE id = $1
+                """, shot_id)
+                reset_ids.append(row["scene_id"])
 
-        # 3. Reset stuck shots to pending
-        reset_count = await conn.execute("""
-            UPDATE shots SET status = 'pending', error_message = 'reset by startup recovery'
-            WHERE status = 'generating'
-        """)
-        logger.info(f"Recovery: reset {reset_count} shot(s) to pending")
+        logger.info(f"Recovery: {completed_count} shot(s) marked completed (output on disk), "
+                     f"{len(reset_ids)} shot(s) reset to pending")
+
+        # 2b. Collect unique scene IDs from reset shots only
+        scene_ids = list(dict.fromkeys(reset_ids))
 
         # 4. Reset their scenes' generation_status and current_generating_shot_id
         for sid in scene_ids:

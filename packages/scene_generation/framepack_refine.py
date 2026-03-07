@@ -76,7 +76,7 @@ def build_framepack_v2v_workflow(
             "inputs": {
                 "lora": lora_name,
                 "strength": lora_strength,
-                "fuse_lora": True,
+                "fuse_lora": False,
             },
         }
         nid += 1

@@ -82,6 +82,7 @@ _tick_task = None           # asyncio.Task for the background loop
 _graph_sync_task = None     # asyncio.Task for periodic graph sync
 _training_target = 100     # approved images needed to advance past training_data
 _active_work: dict[str, asyncio.Task] = {}  # tracks running work tasks
+_last_successful_generation: datetime | None = None  # watchdog timestamp
 
 # Phase definitions
 CHARACTER_PHASES = ["training_data", "lora_training", "ready"]
@@ -95,6 +96,7 @@ PROJECT_PHASES = [
 
 async def enable(on: bool = True):
     global _enabled
+    was_enabled = _enabled
     _enabled = on
     logger.info(f"Orchestrator {'enabled' if on else 'disabled'}")
     # Persist to DB so state survives restarts
@@ -108,6 +110,87 @@ async def enable(on: bool = True):
             """, str(on).lower())
     except Exception as e:
         logger.warning(f"Failed to persist orchestrator state: {e}")
+
+    # Send Telegram summary when orchestrator is disabled after being enabled (end of overnight run)
+    if was_enabled and not on:
+        asyncio.create_task(_send_shutdown_summary())
+
+
+async def _send_shutdown_summary():
+    """Build and send overnight run summary via Telegram."""
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            projects = await conn.fetch("""
+                SELECT DISTINCT p.id, p.name FROM projects p
+                JOIN production_pipeline pp ON pp.project_id = p.id
+            """)
+
+            lines = ["🏭 *Overnight Orchestrator Summary*\n"]
+            for proj in projects:
+                total = await conn.fetchval(
+                    "SELECT COUNT(*) FROM production_pipeline WHERE project_id = $1",
+                    proj["id"],
+                )
+                completed = await conn.fetchval(
+                    "SELECT COUNT(*) FROM production_pipeline WHERE project_id = $1 AND status = 'completed'",
+                    proj["id"],
+                )
+                pct = (completed / total * 100) if total > 0 else 0
+
+                decisions = await conn.fetchval("""
+                    SELECT COUNT(*) FROM autonomy_decisions
+                    WHERE project_name = $1
+                      AND created_at > NOW() - INTERVAL '12 hours'
+                """, str(proj["id"]))
+
+                active = await conn.fetchrow("""
+                    SELECT phase, entity_id FROM production_pipeline
+                    WHERE project_id = $1 AND status NOT IN ('completed', 'skipped')
+                    ORDER BY entity_type DESC
+                    LIMIT 1
+                """, proj["id"])
+
+                status_emoji = "✅" if pct == 100 else "🔄" if pct > 0 else "⏳"
+                active_str = f" → {active['phase']}" if active else " → done"
+                lines.append(
+                    f"{status_emoji} *{proj['name']}*: {completed}/{total} ({pct:.0f}%){active_str}"
+                    f"\n   {decisions} actions taken overnight"
+                )
+
+            errors = await conn.fetchval("""
+                SELECT COUNT(*) FROM autonomy_decisions
+                WHERE (decision_type LIKE '%%error%%' OR decision_type LIKE '%%fail%%')
+                  AND created_at > NOW() - INTERVAL '12 hours'
+            """)
+            if errors > 0:
+                lines.append(f"\n⚠️ {errors} errors logged — check autonomy_decisions")
+
+            lines.append("\nOrchestrator disabled at 06:00.")
+
+        message = "\n".join(lines)
+        import urllib.request
+        payload = json.dumps({
+            "method": "tools/call",
+            "params": {
+                "name": "send_notification",
+                "arguments": {
+                    "message": message,
+                    "title": "Overnight Run Complete",
+                    "channels": ["telegram"],
+                    "priority": "normal",
+                },
+            },
+        }).encode()
+        req = urllib.request.Request(
+            "http://localhost:8309/mcp",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+        )
+        urllib.request.urlopen(req, timeout=15)
+        logger.info("Orchestrator shutdown summary sent via Telegram")
+    except Exception as e:
+        logger.warning(f"Failed to send shutdown summary (non-fatal): {e}")
 
 
 def is_enabled() -> bool:
@@ -330,14 +413,52 @@ async def tick():
 # ── Background Tick Loop ───────────────────────────────────────────────
 
 async def _tick_loop():
-    """Background loop that runs tick() every _tick_interval seconds."""
+    """Background loop that runs tick() every _tick_interval seconds.
+
+    Includes throughput watchdog: warns after 30min of no successful generation,
+    and recovers stuck 'generating' shots after 60min.
+    """
     while True:
         try:
             if _enabled:
                 await tick()
+                # Watchdog: check for stalled generation
+                await _check_throughput_watchdog()
         except Exception as e:
             logger.error(f"Orchestrator tick error: {e}")
         await asyncio.sleep(_tick_interval)
+
+
+async def _check_throughput_watchdog():
+    """Detect stalled generation pipeline and recover stuck shots."""
+    global _last_successful_generation
+    if _last_successful_generation is None:
+        return
+
+    elapsed = (datetime.utcnow() - _last_successful_generation).total_seconds()
+    minutes = elapsed / 60
+
+    if minutes > 60:
+        logger.error(
+            f"Watchdog: no successful generation in {minutes:.0f} minutes, "
+            f"recovering stuck shots"
+        )
+        try:
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                reset = await conn.execute("""
+                    UPDATE shots SET status = 'pending', comfyui_prompt_id = NULL,
+                           error_message = 'reset by watchdog after 60min stall'
+                    WHERE status = 'generating'
+                      AND output_video_path IS NULL
+                """)
+                logger.info(f"Watchdog: reset stuck generating shots: {reset}")
+        except Exception as e:
+            logger.error(f"Watchdog: failed to recover stuck shots: {e}")
+    elif minutes > 30:
+        logger.warning(
+            f"Watchdog: no successful generation in {minutes:.0f} minutes"
+        )
 
 
 async def _graph_sync_loop():
@@ -376,6 +497,38 @@ async def start_tick_loop():
 
 
 # ── Status / Summary ──────────────────────────────────────────────────
+
+async def get_orchestrator_health() -> dict:
+    """Return health info for the watchdog monitoring endpoint."""
+    now = datetime.utcnow()
+    minutes_since = None
+    if _last_successful_generation:
+        minutes_since = (now - _last_successful_generation).total_seconds() / 60
+
+    # Count pending/generating shots across all projects
+    queue_depth = 0
+    generating = 0
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            queue_depth = await conn.fetchval(
+                "SELECT COUNT(*) FROM shots WHERE status = 'pending'"
+            ) or 0
+            generating = await conn.fetchval(
+                "SELECT COUNT(*) FROM shots WHERE status = 'generating'"
+            ) or 0
+    except Exception:
+        pass
+
+    return {
+        "enabled": _enabled,
+        "last_successful_generation": _last_successful_generation.isoformat() if _last_successful_generation else None,
+        "minutes_since_last_success": round(minutes_since, 1) if minutes_since is not None else None,
+        "queue_depth": queue_depth,
+        "generating": generating,
+        "active_work_tasks": len([k for k, t in _active_work.items() if not t.done()]),
+    }
+
 
 async def get_pipeline_status(project_id: int) -> dict:
     """Structured pipeline status for dashboard display."""
@@ -640,6 +793,9 @@ async def _handle_scene_ready(data: dict):
 
 async def _handle_shot_generated(data: dict):
     """Log shot completion and update pipeline progress."""
+    global _last_successful_generation
+    _last_successful_generation = datetime.utcnow()
+
     shot_id = data.get("shot_id")
     project_id = data.get("project_id")
     engine = data.get("video_engine", "unknown")

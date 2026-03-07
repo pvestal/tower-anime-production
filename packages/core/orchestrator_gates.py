@@ -28,9 +28,21 @@ def _count_approved_from_file(slug: str) -> int:
 def _gate_training_data(slug: str, training_target: int) -> dict:
     """Check if character has enough approved images."""
     approved = _count_approved_from_file(slug)
+    if approved >= training_target:
+        return {
+            "passed": True,
+            "action_needed": False,
+            "approved": approved,
+            "target": training_target,
+            "deficit": 0,
+        }
+    # Need more images — but only flag action_needed if ComfyUI is online
+    comfyui_online = _check_comfyui_health()
     return {
-        "passed": approved >= training_target,
-        "action_needed": approved < training_target,
+        "passed": False,
+        "action_needed": approved < training_target and comfyui_online,
+        "blocked": not comfyui_online,
+        "blocked_reason": "ComfyUI offline" if not comfyui_online else None,
         "approved": approved,
         "target": training_target,
         "deficit": max(0, training_target - approved),

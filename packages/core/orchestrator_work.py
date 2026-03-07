@@ -28,6 +28,10 @@ from .audit import log_decision
 
 logger = logging.getLogger(__name__)
 
+# LoRA training cooldown: {slug: last_failure_timestamp}
+_lora_training_cooldowns: dict[str, float] = {}
+_LORA_COOLDOWN_SECONDS = 1800  # 30 minutes
+
 
 # ── Echo Brain Integration ─────────────────────────────────────────────
 
@@ -170,6 +174,12 @@ async def work_training_data(slug: str, project_id: int, gate_result: dict, trai
     """Generate images + trigger vision review for a character."""
     from .generation import generate_batch
     from .replenishment import _trigger_vision_review
+    from .orchestrator_gates import _check_comfyui_health
+
+    # Pre-flight: don't waste a tick if ComfyUI is down
+    if not _check_comfyui_health():
+        logger.warning(f"Orchestrator: ComfyUI offline, skipping generation for {slug}")
+        return
 
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -178,8 +188,13 @@ async def work_training_data(slug: str, project_id: int, gate_result: dict, trai
         )
 
     try:
-        await generate_batch(character_slug=slug, count=3)
-        logger.info(f"Orchestrator: generated 3 images for {slug}")
+        results = await generate_batch(character_slug=slug, count=3)
+        # Check if any images were actually produced
+        actual_images = sum(len(r.get("images", [])) for r in results)
+        if actual_images == 0:
+            logger.warning(f"Orchestrator: generate_batch returned 0 images for {slug} (ComfyUI may have rejected)")
+            return
+        logger.info(f"Orchestrator: generated {actual_images} images for {slug}")
     except Exception as e:
         logger.error(f"Orchestrator: generation failed for {slug}: {e}")
         return
@@ -199,8 +214,22 @@ async def work_training_data(slug: str, project_id: int, gate_result: dict, trai
 
 async def work_lora_training(slug: str, project_id: int, training_target: int):
     """Start LoRA training for a character."""
+    import time as _time_mod
     from packages.lora_training.training_router import start_training
     from packages.core.models import TrainingRequest
+
+    # Cooldown check: skip if training failed recently for this slug
+    last_fail = _lora_training_cooldowns.get(slug, 0)
+    if (_time_mod.time() - last_fail) < _LORA_COOLDOWN_SECONDS:
+        logger.debug(f"Orchestrator: LoRA training for {slug} in cooldown, skipping")
+        return
+
+    # Pre-check: verify enough approved images before attempting training
+    from .orchestrator_gates import _count_approved_from_file
+    approved = _count_approved_from_file(slug)
+    if approved < training_target:
+        logger.debug(f"Orchestrator: {slug} has {approved}/{training_target} approved images, skipping LoRA training")
+        return
 
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -224,6 +253,7 @@ async def work_lora_training(slug: str, project_id: int, training_target: int):
         logger.info(f"Orchestrator: started LoRA training for {char_name}: {result}")
     except Exception as e:
         logger.error(f"Orchestrator: LoRA training failed for {char_name}: {e}")
+        _lora_training_cooldowns[slug] = _time_mod.time()
 
     await log_decision(
         decision_type="orchestrator_lora_training",

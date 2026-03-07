@@ -38,6 +38,12 @@ async def get_status():
     }
 
 
+@router.get("/orchestrator/health")
+async def orchestrator_health():
+    """Watchdog health: last success time, queue depth, active tasks."""
+    return await orchestrator.get_orchestrator_health()
+
+
 @router.post("/orchestrator/toggle")
 async def toggle(req: ToggleRequest):
     """Enable or disable the orchestrator."""

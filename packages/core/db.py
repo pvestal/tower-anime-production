@@ -31,7 +31,9 @@ async def init_pool():
         user=DB_CONFIG["user"],
         password=DB_CONFIG["password"],
         min_size=2,
-        max_size=10,
+        max_size=20,
+        max_inactive_connection_lifetime=300,
+        timeout=10,
     )
     logger.info(f"DB pool created: {DB_CONFIG['database']}@{DB_CONFIG['host']}")
 
@@ -113,7 +115,7 @@ async def get_char_project_map() -> dict:
             SELECT c.name, p.id as project_id,
                    REGEXP_REPLACE(LOWER(REPLACE(c.name, ' ', '_')), '[^a-z0-9_-]', '', 'g') as slug,
                    c.design_prompt, c.appearance_data, p.name as project_name,
-                   p.default_style,
+                   p.default_style, p.content_rating,
                    gs.checkpoint_model, gs.cfg_scale, gs.steps,
                    gs.width, gs.height, gs.sampler, gs.scheduler,
                    gs.positive_prompt_template, gs.negative_prompt_template,
@@ -141,6 +143,7 @@ async def get_char_project_map() -> dict:
                     "design_prompt": row["design_prompt"],
                     "appearance_data": appearance,
                     "default_style": row["default_style"],
+                    "content_rating": row["content_rating"],
                     "checkpoint_model": row["checkpoint_model"],
                     "cfg_scale": float(row["cfg_scale"]) if row["cfg_scale"] else None,
                     "steps": row["steps"],
