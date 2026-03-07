@@ -254,7 +254,7 @@ async def get_user_projects(request: Request) -> list[int]:
         )
         rating_project_ids = {r["id"] for r in rows}
 
-        # Check for explicit access rows
+        # Per-user isolation: require explicit access rows
         if studio_user_id:
             access_rows = await conn.fetch(
                 "SELECT project_id FROM user_project_access WHERE user_id = $1",
@@ -263,6 +263,9 @@ async def get_user_projects(request: Request) -> list[int]:
             if access_rows:
                 explicit_ids = {r["project_id"] for r in access_rows}
                 rating_project_ids &= explicit_ids
+            elif user.get("role") != "admin":
+                # Non-admin with no access rows → no projects
+                rating_project_ids = set()
 
         await conn.close()
         return sorted(rating_project_ids)

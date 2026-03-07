@@ -4,8 +4,10 @@ import json
 import logging
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, StreamingResponse
+
+from packages.core.auth import get_user_projects
 
 from .engine import start_session, generate_scene
 from .director import (
@@ -24,8 +26,10 @@ router = APIRouter()
 
 
 @router.post("/sessions")
-async def create_session(req: StartSessionRequest):
+async def create_session(req: StartSessionRequest, allowed_projects: list[int] = Depends(get_user_projects)):
     """Start a new interactive visual novel session."""
+    if req.project_id not in allowed_projects:
+        raise HTTPException(status_code=403, detail="Access denied to this project")
     try:
         session, opening_scene = await start_session(req.project_id, req.character_slugs)
     except ValueError as e:

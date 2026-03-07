@@ -11,15 +11,35 @@ from pathlib import Path
 from typing import Optional
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse
+
+from packages.core.auth import get_user_projects
+from packages.core.db import connect_direct as _connect_direct
 
 from packages.core.config import BASE_PATH
 from packages.core.db import get_char_project_map
 from packages.core.models import MusicGenerateRequest
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+
+
+async def _audio_content_gate(request: Request, allowed_projects: list[int] = Depends(get_user_projects)):
+    """Block audio operations on projects the user can't access."""
+    project_name = request.path_params.get("project_name")
+    if not project_name:
+        return
+    conn = await _connect_direct()
+    try:
+        project_id = await conn.fetchval(
+            "SELECT id FROM projects WHERE name = $1", project_name)
+    finally:
+        await conn.close()
+    if project_id is not None and project_id not in allowed_projects:
+        raise HTTPException(status_code=403, detail="Access denied to this project")
+
+
+router = APIRouter(dependencies=[Depends(_audio_content_gate)])
 
 ACE_STEP_URL = "http://localhost:8440"
 MUSIC_CACHE = BASE_PATH / "output" / "music_cache"

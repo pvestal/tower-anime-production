@@ -8,8 +8,10 @@ import json
 import logging
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
+
+from packages.core.auth import get_user_projects
 
 from packages.core.config import BASE_PATH
 from packages.core.db import connect_direct, get_char_project_map
@@ -31,7 +33,39 @@ from packages.voice_pipeline.synthesis import (
 from .voice_samples import router as samples_router
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+
+
+async def _voice_content_gate(request: Request, allowed_projects: list[int] = Depends(get_user_projects)):
+    """Block voice operations on scenes/shots/episodes the user can't access."""
+    scene_id = request.path_params.get("scene_id")
+    shot_id = request.path_params.get("shot_id")
+    episode_id = request.path_params.get("episode_id")
+    if not (scene_id or shot_id or episode_id):
+        return
+    conn = await connect_direct()
+    try:
+        project_id = None
+        if scene_id:
+            import uuid
+            project_id = await conn.fetchval(
+                "SELECT project_id FROM scenes WHERE id = $1", uuid.UUID(scene_id))
+        elif shot_id:
+            import uuid
+            project_id = await conn.fetchval("""
+                SELECT sc.project_id FROM shots sh
+                JOIN scenes sc ON sh.scene_id = sc.id
+                WHERE sh.id = $1""", uuid.UUID(shot_id))
+        elif episode_id:
+            import uuid
+            project_id = await conn.fetchval(
+                "SELECT project_id FROM episodes WHERE id = $1", uuid.UUID(episode_id))
+    finally:
+        await conn.close()
+    if project_id is not None and project_id not in allowed_projects:
+        raise HTTPException(status_code=403, detail="Access denied to this project")
+
+
+router = APIRouter(dependencies=[Depends(_voice_content_gate)])
 router.include_router(samples_router)
 
 VOICE_BASE = BASE_PATH.parent

@@ -6,10 +6,12 @@ import shutil
 from math import ceil
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse
 
 from packages.core.config import BASE_PATH, COMFYUI_URL, COMFYUI_INPUT_DIR, COMFYUI_OUTPUT_DIR
 from packages.core.db import get_char_project_map
+from packages.core.auth import get_user_projects
 from packages.core.models import FramePackRequest
 
 logger = logging.getLogger(__name__)
@@ -302,12 +304,14 @@ def calc_framepack_sections(seconds: float, latent_window_size: int, use_f1: boo
 
 
 @router.post("/generate/framepack")
-async def generate_framepack(body: FramePackRequest):
+async def generate_framepack(body: FramePackRequest, allowed_projects: list[int] = Depends(get_user_projects)):
     """Generate a FramePack I2V video for a character."""
     char_map = await get_char_project_map()
     db_info = char_map.get(body.character_slug)
     if not db_info:
         raise HTTPException(status_code=404, detail=f"Character '{body.character_slug}' not found")
+    if db_info.get("project_id") not in allowed_projects:
+        raise HTTPException(status_code=403, detail="Access denied to this project")
 
     prompt = body.prompt_override or db_info.get("design_prompt", "")
     if not prompt:

@@ -35,10 +35,48 @@ from .framepack import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
-
 # Concurrency guard: only one scene generation at a time (GPU constraint)
 _scene_gen_semaphore = asyncio.Semaphore(1)
+
+
+async def _scene_content_gate(request: Request, allowed_projects: list[int] = Depends(get_user_projects)):
+    """Router-level dependency: block access to scenes/projects the user can't access.
+
+    Checks:
+    1. {scene_id} path param → look up project from scenes table
+    2. project_id query param → direct check (for /scenes?project_id=X, /scenes/generate-from-story)
+    """
+    scene_id = request.path_params.get("scene_id")
+    if scene_id:
+        try:
+            sid = uuid.UUID(scene_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid scene_id")
+        conn = await connect_direct()
+        try:
+            project_id = await conn.fetchval(
+                "SELECT project_id FROM scenes WHERE id = $1", sid
+            )
+        finally:
+            await conn.close()
+        if project_id is None:
+            raise HTTPException(status_code=404, detail="Scene not found")
+        if project_id not in allowed_projects:
+            raise HTTPException(status_code=403, detail="Access denied to this project")
+        return
+
+    # Check project_id from query params (GET /scenes?project_id=X, POST /scenes/generate-from-story?project_id=X)
+    project_id_str = request.query_params.get("project_id")
+    if project_id_str:
+        try:
+            pid = int(project_id_str)
+        except ValueError:
+            return
+        if pid not in allowed_projects:
+            raise HTTPException(status_code=403, detail="Access denied to this project")
+
+
+router = APIRouter(dependencies=[Depends(_scene_content_gate)])
 
 
 @router.get("/scenes")

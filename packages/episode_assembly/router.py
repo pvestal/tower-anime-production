@@ -20,7 +20,30 @@ from packages.scene_generation.scene_audio import _auto_generate_scene_music, ov
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+
+async def _episode_content_gate(request: Request, allowed_projects: list[int] = Depends(get_user_projects)):
+    """Router-level dependency: block access to episodes in projects above user's rating."""
+    episode_id = request.path_params.get("episode_id")
+    if not episode_id:
+        return
+    try:
+        eid = uuid.UUID(episode_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid episode_id")
+    conn = await connect_direct()
+    try:
+        project_id = await conn.fetchval(
+            "SELECT project_id FROM episodes WHERE id = $1", eid
+        )
+    finally:
+        await conn.close()
+    if project_id is None:
+        raise HTTPException(status_code=404, detail="Episode not found")
+    if project_id not in allowed_projects:
+        raise HTTPException(status_code=403, detail="Access denied to this project")
+
+
+router = APIRouter(dependencies=[Depends(_episode_content_gate)])
 
 # Mood keywords for deriving episode mood from story_arc text
 _MOOD_KEYWORDS = {

@@ -3,16 +3,33 @@
 import logging
 import uuid
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from packages.core.db import connect_direct
+from packages.core.auth import get_user_projects
 from packages.core.events import event_bus, STATE_INITIALIZED, STATE_UPDATED, STATE_PROPAGATED
 from .engine import narrative_engine
 from .models import CharacterStateUpdate
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+async def _narrative_content_gate(request: Request, allowed_projects: list[int] = Depends(get_user_projects)):
+    """Block narrative state access for scenes the user can't access."""
+    scene_id = request.path_params.get("scene_id")
+    if not scene_id:
+        return
+    sid = uuid.UUID(scene_id)
+    conn = await connect_direct()
+    try:
+        project_id = await conn.fetchval(
+            "SELECT project_id FROM scenes WHERE id = $1", sid)
+    finally:
+        await conn.close()
+    if project_id is not None and project_id not in allowed_projects:
+        raise HTTPException(status_code=403, detail="Access denied to this project")
+
+
+router = APIRouter(dependencies=[Depends(_narrative_content_gate)])
 
 
 @router.get("/state/{scene_id}")
