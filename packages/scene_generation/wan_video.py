@@ -587,6 +587,24 @@ def build_wan22_14b_i2v_workflow(
         else:
             logger.warning("lightx2v LoRA not found, running without acceleration")
 
+    # --- DR34ML4Y I2V LoRA (applied to low noise model for anime style preservation) ---
+
+    from pathlib import Path as _P
+    _dr34mlay_path = _P("/opt/ComfyUI/models/loras/DR34ML4Y_I2V_14B_LOW_V2.safetensors")
+    if _dr34mlay_path.exists():
+        dr34mlay_node = str(nid)
+        workflow[dr34mlay_node] = {
+            "class_type": "LoraLoaderModelOnly",
+            "inputs": {
+                "model": [low_model_node, low_model_slot],
+                "lora_name": "DR34ML4Y_I2V_14B_LOW_V2.safetensors",
+                "strength_model": 0.6,
+            },
+        }
+        low_model_node, low_model_slot = dr34mlay_node, 0
+        nid += 1
+        logger.info("Wan22 14B: DR34ML4Y anime style LoRA applied to low noise model @ 0.6")
+
     # --- Optional: motion/camera LoRA (applied to high noise model only) ---
 
     if motion_lora:
@@ -1078,4 +1096,59 @@ async def generate_wan22_14b_video(
         "seconds": round(seconds, 1),
         "resolution": f"{width}x{height}",
         "prefix": prefix,
+    }
+
+
+@router.post("/generate/wan22-14b/roll-forward")
+async def generate_wan22_14b_roll_forward(
+    prompt: str,
+    ref_image: str,
+    target_seconds: float = 15.0,
+    segment_seconds: float = 5.0,
+    crossfade_seconds: float = 0.3,
+    width: int = 480,
+    height: int = 720,
+    fps: int = 16,
+    steps: int = 4,
+    seed: int | None = None,
+    use_lightx2v: bool = True,
+    motion_lora: str | None = None,
+    motion_lora_strength: float = 0.8,
+):
+    """Generate a long WAN 2.2 14B video by chaining segments (Pattern C).
+
+    Generates multiple 5s clips, extracts last frame from each to seed the next,
+    then crossfade-stitches them into one continuous video.
+    """
+    ready, msg = check_wan22_14b_ready()
+    if not ready:
+        raise HTTPException(status_code=503, detail=msg)
+
+    from .builder import roll_forward_wan_shot
+
+    result = await roll_forward_wan_shot(
+        prompt_text=prompt,
+        ref_image=ref_image,
+        target_seconds=target_seconds,
+        segment_seconds=segment_seconds,
+        crossfade_seconds=crossfade_seconds,
+        width=width, height=height,
+        fps=fps, steps=steps, seed=seed,
+        output_prefix=f"rollforward_{int(__import__('time').time())}",
+        use_lightx2v=use_lightx2v,
+        motion_lora=motion_lora,
+        motion_lora_strength=motion_lora_strength,
+    )
+
+    if not result["video_path"]:
+        raise HTTPException(status_code=500, detail="Roll-forward failed — no segments completed")
+
+    return {
+        "engine": "wan22-14b-roll-forward",
+        "video_path": result["video_path"],
+        "last_frame": result["last_frame"],
+        "segments": result["segment_count"],
+        "total_duration": round(result["total_duration"], 1),
+        "target_seconds": target_seconds,
+        "resolution": f"{width}x{height}",
     }

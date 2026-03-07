@@ -588,11 +588,32 @@ async def poll_comfyui_completion(prompt_id: str, timeout_seconds: int = 1800) -
     import urllib.request
     import time as _time
     start = _time.time()
+    _not_found_count = 0
     while (_time.time() - start) < timeout_seconds:
         try:
             req = urllib.request.Request(f"{COMFYUI_URL}/history/{prompt_id}")
             resp = urllib.request.urlopen(req, timeout=10)
             history = json.loads(resp.read())
+            if prompt_id not in history:
+                _not_found_count += 1
+                # If prompt not found after 2 minutes (24 polls × 5s), it's gone
+                # (ComfyUI was restarted or prompt was never accepted)
+                if _not_found_count >= 24:
+                    # Also check queue — if it's not running or pending, it's truly lost
+                    try:
+                        _q_req = urllib.request.Request(f"{COMFYUI_URL}/queue")
+                        _q_resp = urllib.request.urlopen(_q_req, timeout=5)
+                        _q_data = json.loads(_q_resp.read())
+                        _running_ids = [r[1] for r in _q_data.get("queue_running", []) if len(r) > 1]
+                        _pending_ids = [r[1] for r in _q_data.get("queue_pending", []) if len(r) > 1]
+                        if prompt_id not in _running_ids and prompt_id not in _pending_ids:
+                            logger.error(f"poll_comfyui: prompt {prompt_id} not in history/queue after {_not_found_count} checks — lost")
+                            return {"status": "error", "output_files": [], "error": "Prompt lost (not in ComfyUI history or queue)"}
+                    except Exception:
+                        pass
+                await asyncio.sleep(5)
+                continue
+            _not_found_count = 0  # Reset on found
             if prompt_id in history:
                 entry = history[prompt_id]
                 # Check execution status
@@ -1198,6 +1219,124 @@ async def _save_continuity_frame(
          scene_number, shot_number)
 
 
+async def roll_forward_wan_shot(
+    prompt_text: str,
+    ref_image: str,
+    target_seconds: float,
+    negative_text: str = "low quality, blurry, distorted, watermark, text, ugly",
+    segment_seconds: float = 5.0,
+    crossfade_seconds: float = 0.3,
+    width: int = 480,
+    height: int = 720,
+    fps: int = 16,
+    steps: int = 4,
+    seed: int | None = None,
+    output_prefix: str = "rollforward",
+    use_lightx2v: bool = True,
+    motion_lora: str | None = None,
+    motion_lora_strength: float = 0.8,
+) -> dict:
+    """Generate a long WAN 2.2 14B video by chaining multiple I2V segments.
+
+    Pattern C: generate 5s clip → extract last frame → generate next 5s clip →
+    crossfade stitch all segments into one continuous video.
+
+    Returns dict with keys: video_path, last_frame, segment_count, total_duration.
+    """
+    import random as _random
+    import time as _time
+
+    if seed is None:
+        seed = _random.randint(0, 2**63 - 1)
+
+    num_segments = max(1, int(target_seconds / segment_seconds + 0.5))
+    logger.info(
+        f"Roll-forward: {target_seconds}s target → {num_segments} segments × "
+        f"{segment_seconds}s, crossfade={crossfade_seconds}s"
+    )
+
+    num_frames_per_seg = max(9, int(segment_seconds * fps) + 1)
+    current_source = ref_image
+    segment_paths = []
+
+    for seg_idx in range(num_segments):
+        seg_prefix = f"{output_prefix}_seg{seg_idx:02d}"
+        seg_seed = seed + seg_idx
+
+        workflow, prefix = build_wan22_14b_i2v_workflow(
+            prompt_text=prompt_text,
+            ref_image=current_source,
+            width=width, height=height,
+            num_frames=num_frames_per_seg, fps=fps,
+            total_steps=steps,
+            seed=seg_seed,
+            negative_text=negative_text,
+            output_prefix=seg_prefix,
+            use_lightx2v=use_lightx2v,
+            motion_lora=motion_lora,
+            motion_lora_strength=motion_lora_strength,
+        )
+
+        logger.info(
+            f"Roll-forward seg {seg_idx+1}/{num_segments}: "
+            f"source={current_source} seed={seg_seed}"
+        )
+
+        comfyui_prompt_id = _submit_wan_workflow(workflow)
+        result = await poll_comfyui_completion(comfyui_prompt_id)
+
+        if result["status"] != "completed" or not result["output_files"]:
+            logger.error(
+                f"Roll-forward seg {seg_idx+1} failed: {result.get('error', result['status'])}"
+            )
+            break
+
+        seg_video = str(COMFYUI_OUTPUT_DIR / result["output_files"][0])
+        segment_paths.append(seg_video)
+        logger.info(f"Roll-forward seg {seg_idx+1} done: {Path(seg_video).name}")
+
+        # Extract last frame for next segment's source
+        last_frame_path = await extract_last_frame(seg_video)
+
+        # Copy last frame to ComfyUI input dir for next I2V pass
+        dest = str(COMFYUI_INPUT_DIR / Path(last_frame_path).name)
+        shutil.copy2(last_frame_path, dest)
+        current_source = Path(last_frame_path).name
+
+    if not segment_paths:
+        return {"video_path": None, "last_frame": None, "segment_count": 0, "total_duration": 0}
+
+    # Single segment — no concat needed
+    if len(segment_paths) == 1:
+        lf = await extract_last_frame(segment_paths[0])
+        dur = await _probe_duration(segment_paths[0])
+        return {
+            "video_path": segment_paths[0],
+            "last_frame": lf,
+            "segment_count": 1,
+            "total_duration": dur,
+        }
+
+    # Crossfade stitch all segments
+    stitched_path = str(COMFYUI_OUTPUT_DIR / f"{output_prefix}_stitched.mp4")
+    transitions = [{"type": "dissolve", "duration": crossfade_seconds}] * (len(segment_paths) - 1)
+    await concat_videos(segment_paths, stitched_path, transitions)
+
+    lf = await extract_last_frame(stitched_path)
+    dur = await _probe_duration(stitched_path)
+    logger.info(
+        f"Roll-forward complete: {len(segment_paths)} segments → "
+        f"{dur:.1f}s final video at {stitched_path}"
+    )
+
+    return {
+        "video_path": stitched_path,
+        "last_frame": lf,
+        "segment_count": len(segment_paths),
+        "total_duration": dur,
+    }
+
+
 async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
     """Inner implementation — do not call directly, use generate_scene().
 
@@ -1787,9 +1926,44 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                             # Priority 3: fall back to auto-assigned source image
                             source_path = shot_dict.get("source_image_path")
                             if not source_path:
-                                if shot_engine == "wan22":
-                                    # Wan 2.2: graceful fallback to T2V mode (no ref image)
-                                    logger.info(f"Shot {shot_id}: Wan22 no source image → T2V fallback")
+                                if shot_engine in ("wan22", "ltx", "ltx_long"):
+                                    # Engines that support T2V: graceful fallback (no ref image)
+                                    logger.info(f"Shot {shot_id}: {shot_engine} no source image → T2V fallback")
+                                elif shot_engine == "wan22_14b":
+                                    # 14B is I2V only — generate a keyframe on the fly
+                                    logger.warning(f"Shot {shot_id}: wan22_14b needs source image, generating keyframe")
+                                    try:
+                                        from .composite_image import generate_simple_keyframe
+                                        _ckpt = "waiIllustriousSDXL_v160.safetensors"
+                                        try:
+                                            _sr = await conn.fetchrow(
+                                                "SELECT gs.checkpoint_model FROM projects p "
+                                                "JOIN generation_styles gs ON p.default_style = gs.style_name "
+                                                "WHERE p.id = $1", project_id)
+                                            if _sr and _sr["checkpoint_model"]:
+                                                _ckpt = _sr["checkpoint_model"]
+                                                if not _ckpt.endswith(".safetensors"):
+                                                    _ckpt += ".safetensors"
+                                        except Exception:
+                                            pass
+                                        _kf = await generate_simple_keyframe(
+                                            conn, project_id, char_list or [],
+                                            motion_prompt or "", _ckpt,
+                                        )
+                                        if _kf and _kf.exists():
+                                            source_path = str(_kf)
+                                            await conn.execute(
+                                                "UPDATE shots SET source_image_path = $2 WHERE id = $1",
+                                                shot_id, source_path)
+                                            logger.info(f"Shot {shot_id}: keyframe generated → {_kf.name}")
+                                        else:
+                                            raise RuntimeError("keyframe generation returned no output")
+                                    except Exception as _kf_err:
+                                        logger.error(f"Shot {shot_id}: keyframe fallback failed: {_kf_err}")
+                                        await conn.execute(
+                                            "UPDATE shots SET status = 'failed', error_message = $2 WHERE id = $1",
+                                            shot_id, f"No source image and keyframe generation failed: {_kf_err}")
+                                        continue
                                 else:
                                     logger.error(f"Shot {shot_id}: no source image and no continuity frame available")
                                     await conn.execute(
@@ -1984,6 +2158,67 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                     # Get motion LoRA from engine selector
                     _14b_motion_lora = engine_sel.motion_loras[0] if engine_sel.motion_loras else None
                     _14b_motion_str = 0.8
+                    _WAN_SEGMENT_SECONDS = 5.0
+                    if shot_seconds > _WAN_SEGMENT_SECONDS:
+                        # Pattern C: roll-forward for long shots
+                        logger.info(
+                            f"Shot {shot_id}: Wan22-14B ROLL-FORWARD {shot_seconds}s "
+                            f"({int(shot_seconds / _WAN_SEGMENT_SECONDS + 0.5)} segments) "
+                            f"dims={wan_w}x{wan_h} ref={image_filename}"
+                        )
+                        rf_result = await roll_forward_wan_shot(
+                            prompt_text=current_prompt,
+                            ref_image=image_filename,
+                            target_seconds=shot_seconds,
+                            negative_text=current_negative,
+                            segment_seconds=_WAN_SEGMENT_SECONDS,
+                            crossfade_seconds=0.3,
+                            width=wan_w, height=wan_h,
+                            fps=fps, steps=shot_steps, seed=shot_seed,
+                            output_prefix=_file_prefix,
+                            use_lightx2v=True,
+                            motion_lora=_14b_motion_lora,
+                            motion_lora_strength=_14b_motion_str,
+                        )
+                        if rf_result["video_path"]:
+                            # Skip normal ComfyUI poll — roll-forward handles it internally
+                            video_path = rf_result["video_path"]
+                            last_frame = rf_result["last_frame"]
+                            gen_time = _time_inner.time() - attempt_start
+                            logger.info(
+                                f"Shot {shot_id}: roll-forward done, "
+                                f"{rf_result['segment_count']} segs, "
+                                f"{rf_result['total_duration']:.1f}s"
+                            )
+                            # Jump past the normal poll/output block
+                            completed_count += 1
+                            completed_videos.append(video_path)
+                            prev_last_frame = last_frame
+                            prev_character = character_slug
+                            _review = 'approved' if auto_approve else 'pending_review'
+                            await conn.execute("""
+                                UPDATE shots SET status = 'completed', output_video_path = $2,
+                                       last_frame_path = $3, generation_time_seconds = $4,
+                                       review_status = $5
+                                WHERE id = $1
+                            """, shot_id, video_path, last_frame, gen_time, _review)
+                            if character_slug and last_frame and project_id:
+                                try:
+                                    await _save_continuity_frame(
+                                        conn, project_id, character_slug,
+                                        scene_id, shot_id, last_frame,
+                                        scene_number=scene_number,
+                                        shot_number=shot_dict.get("shot_number"),
+                                    )
+                                except Exception as e:
+                                    logger.warning(f"Shot {shot_id}: continuity save failed: {e}")
+                            continue
+                        else:
+                            await conn.execute(
+                                "UPDATE shots SET status = 'failed', error_message = $2 WHERE id = $1",
+                                shot_id, "Roll-forward failed — no segments completed",
+                            )
+                            continue
                     logger.info(
                         f"Shot {shot_id}: Wan22-14B I2V dims={wan_w}x{wan_h} "
                         f"ref_image={image_filename} motion_lora={_14b_motion_lora} "
@@ -2088,13 +2323,17 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                 elif shot_engine == "ltx":
                     fps = 24
                     num_frames = max(9, int(shot_seconds * fps) + 1)
+                    # Use LoRA from engine selector (e.g. rina_suzuki_ltx.safetensors)
+                    _ltx_lora = engine_sel.lora_name
+                    _ltx_lora_str = engine_sel.lora_strength
+                    logger.info(f"Shot {shot_id}: LTX lora={_ltx_lora} strength={_ltx_lora_str}")
                     workflow, prefix = build_ltx_workflow(
                         prompt_text=current_prompt,
                         image_path=image_filename if image_filename else None,
                         num_frames=num_frames, fps=fps, steps=shot_steps,
                         seed=shot_seed,
-                        lora_name=shot_dict.get("lora_name"),
-                        lora_strength=shot_dict.get("lora_strength", 0.8),
+                        lora_name=_ltx_lora,
+                        lora_strength=_ltx_lora_str,
                     )
                     comfyui_prompt_id = _submit_ltx_workflow(workflow)
                 else:
