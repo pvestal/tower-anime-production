@@ -275,13 +275,27 @@ def interpolate_video_ffmpeg(input_path: str, output_path: str, target_fps: int 
     return True
 
 
-def apply_color_grade(input_path: str, output_path: str, lut_path: str | None = None) -> bool:
-    """Apply color grading via ffmpeg. Uses .cube LUT if provided, else default anime enhance."""
+def apply_color_grade(input_path: str, output_path: str, lut_path: str | None = None, style: str = "anime") -> bool:
+    """Apply color grading via ffmpeg. Uses .cube LUT if provided, else style-aware enhance.
+
+    Args:
+        style: "anime" (saturated + contrast), "photorealistic" (subtle film look),
+               "anthro" (moderate saturation), or "none" (skip grading).
+    """
+    if style == "none":
+        return False
     filters = []
     if lut_path and Path(lut_path).exists():
         filters.append(f"lut3d={lut_path}")
+    elif style == "photorealistic":
+        # Subtle film-like grade — don't oversaturate live-action style
+        filters.append("eq=saturation=1.05:contrast=1.03")
+    elif style == "anthro":
+        # Moderate boost — anthro/furry benefits from rich color but not anime-level
+        filters.append("curves=preset=increase_contrast")
+        filters.append("eq=saturation=1.08:contrast=1.03")
     else:
-        # Default anime enhancement: slight contrast boost + saturation
+        # Default anime enhancement: contrast boost + saturation
         filters.append("curves=preset=increase_contrast")
         filters.append("eq=saturation=1.15:contrast=1.05")
 
@@ -317,6 +331,7 @@ async def postprocess_wan_video(
     target_fps: int = 30,
     lut_path: str | None = None,
     use_gpu: bool = True,
+    color_style: str = "anime",
 ) -> str | None:
     """Full post-processing pipeline for video output.
 
@@ -352,7 +367,7 @@ async def postprocess_wan_video(
                 # Apply color grading on top (always ffmpeg, fast)
                 if color_grade:
                     graded = str(Path(output_dir) / f"{stem}_final.mp4")
-                    if apply_color_grade(current, graded, lut_path):
+                    if apply_color_grade(current, graded, lut_path, style=color_style):
                         current = graded
                 # Clean up intermediate pp_ file
                 try:
@@ -382,7 +397,7 @@ async def postprocess_wan_video(
 
     if color_grade:
         graded = str(Path(output_dir) / f"{stem}_final.mp4")
-        if apply_color_grade(current, graded, lut_path):
+        if apply_color_grade(current, graded, lut_path, style=color_style):
             intermediates.append(current)
             current = graded
 

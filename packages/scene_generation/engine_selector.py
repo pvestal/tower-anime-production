@@ -166,23 +166,58 @@ class EngineSelection:
 
 
 def _find_video_lora(character_slug: str) -> tuple[str | None, str | None]:
-    """Check if a character has a LoRA file on disk.
+    """Check if a character has a video-compatible LoRA file on disk.
 
-    Searches for both LTX LoRAs ({slug}_lora.safetensors) and
-    FramePack LoRAs ({slug}_framepack.safetensors).
+    Searches multiple naming patterns and validates architecture by inspecting
+    safetensors keys. Only returns LoRAs compatible with video engines
+    (FramePack kohya format or LTX diffusion_transformer format).
 
     Returns (filename, architecture) where architecture is "ltx" or "framepack",
     or (None, None) if not found.
     """
-    # FramePack LoRA (HunyuanVideo architecture) — preferred for V2V
-    fp_path = LORA_DIR / f"{character_slug}_framepack.safetensors"
-    if fp_path.exists():
-        return fp_path.name, "framepack"
-    # LTX LoRA (SD-format)
-    ltx_path = LORA_DIR / f"{character_slug}_lora.safetensors"
-    if ltx_path.exists():
-        return ltx_path.name, "ltx"
+    # Exact patterns first (fastest)
+    exact_patterns = [
+        (f"{character_slug}_framepack.safetensors", "framepack"),
+        (f"{character_slug}_lora.safetensors", "ltx"),
+        (f"{character_slug}_ltx.safetensors", "ltx"),
+    ]
+    for filename, arch in exact_patterns:
+        if (LORA_DIR / filename).exists():
+            return filename, arch
+
+    # Glob patterns for less conventional naming
+    for match in LORA_DIR.glob(f"{character_slug}_*.safetensors"):
+        arch = _detect_lora_arch(match)
+        if arch:
+            return match.name, arch
+
+    # Also check {slug}_framepack_lora pattern (e.g. goblin_slayer_framepack_lora)
+    fp_lora_path = LORA_DIR / f"{character_slug}_framepack_lora.safetensors"
+    if fp_lora_path.exists():
+        return fp_lora_path.name, "framepack"
+
     return None, None
+
+
+def _detect_lora_arch(path: Path) -> str | None:
+    """Detect if a LoRA is video-compatible by inspecting safetensors keys.
+
+    Returns "framepack" or "ltx" for video LoRAs, None for image-only LoRAs.
+    """
+    try:
+        from safetensors import safe_open
+        with safe_open(str(path), framework="pt") as sf:
+            keys = list(sf.keys())
+            if not keys:
+                return None
+            k0 = keys[0]
+            if k0.startswith("lora_unet_"):
+                return "framepack"
+            if "diffusion_model." in k0 or "transformer_blocks." in k0:
+                return "ltx"
+    except Exception as e:
+        logger.debug(f"Could not inspect LoRA {path.name}: {e}")
+    return None
 
 
 def _pick_best_lora(characters: list[str]) -> tuple[str | None, str | None, str | None]:

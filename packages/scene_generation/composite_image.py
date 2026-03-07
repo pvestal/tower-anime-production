@@ -447,38 +447,53 @@ async def generate_simple_keyframe(
     Returns:
         Path to generated keyframe image, or None on failure.
     """
-    if not characters:
-        return None
+    # Environment-only shots (no characters) — pure scenery/landscape generation
+    is_environment = not characters
 
-    # Build character descriptions (kept SHORT — scene prompt drives composition)
+    # Build character descriptions — use design_prompt when no LoRA exists
     char_names = []
+    char_design_prompts = []
     primary_lora = None
-    for slug in characters[:2]:
-        row = await conn.fetchrow(
-            "SELECT name, design_prompt, lora_path FROM characters "
-            "WHERE REGEXP_REPLACE(LOWER(REPLACE(name, ' ', '_')), '[^a-z0-9_-]', '', 'g') = $1 "
-            "AND project_id = $2",
-            slug, project_id,
-        )
-        if row:
-            char_names.append(row["name"])
-            if not primary_lora and row["lora_path"]:
-                primary_lora = row["lora_path"]
+    if not is_environment:
+        for slug in characters[:2]:
+            row = await conn.fetchrow(
+                "SELECT name, design_prompt, lora_path FROM characters "
+                "WHERE project_id = $2 AND ("
+                "  REGEXP_REPLACE(LOWER(REPLACE(name, ' ', '_')), '[^a-z0-9_-]', '', 'g') = $1 "
+                "  OR REGEXP_REPLACE(LOWER(REPLACE(name, ' ', '_')), '[^a-z0-9_-]', '', 'g') LIKE $1 || '_%'"
+                ")",
+                slug, project_id,
+            )
+            if row:
+                char_names.append(row["name"])
+                if row["design_prompt"]:
+                    char_design_prompts.append(row["design_prompt"])
+                if not primary_lora and row["lora_path"]:
+                    primary_lora = row["lora_path"]
 
-    if not char_names:
-        # Characters not in DB (extras like "villagers", "corporate_security")
-        # Use slug as display name — the scene_prompt already has full descriptions
-        char_names = [slug.replace("_", " ").title() for slug in characters[:2]]
-        logger.info(f"generate_simple_keyframe: using slug names for {characters[:2]} (not in DB)")
+        if not char_names:
+            # Characters not in DB (extras like "villagers", "corporate_security")
+            # Use slug as display name — the scene_prompt already has full descriptions
+            char_names = [slug.replace("_", " ").title() for slug in characters[:2]]
+            logger.info(f"generate_simple_keyframe: using slug names for {characters[:2]} (not in DB)")
 
     # Shot-type composition prefixes — tells the model WHAT to draw
-    composition_prefix = {
-        "establishing": "wide establishing shot, full environment, distant figures, cityscape, panoramic view",
-        "wide": "wide shot, full body visible, environment context, dynamic scene",
-        "medium": "medium shot, waist-up, character interacting with environment",
-        "close-up": "close-up shot, face and upper body, intense expression, dramatic lighting",
-        "action": "dynamic action pose, motion blur, dramatic angle, combat scene, intense movement",
-    }.get(shot_type, "medium shot")
+    if is_environment:
+        composition_prefix = {
+            "establishing": "wide establishing shot, sweeping landscape, panoramic vista, cinematic environment, no people",
+            "wide": "wide landscape shot, scenic vista, environmental storytelling, no humans",
+            "medium": "medium environmental shot, architectural detail, atmosphere, no people",
+            "close-up": "close-up detail shot, texture, material detail, macro environment",
+            "action": "dynamic environment, weather, motion in nature, time-lapse feel",
+        }.get(shot_type, "scenic environment shot, no humans")
+    else:
+        composition_prefix = {
+            "establishing": "wide establishing shot, full environment, distant figures, cityscape, panoramic view",
+            "wide": "wide shot, full body visible, environment context, dynamic scene",
+            "medium": "medium shot, waist-up, character interacting with environment",
+            "close-up": "close-up shot, face and upper body, intense expression, dramatic lighting",
+            "action": "dynamic action pose, motion blur, dramatic angle, combat scene, intense movement",
+        }.get(shot_type, "medium shot")
 
     # Camera angle modifiers
     angle_modifier = {
@@ -489,36 +504,73 @@ async def generate_simple_keyframe(
         "eye-level": "",
     }.get(camera_angle, "")
 
-    # Build prompt: COMPOSITION first, then SCENE ACTION, then character name (not full description)
-    # LoRA handles character appearance — prompt should drive the scene
+    # Build prompt: COMPOSITION first, then SCENE ACTION, then character info
     parts = [composition_prefix]
     if angle_modifier:
         parts.append(angle_modifier)
     parts.append(scene_prompt)
-    # Only add character names (not full design_prompt) — LoRA provides appearance
-    if len(char_names) > 1:
-        parts.append(f"{' and '.join(char_names)}")
+
+    if is_environment:
+        logger.info(f"generate_simple_keyframe: environment-only shot (no characters)")
+    elif primary_lora:
+        # LoRA handles character appearance — name is enough
+        if len(char_names) > 1:
+            parts.append(f"{' and '.join(char_names)}")
+        else:
+            parts.append(char_names[0])
+    elif char_design_prompts:
+        parts.append(char_design_prompts[0])
+        logger.info(f"generate_simple_keyframe: no LoRA — using design_prompt for {char_names[0]}")
     else:
-        parts.append(char_names[0])
-    parts.append("anime style, detailed, cinematic lighting, masterpiece, best quality")
+        if len(char_names) > 1:
+            parts.append(f"{' and '.join(char_names)}")
+        else:
+            parts.append(char_names[0])
+    # Fetch project generation style (resolution + prompt templates)
+    style_row = None
+    if project_id:
+        try:
+            style_row = await conn.fetchrow(
+                """SELECT gs.width, gs.height, gs.positive_prompt_template, gs.negative_prompt_template
+                   FROM projects p
+                   JOIN generation_styles gs ON p.default_style = gs.style_name
+                   WHERE p.id = $1""", project_id)
+        except Exception:
+            pass
+
+    # Use project style template if available, else generic anime
+    if style_row and style_row["positive_prompt_template"]:
+        parts.append(style_row["positive_prompt_template"])
+    else:
+        parts.append("anime style, detailed, cinematic lighting, masterpiece, best quality")
 
     full_prompt = ", ".join(parts)
 
-    # Stronger negative for establishing/wide to prevent portrait mode
-    negative_parts = ["worst quality, low quality, blurry, deformed, extra limbs, bad anatomy, watermark, text"]
-    if shot_type in ("establishing", "wide"):
-        negative_parts.append("portrait, headshot, close-up face, bust shot, white background, simple background")
+    # Use project negative template if available, else generic
+    if style_row and style_row["negative_prompt_template"]:
+        negative_parts = [style_row["negative_prompt_template"]]
+    else:
+        negative_parts = ["worst quality, low quality, blurry, deformed, extra limbs, bad anatomy, watermark, text"]
+    if is_environment:
+        negative_parts.append("person, people, human, character, face, hands, portrait, figure")
+    elif shot_type in ("establishing", "wide"):
+        negative_parts.append("portrait, headshot, close-up face, bust shot")
     elif shot_type == "action":
         negative_parts.append("static pose, standing still, portrait, peaceful, calm")
 
     negative = ", ".join(negative_parts)
 
-    # Resolution based on shot type — landscape for establishing/wide, portrait for rest
-    # Illustrious SDXL native resolution
-    if shot_type in ("establishing", "wide"):
-        kf_width, kf_height = 1216, 832   # landscape
+    if style_row and style_row["width"] and style_row["height"]:
+        base_w, base_h = style_row["width"], style_row["height"]
+        if is_environment or shot_type in ("establishing", "wide"):
+            kf_width, kf_height = base_h, base_w  # swap for landscape
+        else:
+            kf_width, kf_height = base_w, base_h
     else:
-        kf_width, kf_height = 832, 1216   # portrait
+        if is_environment or shot_type in ("establishing", "wide"):
+            kf_width, kf_height = 1216, 832   # landscape
+        else:
+            kf_width, kf_height = 832, 1216   # portrait
 
     # LoRA strength — OFF for establishing (env matters), low for wide, normal for close-up
     lora_strength = {
@@ -531,7 +583,10 @@ async def generate_simple_keyframe(
 
     # Build a simple txt2img workflow with optional LoRA
     ts = int(time.time())
-    prefix = f"keyframe_{'_'.join(characters[:2])}_{ts}"
+    if is_environment:
+        prefix = f"keyframe_env_{ts}"
+    else:
+        prefix = f"keyframe_{'_'.join(characters[:2])}_{ts}"
 
     workflow = {
         "3": {

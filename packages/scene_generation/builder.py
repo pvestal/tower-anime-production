@@ -1674,8 +1674,12 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                             style_anchor = "photorealistic, live action film, cinematic lighting"
                         elif "cartoon" in ckpt or "pixar" in ckpt:
                             style_anchor = "3D animated, Pixar style, cinematic lighting"
-                        elif "counterfeit" in ckpt or "noob" in ckpt:
+                        elif "illustrious" in ckpt or "counterfeit" in ckpt or "noob" in ckpt:
                             style_anchor = "anime style, detailed animation, cinematic"
+                        elif "nova_animal" in ckpt or "pony" in ckpt:
+                            style_anchor = "anime style, detailed illustration, anthropomorphic, cinematic"
+                        else:
+                            style_anchor = "anime style, cinematic"
                         # Store project resolution for Wan T2V aspect ratio
                         _project_width = _style_row["width"]
                         _project_height = _style_row["height"]
@@ -2052,12 +2056,18 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                     # Post-process: interpolation + color grade only (no upscale — already 544x704)
                     try:
                         from .video_postprocess import postprocess_wan_video
+                        _color_style = "anime"
+                        if style_anchor and "anthro" in style_anchor:
+                            _color_style = "anthro"
+                        elif style_anchor and "photorealistic" in style_anchor:
+                            _color_style = "photorealistic"
                         processed = await postprocess_wan_video(
                             video_path,
                             upscale=False,
                             interpolate=True,
                             color_grade=True,
                             target_fps=30,
+                            color_style=_color_style,
                         )
                         if processed:
                             video_path = processed
@@ -2113,9 +2123,9 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                         _scene_base_seed = int.from_bytes(_scene_seed_bytes[:8], "big") % (2**63)
                         shot_seed = _scene_base_seed + (shot_dict.get("shot_number", 0) or 0)
                     wan_cfg = max(shot_guidance, 7.5)  # higher CFG keeps prompt control over LoRA
-                    wan_w, wan_h = 480, 720
+                    wan_w, wan_h = 512, 768
                     if _project_width and _project_height and _project_width > _project_height:
-                        wan_w, wan_h = 720, 480
+                        wan_w, wan_h = 768, 512
                     # Get LoRA from engine selector (set by _find_wan_lora)
                     _wan22_lora = engine_sel.lora_name
                     _wan22_lora_str = engine_sel.lora_strength
@@ -2152,9 +2162,9 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                         _scene_seed_bytes = _hashlib.sha256(str(scene_id).encode()).digest()
                         _scene_base_seed = int.from_bytes(_scene_seed_bytes[:8], "big") % (2**63)
                         shot_seed = _scene_base_seed + (shot_dict.get("shot_number", 0) or 0)
-                    wan_w, wan_h = 480, 720
+                    wan_w, wan_h = 512, 768
                     if _project_width and _project_height and _project_width > _project_height:
-                        wan_w, wan_h = 720, 480
+                        wan_w, wan_h = 768, 512
                     # Get motion LoRA from engine selector
                     _14b_motion_lora = engine_sel.motion_loras[0] if engine_sel.motion_loras else None
                     _14b_motion_str = 0.8
@@ -2183,7 +2193,25 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                         if rf_result["video_path"]:
                             # Skip normal ComfyUI poll — roll-forward handles it internally
                             video_path = rf_result["video_path"]
-                            last_frame = rf_result["last_frame"]
+                            # Post-process the stitched video (upscale + color grade)
+                            try:
+                                from .video_postprocess import postprocess_wan_video
+                                _color_style = "anime"
+                                if style_anchor and "anthro" in style_anchor:
+                                    _color_style = "anthro"
+                                elif style_anchor and "photorealistic" in style_anchor:
+                                    _color_style = "photorealistic"
+                                _pp = await postprocess_wan_video(
+                                    video_path, upscale=True, interpolate=True,
+                                    color_grade=True, scale_factor=2, target_fps=30,
+                                    color_style=_color_style,
+                                )
+                                if _pp:
+                                    video_path = _pp
+                                    logger.info(f"Shot {shot_id}: roll-forward post-processed → {Path(_pp).name}")
+                            except Exception as _pp_err:
+                                logger.warning(f"Shot {shot_id}: roll-forward postprocess failed: {_pp_err}")
+                            last_frame = await extract_last_frame(video_path)
                             gen_time = _time_inner.time() - attempt_start
                             logger.info(
                                 f"Shot {shot_id}: roll-forward done, "
@@ -2405,10 +2433,16 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                         logger.warning(f"Shot {shot_id}: V2V refinement failed: {e}, using raw Wan output")
 
                 # Post-process all video outputs: interpolation + upscale + color grade
-                # Wan gets upscale (480→960), FramePack gets interpolation + color only
+                # Wan gets upscale (512→1024), FramePack gets interpolation + color only
                 try:
                     from .video_postprocess import postprocess_wan_video
-                    do_upscale = shot_engine in ("wan", "wan22", "wan22_14b")  # Wan is 480p, needs upscale
+                    do_upscale = shot_engine in ("wan", "wan22", "wan22_14b")  # Wan is 512p, needs upscale
+                    # Style-aware color grading based on checkpoint
+                    _color_style = "anime"
+                    if style_anchor and "anthro" in style_anchor:
+                        _color_style = "anthro"
+                    elif style_anchor and "photorealistic" in style_anchor:
+                        _color_style = "photorealistic"
                     processed = await postprocess_wan_video(
                         video_path,
                         upscale=do_upscale,
@@ -2416,6 +2450,7 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                         color_grade=True,
                         scale_factor=2,
                         target_fps=30,
+                        color_style=_color_style,
                     )
                     if processed:
                         video_path = processed
