@@ -191,6 +191,13 @@
         <button class="btn btn-primary" @click="emit('save')" :disabled="saving">Save</button>
         <button class="btn btn-success" :disabled="shots.length === 0 || generating" @click="emit('confirm-generate')">Generate</button>
         <button class="btn" :disabled="shots.length === 0 || allShotsHaveImages" @click="emit('auto-assign')" title="Auto-assign best source images to all unassigned shots">Auto-assign</button>
+        <button
+          class="btn"
+          :disabled="!hasDialogueShots"
+          @click="rehearsalOpen = true"
+          title="Rehearse scene dialogue with voice playback"
+          style="background: rgba(34,197,94,0.12); border-color: rgba(34,197,94,0.3); color: #22c55e;"
+        >Rehearse</button>
         <button class="btn" @click="emit('back')">Back</button>
       </div>
     </div>
@@ -220,6 +227,17 @@
       @update-field="(field: string, value: unknown) => emit('update-shot-field', selectedShotIdx, field, value)"
       @auto-dialogue="emit('auto-dialogue')"
     />
+
+    <!-- Rehearsal Mode -->
+    <SceneRehearsalMode
+      v-if="rehearsalOpen"
+      :shots="shots"
+      :scene-title="localScene.title || `Scene ${localScene.scene_number}`"
+      :characters="characters"
+      :source-image-url="sourceImageUrl"
+      @close="rehearsalOpen = false"
+      @update-shot="handleRehearsalUpdate"
+    />
   </div>
 </template>
 
@@ -229,6 +247,7 @@ import type { BuilderScene, BuilderShot, SceneAudio, GapAnalysisCharacter } from
 import { useProjectStore } from '@/stores/project'
 import ShotInspectorPanel from './ShotInspectorPanel.vue'
 import StoryboardGrid from './StoryboardGrid.vue'
+import SceneRehearsalMode from './SceneRehearsalMode.vue'
 import EchoAssistButton from '../EchoAssistButton.vue'
 import SceneAudioPanel from './SceneAudioPanel.vue'
 import SegmentedControl from '../shared/SegmentedControl.vue'
@@ -270,6 +289,19 @@ const emit = defineEmits<{
 const allShotsHaveImages = computed(() =>
   props.shots.length > 0 && props.shots.every(s => !!s.source_image_path)
 )
+
+// Rehearsal mode
+const rehearsalOpen = ref(false)
+const hasDialogueShots = computed(() =>
+  props.shots.some(s => (s as any).dialogue_text && (s as any).dialogue_character_slug)
+)
+
+function handleRehearsalUpdate(shotId: string, field: string, value: string) {
+  const idx = props.shots.findIndex(s => (s as any).id === shotId)
+  if (idx >= 0) {
+    emit('update-shot-field', idx, field, value)
+  }
+}
 
 const unreadyCharacters = computed((): Array<{ slug: string; name: string; reason: string }> => {
   if (!props.gapCharacters) return []

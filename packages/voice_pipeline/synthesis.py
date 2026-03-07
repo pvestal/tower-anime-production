@@ -1,9 +1,9 @@
 """Voice synthesis — multi-engine speech generation with scene integration.
 
 Resolution order for voice engine:
-1. RVC v2 model (highest quality, if trained)
-2. GPT-SoVITS model (fast prototyping, if trained)
-3. XTTS v2 voice clone (zero-shot from reference sample)
+1. F5-TTS voice clone (zero-shot from reference sample, best quality)
+2. RVC v2 model (if trained — not currently installed)
+3. GPT-SoVITS model (if trained — not currently installed)
 4. edge-tts with character's preset voice
 5. edge-tts default voice
 """
@@ -200,7 +200,7 @@ async def synthesize_dialogue(
         elif profile.get("sovits_model_path") and Path(profile["sovits_model_path"]).exists():
             engine = "sovits"
         elif _has_xtts_samples(character_slug):
-            engine = "xtts"
+            engine = "f5-tts"
         else:
             engine = "edge-tts"
 
@@ -209,13 +209,15 @@ async def synthesize_dialogue(
         voice = await _auto_assign_edge_voice(character_slug)
         profile["voice_preset"] = voice
 
+    logger.info(f"Synthesizing for {character_slug}: engine={engine}, voice={profile.get('voice_preset')}, text={text[:60]!r}")
+
     success = False
-    if engine == "rvc":
+    if engine == "f5-tts":
+        success = await _synthesize_f5tts(character_slug, text, output_path)
+    elif engine == "rvc":
         success = await _synthesize_rvc(profile, text, output_path)
     elif engine == "sovits":
         success = await _synthesize_sovits(profile, text, output_path)
-    elif engine == "xtts":
-        success = await _synthesize_xtts(character_slug, text, output_path)
     elif engine == "edge-tts":
         success = await _synthesize_edge_tts(profile, text, output_path)
 
@@ -362,48 +364,48 @@ def _pick_xtts_reference(character_slug: str) -> Path | None:
     return wavs[0]
 
 
-async def _synthesize_xtts(character_slug: str, text: str, output_path: Path) -> bool:
-    """Synthesize via XTTS v2 zero-shot voice cloning using python3.11."""
+async def _synthesize_f5tts(character_slug: str, text: str, output_path: Path) -> bool:
+    """Synthesize via F5-TTS zero-shot voice cloning using reference audio."""
     ref_wav = _pick_xtts_reference(character_slug)
     if not ref_wav:
-        logger.warning(f"No XTTS reference sample for {character_slug}")
+        logger.warning(f"No F5-TTS reference sample for {character_slug}")
         return False
 
-    # XTTS v2 is installed on system python3.11, not the venv python3.12
-    # We call it via subprocess with a small inline script
-    script = f"""
-import sys, os
-os.environ.setdefault("MECAB_RCFILE", "/usr/local/etc/mecabrc")
-from TTS.api import TTS
-tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2", gpu=True)
-tts.tts_to_file(
-    text={text!r},
-    speaker_wav={str(ref_wav)!r},
-    language="ja",
-    file_path={str(output_path)!r},
-)
-"""
+    # Read transcript for reference audio if available
+    ref_txt_path = ref_wav.with_suffix(".txt")
+    ref_text = ""
+    if ref_txt_path.exists():
+        ref_text = ref_txt_path.read_text().strip()
 
     try:
-        proc = await asyncio.create_subprocess_exec(
-            "python3.11", "-c", script,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env={**os.environ, "MECAB_RCFILE": "/usr/local/etc/mecabrc"},
-        )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
-
-        if proc.returncode == 0 and output_path.exists():
-            logger.info(f"XTTS synthesis OK for {character_slug}: {output_path.name}")
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, _f5tts_generate, str(ref_wav), ref_text, text, str(output_path))
+        if result and output_path.exists():
+            logger.info(f"F5-TTS synthesis OK for {character_slug}: {output_path.name}")
             return True
-        logger.warning(f"XTTS synthesis failed (rc={proc.returncode}): {stderr.decode()[:500]}")
-        return False
-
-    except asyncio.TimeoutError:
-        logger.warning(f"XTTS synthesis timed out for {character_slug}")
+        logger.warning(f"F5-TTS synthesis failed for {character_slug}")
         return False
     except Exception as e:
-        logger.warning(f"XTTS synthesis error: {e}")
+        logger.warning(f"F5-TTS synthesis error: {e}")
+        return False
+
+
+def _f5tts_generate(ref_file: str, ref_text: str, gen_text: str, output_path: str) -> bool:
+    """Blocking F5-TTS generation (runs in thread executor)."""
+    try:
+        from f5_tts.api import F5TTS
+        import soundfile as sf
+
+        tts = F5TTS(device="cuda")
+        wav, sr, _ = tts.infer(
+            ref_file=ref_file,
+            ref_text=ref_text,
+            gen_text=gen_text,
+        )
+        sf.write(output_path, wav, sr)
+        return True
+    except Exception as e:
+        logger.error(f"F5-TTS generate error: {e}")
         return False
 
 
@@ -418,9 +420,16 @@ async def _synthesize_edge_tts(profile: dict, text: str, output_path: Path) -> b
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
         )
         await asyncio.wait_for(proc.wait(), timeout=30)
-        return output_path.exists()
+        if proc.returncode != 0:
+            stderr = (await proc.stderr.read()).decode() if proc.stderr else ""
+            logger.error(f"edge-tts exited {proc.returncode}: {stderr[:500]}")
+            return False
+        exists = output_path.exists()
+        if not exists:
+            logger.error(f"edge-tts produced no output file at {output_path}")
+        return exists
     except Exception as e:
-        logger.warning(f"edge-tts failed: {e}")
+        logger.error(f"edge-tts failed: {e}")
         return False
 
 
@@ -618,13 +627,13 @@ async def get_voice_models(character_slug: str) -> dict:
         ref = _pick_xtts_reference(character_slug)
         samples_dir = VOICE_DATASETS / character_slug / "samples"
         models["available_engines"].append({
-            "engine": "xtts",
+            "engine": "f5-tts",
             "reference_sample": str(ref) if ref else None,
             "total_samples": len(list(samples_dir.glob("*.wav"))),
             "quality": "clone",
         })
         if not models["preferred_engine"]:
-            models["preferred_engine"] = "xtts"
+            models["preferred_engine"] = "f5-tts"
 
     # edge-tts always available
     models["available_engines"].append({
