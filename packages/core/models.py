@@ -131,6 +131,7 @@ class ProjectCreate(BaseModel):
     name: str
     description: Optional[str] = None
     genre: Optional[str] = None
+    content_rating: Optional[str] = "PG-13"
     checkpoint_model: str
     cfg_scale: Optional[float] = 7.0
     steps: Optional[int] = 25
@@ -230,10 +231,12 @@ class SceneCreateRequest(BaseModel):
 
 class ShotCreateRequest(BaseModel):
     shot_number: int
-    source_image_path: str
+    source_image_path: str = ""
     shot_type: str = "medium"
     camera_angle: str = "eye-level"
     duration_seconds: float = 3.0
+    generation_prompt: Optional[str] = None
+    generation_negative: Optional[str] = None
     motion_prompt: str
     characters_present: List[str] = []
     seed: Optional[int] = None
@@ -245,6 +248,10 @@ class ShotCreateRequest(BaseModel):
     transition_duration: float = 0.3  # seconds of crossfade overlap
     video_engine: str = "framepack"  # framepack, framepack_f1, ltx
     guidance_scale: Optional[float] = None  # FramePack guidance (default 6.0)
+    lora_name: Optional[str] = None
+    lora_strength: float = 0.85
+    image_lora: Optional[str] = None
+    image_lora_strength: float = 0.7
 
 
 class ShotUpdateRequest(BaseModel):
@@ -266,6 +273,10 @@ class ShotUpdateRequest(BaseModel):
     transition_duration: Optional[float] = None
     video_engine: Optional[str] = None
     guidance_scale: Optional[float] = None
+    lora_name: Optional[str] = None
+    lora_strength: Optional[float] = None
+    image_lora: Optional[str] = None
+    image_lora_strength: Optional[float] = None
 
 
 class SceneUpdateRequest(BaseModel):

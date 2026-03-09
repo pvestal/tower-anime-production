@@ -2,6 +2,11 @@
 
 Video utilities split into scene_video_utils.py.
 Audio functions split into scene_audio.py.
+Prompt engineering split into scene_prompt.py.
+ComfyUI helpers split into scene_comfyui.py.
+Vision QC split into scene_vision_qc.py.
+Keyframe generation split into scene_keyframe.py.
+Source image/video assignment split into scene_source_assign.py.
 All original exports remain available from this module.
 """
 
@@ -16,6 +21,76 @@ from packages.core.config import BASE_PATH, COMFYUI_URL, COMFYUI_OUTPUT_DIR, COM
 from packages.core.db import connect_direct
 from packages.core.audit import log_decision
 from packages.core.events import event_bus, SHOT_GENERATED
+
+
+def _resolve_content_lora_pair(
+    shot_lora_name: str | None,
+    project_video_lora: str | None = None,
+) -> tuple[str | None, str | None, float]:
+    """Resolve a shot's lora_name to content LoRA HIGH/LOW pair for Wan22 14B.
+
+    Logic:
+    1. If shot has lora_name containing '_HIGH', derive the LOW counterpart.
+    2. If shot has lora_name matching a video_lora_pairs key from catalog, use that.
+    3. If shot has no lora_name, fall back to project_video_lora as HIGH-only.
+
+    Returns (content_lora_high, content_lora_low, strength).
+    """
+    # Use shot-level LoRA first; only fall back to project LoRA if it's
+    # WAN-compatible (not a framepack/image LoRA)
+    lora_name = shot_lora_name
+    if not lora_name and project_video_lora:
+        pv = project_video_lora.lower()
+        # Skip FramePack / image-only LoRAs — they're incompatible with WAN 2.2 14B
+        if "framepack" not in pv and "illustrious" not in pv and "sdxl" not in pv:
+            lora_name = project_video_lora
+    if not lora_name:
+        return None, None, 0.85
+
+    lora_name = lora_name.strip()
+
+    # Pattern 1: Already a _HIGH filename — derive _LOW
+    if "_HIGH" in lora_name:
+        high = lora_name
+        low = lora_name.replace("_HIGH", "_LOW")
+        # Check LOW exists
+        from pathlib import Path
+        low_path = Path(f"/opt/ComfyUI/models/loras/{low}")
+        if not low_path.exists():
+            low_path = Path(f"/opt/ComfyUI/models/loras/wan22_nsfw/{low}")
+        if not low_path.exists():
+            low = None  # HIGH-only, no LOW counterpart
+        return high, low, 0.85
+
+    # Pattern 2: A _LOW filename — derive _HIGH
+    if "_LOW" in lora_name:
+        low = lora_name
+        high = lora_name.replace("_LOW", "_HIGH")
+        from pathlib import Path
+        high_path = Path(f"/opt/ComfyUI/models/loras/{high}")
+        if not high_path.exists():
+            high_path = Path(f"/opt/ComfyUI/models/loras/wan22_nsfw/{high}")
+        if not high_path.exists():
+            high = None
+        return high, low, 0.85
+
+    # Pattern 3: Catalog key name (e.g. "cowgirl") — look up in lora_catalog.yaml
+    try:
+        import yaml
+        from pathlib import Path
+        catalog_path = Path("/opt/anime-studio/config/lora_catalog.yaml")
+        if catalog_path.exists():
+            with open(catalog_path) as f:
+                catalog = yaml.safe_load(f) or {}
+            pairs = catalog.get("video_lora_pairs", {})
+            if lora_name in pairs:
+                pair = pairs[lora_name]
+                return pair.get("high"), pair.get("low"), 0.85
+    except Exception:
+        pass
+
+    # Pattern 4: Generic single LoRA (e.g. project-level video_lora) — apply to high model only
+    return lora_name, None, 0.85
 
 from .framepack import build_framepack_workflow, _submit_comfyui_workflow
 from .ltx_video import build_ltx_workflow, build_ltxv_looping_workflow, _submit_comfyui_workflow as _submit_ltx_workflow
@@ -43,408 +118,42 @@ from .scene_audio import (  # noqa: F401
     apply_scene_audio,
 )
 
+# Re-export from new sub-modules (refactored from this file)
+from .scene_prompt import (  # noqa: F401
+    TAG_CATEGORIES,
+    GENRE_VIDEO_PROFILES,
+    _get_genre_profile,
+    _classify_tag,
+    _condense_for_video,
+    _build_video_negative,
+    build_shot_prompt_preview,
+    _slug_cache,
+    resolve_slug,
+)
+from .scene_comfyui import (  # noqa: F401
+    copy_to_comfyui_input,
+    poll_comfyui_completion,
+)
+from .scene_vision_qc import (  # noqa: F401
+    _QC_AUTO_APPROVE_THRESHOLD,
+    _run_vision_qc,
+)
+from .scene_keyframe import (  # noqa: F401
+    _clip_evaluate_keyframe,
+    keyframe_blitz,
+)
+from .scene_source_assign import (  # noqa: F401
+    ensure_source_images,
+    ensure_source_videos,
+    _get_continuity_frame,
+    _save_continuity_frame,
+)
+
+# Stubs for scene_review.py (these were never defined — latent bug)
+_QUALITY_GATES = [{"threshold": 0.6}]
+_MAX_RETRIES = 3
+
 logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# Genre-aware video prompt profiles
-# ---------------------------------------------------------------------------
-# Tag categories — superset of classification keywords across all genres.
-# Used by both FramePack (reorder) and Wan (condense) paths.
-TAG_CATEGORIES: dict[str, set[str]] = {
-    "identity": {"male", "man", "woman", "female", "young", "old", "japanese",
-                 "boy", "girl", "adult", "teen", "child", "elderly"},
-    "face": {"expression", "smirk", "smile", "frown", "eyes", "eye", "face",
-             "scar", "menacing", "nervous", "confident", "worried", "aggressive",
-             "gentle", "stern", "gaze", "look", "glasses", "eyepatch", "mask",
-             "beard", "mustache"},
-    "hair": {"hair", "bald", "ponytail", "braid", "bangs", "twintail",
-             "short hair", "long hair", "mohawk"},
-    "skin": {"tan", "pale", "skin", "dark skin", "fair", "rough", "smooth",
-             "tattoo", "freckle"},
-    "body": {"body", "build", "muscular", "slim", "athletic", "toned",
-             "shoulder", "chest", "pec", "waist", "abs", "thigh", "leg",
-             "butt", "hip", "tall", "short", "lean", "broad", "narrow",
-             "flat male chest", "wide", "underfed", "stocky", "petite"},
-    "anatomy": {"penis", "testicle", "vagina", "breast", "nipple", "areola",
-                "cock", "b-cup", "c-cup", "d-cup", "perky", "nude", "naked",
-                "genitals"},
-    "equipment": {"sword", "shield", "armor", "helmet", "weapon", "gun",
-                  "blade", "staff", "bow", "axe", "spear", "dagger", "gauntlet",
-                  "scabbard", "holster"},
-    "clothing": {"clothing", "dress", "shirt", "pants", "skirt", "jacket",
-                 "coat", "boots", "gloves", "cape", "cloak", "hat", "uniform",
-                 "suit", "scarf", "belt", "collar", "bikini", "underwear",
-                 "overalls", "vest"},
-    "cybernetics": {"cybernetic", "augment", "prosthetic", "implant", "visor",
-                    "neon", "circuit", "chrome", "mechanical arm", "bionic"},
-    "proportions": {"proportions", "chibi", "stylized", "exaggerated",
-                    "realistic proportions", "cartoonish", "round", "plump"},
-    "style": {"3d render", "cel-shaded", "pixel", "watercolor", "painterly",
-              "illumination", "pixar", "disney", "ghibli"},
-}
-
-# Each genre profile specifies how to condense/reorder design_prompt tags.
-GENRE_VIDEO_PROFILES: dict[str, dict] = {
-    "explicit": {
-        "keep_categories": {"identity", "hair", "skin", "body", "anatomy"},
-        "reorder_priority": ["identity", "face", "hair", "skin", "body", "anatomy"],
-        "negative_additions": "malformed genitals, distorted genitals, malformed penis",
-        "include_scene_desc": True,
-    },
-    "cyberpunk": {
-        "keep_categories": {"identity", "hair", "skin", "body", "face",
-                            "equipment", "clothing", "cybernetics"},
-        "reorder_priority": ["identity", "face", "hair", "equipment",
-                             "cybernetics", "clothing", "body", "skin"],
-        "negative_additions": "modern casual, peaceful, bright cheerful",
-        "include_scene_desc": True,
-    },
-    "action": {
-        "keep_categories": {"identity", "hair", "skin", "body", "face",
-                            "equipment", "clothing"},
-        "reorder_priority": ["identity", "face", "hair", "equipment",
-                             "clothing", "body", "skin"],
-        "negative_additions": "peaceful, static, boring",
-        "include_scene_desc": True,
-    },
-    "3d_animation": {
-        "keep_categories": {"identity", "hair", "face", "clothing",
-                            "proportions", "style"},
-        "reorder_priority": ["style", "identity", "face", "hair",
-                             "clothing", "proportions"],
-        "negative_additions": "photorealistic, anime, 2d, flat shading",
-        "include_scene_desc": True,
-    },
-    "anime": {
-        "keep_categories": {"identity", "hair", "face", "skin", "body",
-                            "clothing"},
-        "reorder_priority": ["identity", "face", "hair", "clothing",
-                             "body", "skin"],
-        "negative_additions": "photorealistic, 3d render, live action",
-        "include_scene_desc": True,
-    },
-    "default": {
-        "keep_categories": {"identity", "hair", "face", "skin", "body",
-                            "clothing", "equipment"},
-        "reorder_priority": ["identity", "face", "hair", "clothing",
-                             "equipment", "body", "skin"],
-        "negative_additions": "",
-        "include_scene_desc": True,
-    },
-}
-
-
-def _get_genre_profile(genre: str | None, content_rating: str | None) -> dict:
-    """Resolve project genre + content_rating → video profile dict."""
-    # Explicit content rating overrides genre completely
-    if content_rating:
-        cr = content_rating.lower()
-        if any(kw in cr for kw in ("xxx", "adult", "nsfw", "hentai")):
-            return GENRE_VIDEO_PROFILES["explicit"]
-
-    if not genre:
-        return GENRE_VIDEO_PROFILES["default"]
-
-    g = genre.lower().strip()
-    # Direct match
-    if g in GENRE_VIDEO_PROFILES:
-        return GENRE_VIDEO_PROFILES[g]
-    # Keyword-based fallback
-    if any(kw in g for kw in ("cyber", "sci-fi", "scifi", "dystop")):
-        return GENRE_VIDEO_PROFILES["cyberpunk"]
-    if any(kw in g for kw in ("action", "shonen", "battle", "fight", "martial")):
-        return GENRE_VIDEO_PROFILES["action"]
-    if any(kw in g for kw in ("3d", "pixar", "cg", "illumination", "cartoon")):
-        return GENRE_VIDEO_PROFILES["3d_animation"]
-    if any(kw in g for kw in ("anime", "manga", "slice of life", "romance")):
-        return GENRE_VIDEO_PROFILES["anime"]
-    return GENRE_VIDEO_PROFILES["default"]
-
-
-def _classify_tag(tag_lower: str) -> str:
-    """Classify a single prompt tag into a TAG_CATEGORIES bucket."""
-    for cat, keywords in TAG_CATEGORIES.items():
-        if any(kw in tag_lower for kw in keywords):
-            return cat
-    return "other"
-
-
-def _condense_for_video(design_prompt: str, genre_profile: dict,
-                        engine: str) -> str:
-    """Replace both _video_safe_appearance and _condensed_appearance.
-
-    FramePack: reorder tags by genre priority (keeps all meaningful tags).
-    Wan: aggressive condense — only keep tags matching genre keep_categories.
-    """
-    strip_tags = {"solo", "1boy", "1girl", "full body", "score_9", "score_8_up"}
-    parts = [p.strip() for p in design_prompt.split(",") if p.strip()]
-    parts = [p for p in parts if p.lower().strip() not in strip_tags]
-
-    if engine in ("framepack", "framepack_f1"):
-        # Reorder by genre priority, keep all categorised tags
-        priority = genre_profile.get("reorder_priority",
-                                     GENRE_VIDEO_PROFILES["default"]["reorder_priority"])
-        buckets: dict[str, list[str]] = {cat: [] for cat in priority}
-        buckets["other"] = []
-        for p in parts:
-            cat = _classify_tag(p.lower().strip())
-            if cat in buckets:
-                buckets[cat].append(p)
-            else:
-                buckets["other"].append(p)
-        ordered = []
-        for cat in priority:
-            ordered.extend(buckets.get(cat, []))
-        ordered.extend(buckets["other"])
-        return ", ".join(ordered) if ordered else design_prompt
-    else:
-        # Wan T2V: aggressive condense — only keep_categories tags
-        keep_cats = genre_profile.get("keep_categories",
-                                      GENRE_VIDEO_PROFILES["default"]["keep_categories"])
-        # Flatten all keywords from kept categories
-        keep_keywords: set[str] = set()
-        for cat in keep_cats:
-            if cat in TAG_CATEGORIES:
-                keep_keywords.update(TAG_CATEGORIES[cat])
-        kept = []
-        for p in parts:
-            low = p.lower().strip()
-            if any(kw in low for kw in keep_keywords):
-                kept.append(p)
-        return ", ".join(kept) if kept else design_prompt
-
-
-def _build_video_negative(style_anchor: str, genre_profile: dict,
-                          nsm_negative: str = "") -> str:
-    """Build negative prompt from base + style exclusions + genre additions."""
-    parts = ["low quality, blurry, watermark, deformed face, distorted face, "
-             "bad hands, extra limbs"]
-    # Style-aware exclusions
-    if style_anchor:
-        if "photorealistic" in style_anchor:
-            parts.append("anime, cartoon, illustration, drawing, painted, "
-                         "cel-shaded, 3d render")
-        elif "anime" in style_anchor:
-            parts.append("photorealistic, photograph, live action, real person")
-        elif "Pixar" in style_anchor:
-            parts.append("anime, photorealistic, photograph, live action, 2d, flat")
-    # Genre-specific additions
-    genre_neg = genre_profile.get("negative_additions", "")
-    if genre_neg:
-        parts.append(genre_neg)
-    # NSM state additions
-    if nsm_negative:
-        parts.append(nsm_negative)
-    return ", ".join(parts)
-
-
-async def build_shot_prompt_preview(scene_id: str, shot_id: str) -> dict:
-    """Build the final prompt that would be sent to ComfyUI, without generating.
-
-    Returns dict with: final_prompt, final_negative, engine, style_anchor,
-    character_appearances, scene_context, and component breakdown.
-    """
-    conn = await connect_direct()
-    try:
-        scene_uuid = __import__("uuid").UUID(scene_id)
-        shot_uuid = __import__("uuid").UUID(shot_id)
-
-        shot_row = await conn.fetchrow(
-            "SELECT * FROM shots WHERE id = $1 AND scene_id = $2", shot_uuid, scene_uuid
-        )
-        if not shot_row:
-            return {"error": "Shot not found"}
-
-        scene_row = await conn.fetchrow(
-            "SELECT project_id, description, location, time_of_day, mood FROM scenes WHERE id = $1",
-            scene_uuid,
-        )
-        if not scene_row:
-            return {"error": "Scene not found"}
-
-        project_id = scene_row["project_id"]
-        scene_desc = scene_row["description"] or ""
-        scene_location = scene_row["location"] or ""
-        scene_mood = scene_row["mood"] or ""
-        scene_time = scene_row["time_of_day"] or ""
-
-        # Get project genre profile
-        proj_row = await conn.fetchrow(
-            "SELECT genre, content_rating FROM projects WHERE id = $1", project_id
-        )
-        genre_profile = _get_genre_profile(
-            proj_row["genre"] if proj_row else None,
-            proj_row["content_rating"] if proj_row else None,
-        )
-
-        # Get style anchor
-        style_anchor = ""
-        try:
-            style_row = await conn.fetchrow(
-                "SELECT gs.checkpoint_model FROM projects p "
-                "JOIN generation_styles gs ON p.default_style = gs.style_name "
-                "WHERE p.id = $1", project_id,
-            )
-            if style_row:
-                ckpt = (style_row["checkpoint_model"] or "").lower()
-                if "illustrious" in ckpt or "noob" in ckpt:
-                    style_anchor = "anime style, detailed animation, cinematic"
-                elif "cyberrealistic" in ckpt:
-                    style_anchor = "photorealistic, live action film, cinematic lighting"
-                elif "nova_animal" in ckpt or "pony" in ckpt:
-                    style_anchor = "anime style, detailed illustration, cinematic"
-        except Exception:
-            pass
-
-        shot_dict = dict(shot_row)
-        chars = shot_dict.get("characters_present") or []
-        character_slug = chars[0] if len(chars) == 1 else None
-        shot_engine = shot_dict.get("video_engine") or "framepack"
-        motion_prompt = shot_dict["motion_prompt"] or shot_dict.get("generation_prompt") or ""
-
-        # Helper: look up character
-        async def _find_char(slug):
-            return await conn.fetchrow(
-                "SELECT name, design_prompt FROM characters "
-                "WHERE project_id = $2 AND ("
-                "  REGEXP_REPLACE(LOWER(REPLACE(name, ' ', '_')), '[^a-z0-9_-]', '', 'g') = $1 "
-                "  OR REGEXP_REPLACE(LOWER(REPLACE(name, ' ', '_')), '[^a-z0-9_-]', '', 'g') LIKE $1 || '_%'"
-                ")", slug, project_id,
-            )
-
-        # Build prompt per engine — mirrors generate_scene logic
-        current_prompt = motion_prompt
-        char_appearances = []
-
-        if character_slug and shot_engine in ("framepack", "framepack_f1"):
-            try:
-                char_row = await _find_char(character_slug)
-                if char_row and char_row["design_prompt"]:
-                    appearance = _condense_for_video(char_row["design_prompt"], genre_profile, shot_engine)
-                    char_appearances.append({"name": char_row["name"], "condensed": appearance})
-                    fp_parts = []
-                    if style_anchor:
-                        fp_parts.append(style_anchor)
-                    if scene_location:
-                        setting = scene_location
-                        if scene_time:
-                            setting += f", {scene_time}"
-                        fp_parts.append(setting)
-                    if scene_desc:
-                        fp_parts.append(scene_desc)
-                    fp_parts.append(appearance)
-                    if motion_prompt and motion_prompt.lower() != "static":
-                        fp_parts.append(motion_prompt)
-                    fp_parts.append("consistent character appearance, maintain all physical features")
-                    if scene_mood:
-                        fp_parts.append(f"{scene_mood} mood")
-                    current_prompt = ", ".join(fp_parts)
-            except Exception:
-                pass
-        elif shot_engine in ("wan22", "wan22_14b") and chars:
-            try:
-                char_descriptions = []
-                for cslug in chars:
-                    char_row = await _find_char(cslug)
-                    if char_row and char_row["design_prompt"]:
-                        appearance = _condense_for_video(char_row["design_prompt"], genre_profile, shot_engine)
-                        char_descriptions.append(f"{char_row['name']} ({appearance})")
-                        char_appearances.append({"name": char_row["name"], "condensed": appearance})
-                prompt_parts = []
-                if char_descriptions:
-                    prompt_parts.append("; ".join(char_descriptions))
-                if motion_prompt and motion_prompt.lower() != "static":
-                    prompt_parts.append(motion_prompt)
-                if scene_desc and genre_profile.get("include_scene_desc", True):
-                    prompt_parts.append(scene_desc[:200])
-                if scene_location:
-                    setting = scene_location
-                    if scene_time:
-                        setting += f", {scene_time}"
-                    prompt_parts.append(setting)
-                if style_anchor:
-                    prompt_parts.append(style_anchor)
-                if scene_mood:
-                    prompt_parts.append(f"{scene_mood} mood")
-                current_prompt = ". ".join(prompt_parts)
-            except Exception:
-                pass
-        elif shot_engine == "wan" and chars:
-            try:
-                char_descriptions = []
-                for cslug in chars:
-                    char_row = await _find_char(cslug)
-                    if char_row and char_row["design_prompt"]:
-                        appearance = _condense_for_video(char_row["design_prompt"], genre_profile, shot_engine)
-                        char_descriptions.append(f"{char_row['name']} ({appearance})")
-                        char_appearances.append({"name": char_row["name"], "condensed": appearance})
-                prompt_parts = []
-                if motion_prompt and motion_prompt.lower() != "static":
-                    prompt_parts.append(motion_prompt)
-                if char_descriptions:
-                    prompt_parts.append("; ".join(char_descriptions))
-                if scene_desc and genre_profile.get("include_scene_desc", True):
-                    prompt_parts.append(scene_desc[:120])
-                if scene_location:
-                    setting = scene_location
-                    if scene_time:
-                        setting += f", {scene_time}"
-                    prompt_parts.append(setting)
-                if style_anchor:
-                    prompt_parts.append(style_anchor)
-                current_prompt = ". ".join(prompt_parts)
-            except Exception:
-                pass
-
-        current_negative = _build_video_negative(style_anchor, genre_profile)
-
-        return {
-            "final_prompt": current_prompt,
-            "final_negative": current_negative,
-            "engine": shot_engine,
-            "prompt_length": len(current_prompt),
-            "style_anchor": style_anchor or None,
-            "scene_context": {
-                "location": scene_location or None,
-                "time_of_day": scene_time or None,
-                "mood": scene_mood or None,
-                "description": scene_desc[:200] if scene_desc else None,
-            },
-            "character_appearances": char_appearances,
-            "motion_prompt": shot_dict["motion_prompt"] or None,
-            "generation_prompt": shot_dict["generation_prompt"] or None,
-        }
-    finally:
-        await conn.close()
-
-
-# --- Slug resolver: maps short slugs (rina) to dataset dir slugs (rina_suzuki) ---
-_slug_cache: dict[str, str] = {}
-
-
-def resolve_slug(short_slug: str) -> str:
-    """Resolve a possibly-short character slug to the actual dataset directory name.
-
-    Tries exact match first, then prefix match (short_slug + '_*').
-    Caches results for the lifetime of the process.
-    """
-    if short_slug in _slug_cache:
-        return _slug_cache[short_slug]
-    # Exact match
-    if (BASE_PATH / short_slug).is_dir():
-        _slug_cache[short_slug] = short_slug
-        return short_slug
-    # Prefix match: rina -> rina_suzuki
-    candidates = sorted(BASE_PATH.glob(f"{short_slug}_*"))
-    dirs = [c for c in candidates if c.is_dir()]
-    if dirs:
-        resolved = dirs[0].name
-        _slug_cache[short_slug] = resolved
-        return resolved
-    # No match — return as-is
-    _slug_cache[short_slug] = short_slug
-    return short_slug
-
 
 # Scene output directory (canonical location — also set in scene_audio.py)
 SCENE_OUTPUT_DIR = BASE_PATH.parent / "output" / "scenes"
@@ -572,94 +281,6 @@ async def assemble_approved_scene(scene_id) -> dict:
         await conn.close()
 
 
-async def copy_to_comfyui_input(image_path: str) -> str:
-    """Copy source image to ComfyUI input dir, return the filename."""
-    src = Path(image_path)
-    if not src.is_absolute():
-        src = BASE_PATH / image_path
-    dest = COMFYUI_INPUT_DIR / src.name
-    if not dest.exists():
-        shutil.copy2(str(src), str(dest))
-    return src.name
-
-
-async def poll_comfyui_completion(prompt_id: str, timeout_seconds: int = 1800) -> dict:
-    """Poll ComfyUI /history until the prompt completes or times out."""
-    import urllib.request
-    import time as _time
-    start = _time.time()
-    _not_found_count = 0
-    while (_time.time() - start) < timeout_seconds:
-        try:
-            req = urllib.request.Request(f"{COMFYUI_URL}/history/{prompt_id}")
-            resp = urllib.request.urlopen(req, timeout=10)
-            history = json.loads(resp.read())
-            if prompt_id not in history:
-                _not_found_count += 1
-                # If prompt not found after 2 minutes (24 polls × 5s), it's gone
-                # (ComfyUI was restarted or prompt was never accepted)
-                if _not_found_count >= 24:
-                    # Also check queue — if it's not running or pending, it's truly lost
-                    try:
-                        _q_req = urllib.request.Request(f"{COMFYUI_URL}/queue")
-                        _q_resp = urllib.request.urlopen(_q_req, timeout=5)
-                        _q_data = json.loads(_q_resp.read())
-                        _running_ids = [r[1] for r in _q_data.get("queue_running", []) if len(r) > 1]
-                        _pending_ids = [r[1] for r in _q_data.get("queue_pending", []) if len(r) > 1]
-                        if prompt_id not in _running_ids and prompt_id not in _pending_ids:
-                            logger.error(f"poll_comfyui: prompt {prompt_id} not in history/queue after {_not_found_count} checks — lost")
-                            return {"status": "error", "output_files": [], "error": "Prompt lost (not in ComfyUI history or queue)"}
-                    except Exception:
-                        pass
-                await asyncio.sleep(5)
-                continue
-            _not_found_count = 0  # Reset on found
-            if prompt_id in history:
-                entry = history[prompt_id]
-                # Check execution status
-                status_info = entry.get("status", {})
-                status_str = status_info.get("status_str", "unknown")
-                if status_str == "error":
-                    # Extract error details from messages
-                    msgs = status_info.get("messages", [])
-                    err_detail = ""
-                    for msg in msgs:
-                        if isinstance(msg, list) and len(msg) >= 2 and "error" in str(msg[0]).lower():
-                            err_detail = str(msg[1])[:200]
-                    return {"status": "error", "output_files": [], "error": err_detail or "ComfyUI execution error"}
-                outputs = entry.get("outputs", {})
-                videos = []
-                for node_output in outputs.values():
-                    for key in ("videos", "gifs", "images"):
-                        for item in node_output.get(key, []):
-                            fn = item.get("filename")
-                            if fn:
-                                videos.append(fn)
-                    # Also check 'video' (singular) used by some Wan nodes
-                    if "video" in node_output:
-                        v = node_output["video"]
-                        if isinstance(v, dict) and v.get("filename"):
-                            videos.append(v["filename"])
-                        elif isinstance(v, list):
-                            for item in v:
-                                fn = item.get("filename") if isinstance(item, dict) else None
-                                if fn:
-                                    videos.append(fn)
-                if not videos and status_str == "success":
-                    # Scan output dir for files matching prefix (fallback)
-                    try:
-                        import glob as _glob
-                        prompt_files = _glob.glob(str(COMFYUI_OUTPUT_DIR / f"*{prompt_id[:8]}*"))
-                        videos = [Path(f).name for f in prompt_files if f.endswith((".mp4", ".webm"))]
-                    except Exception:
-                        pass
-                return {"status": "completed", "output_files": videos}
-        except Exception:
-            pass
-        await asyncio.sleep(5)
-    return {"status": "timeout", "output_files": []}
-
-
 async def recover_interrupted_generations():
     """On startup, find shots stuck in 'generating' and re-queue their scenes.
 
@@ -724,30 +345,10 @@ async def recover_interrupted_generations():
                 WHERE id = $1 AND generation_status = 'generating'
             """, sid)
 
-        # 5. Wait for ComfyUI to be reachable before re-queuing
-        import urllib.request
-        comfyui_ready = False
-        for attempt in range(30):  # up to 30 x 2s = 60s
-            try:
-                req = urllib.request.Request(f"{COMFYUI_URL}/system_stats")
-                urllib.request.urlopen(req, timeout=5)
-                comfyui_ready = True
-                break
-            except Exception:
-                await asyncio.sleep(2)
-
-        if not comfyui_ready:
-            logger.error("Recovery: ComfyUI not reachable after 60s, skipping re-queue")
-            return
-
-        # 6. Re-queue each scene via existing generate_scene() (uses _scene_generation_lock)
-        for sid in scene_ids:
-            scene_title = next((r["title"] for r in stuck if r["scene_id"] == sid), "?")
-            logger.info(f"Recovery: re-queuing scene '{scene_title}' ({sid})")
-            task = asyncio.create_task(generate_scene(str(sid)))
-            _scene_generation_tasks[str(sid)] = task
-
-        logger.info(f"Recovery: re-queued {len(scene_ids)} scene(s) for generation")
+        # Recovery no longer auto-re-queues scenes. Shots are reset to pending
+        # and the batch runner or user can trigger regeneration per-shot.
+        # This avoids scene-level locks that block per-shot regenerate calls.
+        logger.info(f"Recovery: {len(scene_ids)} scene(s) have pending shots ready for regeneration")
     finally:
         await conn.close()
 
@@ -770,480 +371,6 @@ async def generate_scene(scene_id: str, auto_approve: bool = False):
         _scene_generation_lock.release()
 
 
-async def _clip_evaluate_keyframe(shot_id: str, image_path: str, prompt: str) -> dict:
-    """CLIP-score a keyframe image against its prompt via Echo Brain."""
-    import httpx
-
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(
-                "http://localhost:8309/api/echo/generation-eval/evaluate",
-                json={"image_path": image_path, "prompt": prompt, "shot_id": shot_id},
-            )
-            if resp.status_code == 200:
-                return resp.json()
-    except Exception as e:
-        logger.debug(f"CLIP evaluation failed for shot {shot_id[:8]}: {e}")
-    return {}
-
-
-async def keyframe_blitz(conn, scene_id: str, skip_existing: bool = True,
-                          clip_evaluate: bool = True) -> dict:
-    """Generate keyframe images for all shots in a scene (~18s each).
-
-    Pass 1 of two-pass generation. Enriches shot specs via Ollama, then generates
-    txt2img keyframes with project checkpoint + character LoRA. Skips shots that
-    already have source_image_path when skip_existing=True.
-
-    When clip_evaluate=True (default), each generated keyframe is scored via
-    Echo Brain CLIP endpoint. Scores are advisory — low scores flag shots for
-    re-generation but don't block.
-
-    Returns: {generated: int, skipped: int, failed: int, shots: [...]}
-    """
-    from .composite_image import generate_simple_keyframe
-    from .shot_spec import enrich_shot_spec, get_scene_context, get_recent_shots
-
-    shots = await conn.fetch(
-        "SELECT * FROM shots WHERE scene_id = $1 ORDER BY shot_number", scene_id
-    )
-    if not shots:
-        return {"generated": 0, "skipped": 0, "failed": 0, "shots": []}
-
-    # Get project info + checkpoint model
-    scene_row = await conn.fetchrow("""
-        SELECT s.project_id, s.scene_number,
-               REGEXP_REPLACE(LOWER(REPLACE(p.name, ' ', '_')), '[^a-z0-9_]', '', 'g') as project_slug
-        FROM scenes s
-        LEFT JOIN projects p ON s.project_id = p.id
-        WHERE s.id = $1
-    """, scene_id)
-    project_id = scene_row["project_id"] if scene_row else None
-
-    checkpoint = "waiIllustriousSDXL_v160.safetensors"
-    if project_id:
-        try:
-            style_row = await conn.fetchrow(
-                """SELECT gs.checkpoint_model FROM projects p
-                   JOIN generation_styles gs ON p.default_style = gs.style_name
-                   WHERE p.id = $1""", project_id)
-            if style_row and style_row["checkpoint_model"]:
-                checkpoint = style_row["checkpoint_model"]
-                if not checkpoint.endswith(".safetensors"):
-                    checkpoint += ".safetensors"
-        except Exception:
-            pass
-
-    # Scene context for shot spec enrichment
-    scene_context = await get_scene_context(conn, scene_id)
-
-    generated = 0
-    skipped = 0
-    failed = 0
-    shot_results = []
-
-    for shot in shots:
-        shot_dict = dict(shot)
-        shot_id = str(shot["id"])
-
-        # Skip if already has source image
-        if skip_existing and shot["source_image_path"]:
-            skipped += 1
-            shot_results.append({
-                "shot_id": shot_id, "shot_number": shot["shot_number"],
-                "status": "skipped", "source_image_path": shot["source_image_path"],
-            })
-            continue
-
-        chars = list(shot.get("characters_present") or [])
-        prompt = shot.get("motion_prompt") or shot.get("scene_description") or ""
-
-        # Use generation_prompt from DB as base
-        gen_prompt = shot.get("generation_prompt")
-        if gen_prompt:
-            prompt = gen_prompt
-
-        # Enrich shot spec (pose, camera, emotion) via Ollama
-        try:
-            prev_shots = await get_recent_shots(conn, scene_id, limit=5)
-            enriched = await enrich_shot_spec(conn, shot_dict, scene_context, prev_shots)
-            if enriched and enriched.get("generation_prompt"):
-                prompt = enriched["generation_prompt"]
-        except Exception as e:
-            logger.debug(f"Shot {shot_id}: enrichment failed (continuing): {e}")
-
-        # Build extra LoRAs list from shot's image_lora field
-        _extra_loras = []
-        if shot.get("image_lora"):
-            _extra_loras.append((shot["image_lora"], shot.get("image_lora_strength") or 0.7))
-
-        # Generate keyframe
-        try:
-            kf_path = await generate_simple_keyframe(
-                conn, project_id, chars, prompt, checkpoint,
-                shot_type=shot.get("shot_type") or "medium",
-                camera_angle=shot.get("camera_angle") or "eye-level",
-                extra_loras=_extra_loras or None,
-            )
-            if kf_path and kf_path.exists():
-                await conn.execute(
-                    "UPDATE shots SET source_image_path = $2 WHERE id = $1",
-                    shot["id"], str(kf_path),
-                )
-                generated += 1
-                shot_result = {
-                    "shot_id": shot_id, "shot_number": shot["shot_number"],
-                    "status": "generated", "source_image_path": str(kf_path),
-                }
-
-                # CLIP evaluation (advisory)
-                if clip_evaluate and prompt:
-                    clip_result = await _clip_evaluate_keyframe(shot_id, str(kf_path), prompt)
-                    if clip_result:
-                        sem = clip_result.get("semantic_score")
-                        var = clip_result.get("variety_score")
-                        shot_result["clip_score"] = sem
-                        shot_result["variety_score"] = var
-                        shot_result["mhp_bucket"] = clip_result.get("mhp_bucket")
-                        # Persist to DB
-                        await conn.execute(
-                            "UPDATE shots SET clip_score = $2, clip_variety_score = $3 WHERE id = $1",
-                            shot["id"], sem, var,
-                        )
-                        logger.info(f"Keyframe blitz: shot {shot['shot_number']} → {kf_path.name} (CLIP={sem:.0f})")
-                    else:
-                        logger.info(f"Keyframe blitz: shot {shot['shot_number']} → {kf_path.name}")
-                else:
-                    logger.info(f"Keyframe blitz: shot {shot['shot_number']} → {kf_path.name}")
-
-                shot_results.append(shot_result)
-            else:
-                failed += 1
-                shot_results.append({
-                    "shot_id": shot_id, "shot_number": shot["shot_number"],
-                    "status": "failed", "error": "keyframe returned None",
-                })
-        except Exception as e:
-            failed += 1
-            shot_results.append({
-                "shot_id": shot_id, "shot_number": shot["shot_number"],
-                "status": "failed", "error": str(e),
-            })
-            logger.warning(f"Keyframe blitz: shot {shot['shot_number']} failed: {e}")
-
-    return {
-        "generated": generated, "skipped": skipped, "failed": failed,
-        "total": len(shots), "shots": shot_results,
-    }
-
-
-async def ensure_source_videos(conn, scene_id: str, shots: list) -> int:
-    """Auto-assign best source video clips to solo shots from character_clips table.
-
-    Mirrors ensure_source_images but assigns video clips for V2V style transfer.
-    Only assigns to solo character shots that don't already have a source_video_path
-    and weren't manually assigned. Returns the number of shots auto-assigned.
-    """
-    null_shots = [
-        s for s in shots
-        if not s.get("source_video_path")
-        and not s.get("source_video_auto_assigned")
-        and len(s.get("characters_present") or []) == 1
-    ]
-    if not null_shots:
-        return 0
-
-    assigned = 0
-    for shot in null_shots:
-        chars = shot.get("characters_present") or []
-        slug = chars[0] if chars else None
-        if not slug:
-            continue
-
-        try:
-            clip_row = await conn.fetchrow(
-                "SELECT clip_path FROM character_clips "
-                "WHERE character_slug = $1 ORDER BY similarity DESC NULLS LAST LIMIT 1",
-                slug,
-            )
-            if clip_row and clip_row["clip_path"] and Path(clip_row["clip_path"]).exists():
-                await conn.execute(
-                    "UPDATE shots SET source_video_path = $2, source_video_auto_assigned = TRUE WHERE id = $1",
-                    shot["id"], clip_row["clip_path"],
-                )
-                assigned += 1
-                logger.info(
-                    f"Shot {shot['id']}: auto-assigned source video clip for '{slug}' "
-                    f"({clip_row['clip_path']})"
-                )
-        except Exception as e:
-            logger.debug(f"Source video lookup for {slug}: {e}")
-
-    return assigned
-
-
-async def ensure_source_images(conn, scene_id: str, shots: list) -> int:
-    """Auto-assign best source images to solo-character shots with NULL source_image_path.
-
-    Uses the image recommender to score and rank approved images per character.
-    Assigns images to ALL solo character shots (1 character) regardless of current
-    engine — the engine selector runs AFTER this and will pick FramePack when a
-    source image is available. Multi-char shots (>1 character) are handled separately
-    by generate_composite_source() in Step 1.5 of the generation pipeline.
-
-    Returns the number of shots that were auto-assigned.
-    """
-    null_shots = [
-        s for s in shots
-        if not s["source_image_path"]
-        and len(s.get("characters_present") or []) == 1
-    ]
-    if not null_shots:
-        return 0
-
-    # Priority 0: Check continuity frames from previously completed shots
-    # These are the last frames from prior scenes — best for visual consistency
-    assigned_from_continuity = 0
-    scene_row = await conn.fetchrow("SELECT project_id FROM scenes WHERE id = $1", scene_id)
-    _project_id = scene_row["project_id"] if scene_row else None
-    if _project_id:
-        remaining_null = []
-        for shot in null_shots:
-            chars = shot.get("characters_present") or []
-            slug = chars[0] if chars else None
-            if not slug:
-                remaining_null.append(shot)
-                continue
-            try:
-                cont_row = await conn.fetchrow(
-                    "SELECT frame_path FROM character_continuity_frames "
-                    "WHERE project_id = $1 AND character_slug = $2 AND scene_id != $3",
-                    _project_id, slug, scene_id,
-                )
-                if cont_row and cont_row["frame_path"] and Path(cont_row["frame_path"]).exists():
-                    await conn.execute(
-                        "UPDATE shots SET source_image_path = $2, source_image_auto_assigned = TRUE WHERE id = $1",
-                        shot["id"], cont_row["frame_path"],
-                    )
-                    assigned_from_continuity += 1
-                    logger.info(
-                        f"Shot {shot['id']}: continuity frame for '{slug}' from prior scene"
-                    )
-                    continue
-            except Exception as _e:
-                logger.debug(f"Continuity frame lookup for {slug}: {_e}")
-            remaining_null.append(shot)
-        null_shots = remaining_null
-        if not null_shots:
-            return assigned_from_continuity
-
-    # Build approved image map from approval_status.json
-    all_slugs: set[str] = set()
-    for shot in null_shots:
-        chars = shot.get("characters_present")
-        if chars and isinstance(chars, list):
-            all_slugs.update(chars)
-
-    if not all_slugs:
-        logger.warning(f"Scene {scene_id}: shots need source images but no characters_present set")
-        return assigned_from_continuity
-
-    approved: dict[str, list[str]] = {}
-    for slug in all_slugs:
-        dir_slug = resolve_slug(slug)
-        approval_file = BASE_PATH / dir_slug / "approval_status.json"
-        images_dir = BASE_PATH / dir_slug / "images"
-        if not images_dir.exists():
-            logger.debug(f"No dataset dir for slug '{slug}' (resolved: '{dir_slug}')")
-            continue
-        if approval_file.exists():
-            try:
-                with open(approval_file) as f:
-                    statuses = json.load(f)
-                imgs = [
-                    name for name, st in statuses.items()
-                    if (st == "approved" or (isinstance(st, dict) and st.get("status") == "approved"))
-                    and (images_dir / name).exists()
-                ]
-                if imgs:
-                    # Store under BOTH short and dir slug so lookups work either way
-                    approved[slug] = sorted(imgs)
-                    approved[dir_slug] = approved[slug]
-            except (json.JSONDecodeError, OSError) as e:
-                logger.warning(f"Failed to read approval_status.json for {dir_slug}: {e}")
-
-    if not approved:
-        # Mark all null shots as failed — no images available
-        for shot in null_shots:
-            await conn.execute(
-                "UPDATE shots SET status = 'failed', "
-                "error_message = 'No approved images available for auto-assignment' "
-                "WHERE id = $1", shot["id"],
-            )
-        logger.error(f"Scene {scene_id}: no approved images for any character — {len(null_shots)} shots failed")
-        return 0
-
-    # Batch-fetch video effectiveness scores (one query per character, not per image)
-    video_scores: dict[str, dict[str, float]] = {}
-    for slug in all_slugs:
-        dir_slug = resolve_slug(slug)
-        try:
-            # Try both short and resolved slug in effectiveness table
-            rows = await conn.fetch(
-                "SELECT image_name, AVG(video_quality_score) as avg_score "
-                "FROM source_image_effectiveness "
-                "WHERE character_slug IN ($1, $2) AND video_quality_score IS NOT NULL "
-                "GROUP BY image_name",
-                slug, dir_slug,
-            )
-            if rows:
-                video_scores[slug] = {r["image_name"]: float(r["avg_score"]) for r in rows}
-                video_scores[dir_slug] = video_scores[slug]
-        except Exception as e:
-            logger.debug(f"Video effectiveness lookup for {slug}: {e}")
-
-    # Build shot dicts for recommender (include motion_prompt for description matching)
-    shot_list = [{
-        "id": str(s["id"]),
-        "shot_number": s["shot_number"],
-        "shot_type": s["shot_type"],
-        "camera_angle": s["camera_angle"],
-        "characters_present": s["characters_present"] or [],
-        "source_image_path": s["source_image_path"],
-        "motion_prompt": s.get("motion_prompt"),
-    } for s in shots]  # Pass ALL shots for diversity tracking
-
-    # Fetch narrative state and image tags for state-aware selection (NSM Phase 1b)
-    character_states = None
-    character_image_tags = None
-    try:
-        state_rows = await conn.fetch(
-            "SELECT character_slug, clothing, hair_state, emotional_state, "
-            "body_state, energy_level FROM character_scene_state WHERE scene_id = $1",
-            scene_id,
-        )
-        if state_rows:
-            character_states = {
-                r["character_slug"]: dict(r) for r in state_rows
-            }
-            # Fetch image tags for all characters that have states
-            character_image_tags = {}
-            for slug in character_states:
-                tag_rows = await conn.fetch(
-                    "SELECT image_name, clothing, hair_state, expression, "
-                    "body_state, pose FROM image_visual_tags "
-                    "WHERE character_slug = $1",
-                    slug,
-                )
-                if tag_rows:
-                    character_image_tags[slug] = {
-                        r["image_name"]: dict(r) for r in tag_rows
-                    }
-    except Exception as e:
-        logger.debug(f"NSM state lookup for scene {scene_id}: {e}")
-
-    recommendations = recommend_for_scene(
-        BASE_PATH, shot_list, approved, top_n=1, video_scores=video_scores,
-        character_states=character_states,
-        character_image_tags=character_image_tags,
-    )
-
-    assigned_count = 0
-    for rec in recommendations:
-        shot_id = rec["shot_id"]
-        # Only assign to shots that actually need it
-        if rec["current_source"]:
-            continue
-        top_recs = rec.get("recommendations", [])
-        if not top_recs:
-            # No recommendation available for this shot's character
-            await conn.execute(
-                "UPDATE shots SET status = 'failed', "
-                "error_message = 'No approved images for character(s) in this shot' "
-                "WHERE id = $1", shot_id,
-            )
-            continue
-
-        best = top_recs[0]
-        dir_slug = resolve_slug(best['slug'])
-        image_path = f"{dir_slug}/images/{best['image_name']}"
-
-        await conn.execute(
-            "UPDATE shots SET source_image_path = $2, source_image_auto_assigned = TRUE WHERE id = $1",
-            shot_id, image_path,
-        )
-        assigned_count += 1
-
-        await log_decision(
-            decision_type="source_image_auto_assign",
-            input_context={
-                "shot_id": str(shot_id),
-                "scene_id": str(scene_id),
-                "character_slug": best["slug"],
-                "image_name": best["image_name"],
-                "score": best["score"],
-                "reason": best["reason"],
-            },
-            decision_made="auto_assigned",
-            confidence_score=best["score"],
-            reasoning=f"Auto-assigned {best['image_name']} (score={best['score']:.3f}, {best['reason']})",
-        )
-        logger.info(
-            f"Shot {shot_id}: auto-assigned {image_path} "
-            f"(score={best['score']:.3f}, {best['reason']})"
-        )
-
-    total_assigned = assigned_count + assigned_from_continuity
-    if total_assigned:
-        logger.info(
-            f"Scene {scene_id}: auto-assigned source images for {total_assigned} shots "
-            f"({assigned_from_continuity} from continuity, {assigned_count} from approved pool)"
-        )
-
-    return total_assigned
-
-
-async def _get_continuity_frame(conn, project_id: int, character_slug: str, current_scene_id) -> str | None:
-    """Look up the most recent generated frame for this character from a prior scene.
-
-    Returns the frame path if it exists and the file is on disk, else None.
-    Only returns frames from OTHER scenes (not the current one) to avoid
-    self-referencing within the same scene's shot loop.
-    """
-    row = await conn.fetchrow("""
-        SELECT frame_path FROM character_continuity_frames
-        WHERE project_id = $1 AND character_slug = $2 AND scene_id != $3
-    """, project_id, character_slug, current_scene_id)
-    if row and row["frame_path"] and Path(row["frame_path"]).exists():
-        return row["frame_path"]
-    return None
-
-
-async def _save_continuity_frame(
-    conn, project_id: int, character_slug: str,
-    scene_id, shot_id, frame_path: str,
-    scene_number: int | None = None, shot_number: int | None = None,
-):
-    """Save/update the most recent frame for a character in this project.
-
-    Uses UPSERT — one row per (project_id, character_slug), always the latest.
-    """
-    await conn.execute("""
-        INSERT INTO character_continuity_frames
-            (project_id, character_slug, scene_id, shot_id, frame_path,
-             scene_number, shot_number, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, now())
-        ON CONFLICT (project_id, character_slug) DO UPDATE SET
-            scene_id = EXCLUDED.scene_id,
-            shot_id = EXCLUDED.shot_id,
-            frame_path = EXCLUDED.frame_path,
-            scene_number = EXCLUDED.scene_number,
-            shot_number = EXCLUDED.shot_number,
-            created_at = now()
-    """, project_id, character_slug, scene_id, shot_id, frame_path,
-         scene_number, shot_number)
-
-
 async def roll_forward_wan_shot(
     prompt_text: str,
     ref_image: str,
@@ -1260,6 +387,9 @@ async def roll_forward_wan_shot(
     use_lightx2v: bool = True,
     motion_lora: str | None = None,
     motion_lora_strength: float = 0.8,
+    content_lora_high: str | None = None,
+    content_lora_low: str | None = None,
+    content_lora_strength: float = 0.85,
 ) -> dict:
     """Generate a long WAN 2.2 14B video by chaining multiple I2V segments.
 
@@ -1300,6 +430,9 @@ async def roll_forward_wan_shot(
             use_lightx2v=use_lightx2v,
             motion_lora=motion_lora,
             motion_lora_strength=motion_lora_strength,
+            content_lora_high=content_lora_high,
+            content_lora_low=content_lora_low,
+            content_lora_strength=content_lora_strength,
         )
 
         logger.info(
@@ -1507,28 +640,18 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                     scene_id,
                 )
 
-        # Step 2: Run engine selector with source image + video info available
+        # Step 2: Auto-assign engine only for shots that don't have one set
         from .engine_selector import select_engine as _pre_select_engine
-        _pre_wan_lora = project_video_lora  # From projects.video_lora column (project-scoped)
         for _s in shots:
-            _s_chars = _s.get("characters_present")
-            _s_char_list = list(_s_chars) if isinstance(_s_chars, list) else []
+            if _s.get("video_engine"):
+                continue  # respect manual override
             _s_has_source = bool(_s.get("source_image_path"))
-            _s_has_video = bool(_s.get("source_video_path"))
-            _s_type = _s.get("shot_type") or "medium"
-            _sel = _pre_select_engine(
-                shot_type=_s_type,
-                characters_present=_s_char_list,
-                has_source_image=_s_has_source,
-                has_source_video=_s_has_video,
-                project_wan_lora=_pre_wan_lora,
+            _sel = _pre_select_engine(has_source_image=_s_has_source)
+            await conn.execute(
+                "UPDATE shots SET video_engine = $2 WHERE id = $1",
+                _s["id"], _sel.engine,
             )
-            if _sel.engine != (_s.get("video_engine") or "framepack"):
-                await conn.execute(
-                    "UPDATE shots SET video_engine = $2 WHERE id = $1",
-                    _s["id"], _sel.engine,
-                )
-                logger.info(f"Shot {_s['id']}: pre-assigned engine={_sel.engine} ({_sel.reason})")
+            logger.info(f"Shot {_s['id']}: pre-assigned engine={_sel.engine}")
         # Re-fetch to pick up engine updates
         shots = await conn.fetch(
             "SELECT * FROM shots WHERE scene_id = $1 ORDER BY shot_number",
@@ -1613,26 +736,25 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                 # Use project-level video_lora from DB (project-scoped, not global)
                 _project_wan_lora = project_video_lora
 
-                # Auto-select engine based on shot characteristics
-                from .engine_selector import select_engine
-                has_source = bool(shot_dict.get("source_image_path"))
-                has_source_video = bool(shot_dict.get("source_video_path"))
-                shot_type = shot_dict.get("shot_type") or "medium"
-                char_list = chars if isinstance(chars, list) else []
-                engine_sel = select_engine(
-                    shot_type=shot_type,
-                    characters_present=char_list,
-                    has_source_image=has_source,
-                    has_source_video=has_source_video,
-                    project_wan_lora=_project_wan_lora,
-                )
-                shot_engine = engine_sel.engine
-                # Persist engine selection to DB
-                await conn.execute(
-                    "UPDATE shots SET video_engine = $2 WHERE id = $1",
-                    shot_id, shot_engine,
-                )
-                logger.info(f"Shot {shot_id}: engine={shot_engine} reason='{engine_sel.reason}'")
+                # Engine selection: respect manual override, otherwise auto-select
+                from .engine_selector import select_engine, VALID_ENGINES, EngineSelection
+                _existing_engine = shot_dict.get("video_engine")
+                if _existing_engine and _existing_engine in VALID_ENGINES:
+                    # Manual override or previously set — respect it
+                    shot_engine = _existing_engine
+                    engine_sel = EngineSelection(engine=shot_engine, reason="manual override (pre-set on shot)")
+                    logger.info(f"Shot {shot_id}: using pre-set engine={shot_engine}")
+                else:
+                    has_source = bool(shot_dict.get("source_image_path"))
+                    engine_sel = select_engine(
+                        has_source_image=has_source,
+                    )
+                    shot_engine = engine_sel.engine
+                    await conn.execute(
+                        "UPDATE shots SET video_engine = $2 WHERE id = $1",
+                        shot_id, shot_engine,
+                    )
+                    logger.info(f"Shot {shot_id}: engine={shot_engine} reason='{engine_sel.reason}'")
 
                 # Engine blacklist check
                 if character_slug:
@@ -1708,6 +830,19 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                         # Store project resolution for Wan T2V aspect ratio
                         _project_width = _style_row["width"]
                         _project_height = _style_row["height"]
+                except Exception:
+                    pass
+
+                # Allow project-level metadata to override style_anchor
+                # (e.g. photorealistic project using an anime checkpoint)
+                try:
+                    _meta = await conn.fetchval(
+                        "SELECT metadata->>'style_anchor' FROM projects WHERE id = $1",
+                        project_id,
+                    )
+                    if _meta:
+                        style_anchor = _meta
+                        logger.info(f"Shot {shot_id}: style_anchor overridden by project metadata: {style_anchor}")
                 except Exception:
                     pass
 
@@ -1911,11 +1046,16 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                         is_multi_char = False
 
                 if not image_filename and shot_engine != "wan" and not (is_multi_char and first_frame_path):
+                    # Skip continuity chaining for shots with content LoRAs —
+                    # they need keyframes matching their specific position/action,
+                    # not a last frame from a different position.
+                    _has_content_lora = bool(shot_dict.get("lora_name") or shot_dict.get("image_lora"))
                     same_char_prev_shot = (
                         prev_last_frame
                         and prev_character
                         and character_slug == prev_character
                         and Path(prev_last_frame).exists()
+                        and not _has_content_lora
                     )
                     if same_char_prev_shot:
                         # Priority 1: chain from previous shot in this scene
@@ -1975,9 +1115,18 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                                                     _ckpt += ".safetensors"
                                         except Exception:
                                             pass
+                                        # Include shot's image LoRA for content-accurate keyframes
+                                        _kf_extra_loras = None
+                                        _kf_img_lora = shot_dict.get("image_lora")
+                                        if _kf_img_lora:
+                                            _kf_img_str = shot_dict.get("image_lora_strength") or 0.7
+                                            _kf_extra_loras = [(_kf_img_lora, _kf_img_str)]
+                                            logger.info(f"Shot {shot_id}: keyframe will use image LoRA {_kf_img_lora} @ {_kf_img_str}")
+                                        _kf_chars = chars if chars else []
                                         _kf = await generate_simple_keyframe(
-                                            conn, project_id, char_list or [],
+                                            conn, project_id, list(_kf_chars),
                                             motion_prompt or "", _ckpt,
+                                            extra_loras=_kf_extra_loras,
                                         )
                                         if _kf and _kf.exists():
                                             source_path = str(_kf)
@@ -2107,7 +1256,10 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                     prev_last_frame = last_frame
                     prev_character = character_slug
 
-                    _review = 'approved' if auto_approve else 'pending_review'
+                    if auto_approve:
+                        _review = 'approved'
+                    else:
+                        _review, _qc_score = await _run_vision_qc(conn, shot_id, video_path, shot_dict)
                     await conn.execute("""
                         UPDATE shots SET status = 'completed', output_video_path = $2,
                                last_frame_path = $3, generation_time_seconds = $4,
@@ -2193,6 +1345,16 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                     # Get motion LoRA from engine selector
                     _14b_motion_lora = engine_sel.motion_loras[0] if engine_sel.motion_loras else None
                     _14b_motion_str = 0.8
+                    # Resolve content LoRA HIGH/LOW pair from shot or project
+                    _shot_lora = shot_dict.get("lora_name")
+                    _14b_clh, _14b_cll, _14b_cl_str = _resolve_content_lora_pair(
+                        _shot_lora, project_video_lora
+                    )
+                    if _14b_clh or _14b_cll:
+                        logger.info(
+                            f"Shot {shot_id}: content LoRA HIGH={_14b_clh} LOW={_14b_cll} "
+                            f"str={_14b_cl_str} (from {'shot' if _shot_lora else 'project'})"
+                        )
                     _WAN_SEGMENT_SECONDS = 5.0
                     if shot_seconds > _WAN_SEGMENT_SECONDS:
                         # Pattern C: roll-forward for long shots
@@ -2214,6 +1376,9 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                             use_lightx2v=True,
                             motion_lora=_14b_motion_lora,
                             motion_lora_strength=_14b_motion_str,
+                            content_lora_high=_14b_clh,
+                            content_lora_low=_14b_cll,
+                            content_lora_strength=_14b_cl_str,
                         )
                         if rf_result["video_path"]:
                             # Skip normal ComfyUI poll — roll-forward handles it internally
@@ -2248,7 +1413,10 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                             completed_videos.append(video_path)
                             prev_last_frame = last_frame
                             prev_character = character_slug
-                            _review = 'approved' if auto_approve else 'pending_review'
+                            if auto_approve:
+                                _review = 'approved'
+                            else:
+                                _review, _qc_score = await _run_vision_qc(conn, shot_id, video_path, shot_dict)
                             await conn.execute("""
                                 UPDATE shots SET status = 'completed', output_video_path = $2,
                                        last_frame_path = $3, generation_time_seconds = $4,
@@ -2275,6 +1443,7 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                     logger.info(
                         f"Shot {shot_id}: Wan22-14B I2V dims={wan_w}x{wan_h} "
                         f"ref_image={image_filename} motion_lora={_14b_motion_lora} "
+                        f"content_high={_14b_clh} content_low={_14b_cll} "
                         f"seed={shot_seed} steps={shot_steps} frames={num_frames}"
                     )
                     workflow, prefix = build_wan22_14b_i2v_workflow(
@@ -2289,6 +1458,9 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                         use_lightx2v=True,
                         motion_lora=_14b_motion_lora,
                         motion_lora_strength=_14b_motion_str,
+                        content_lora_high=_14b_clh,
+                        content_lora_low=_14b_cll,
+                        content_lora_strength=_14b_cl_str,
                     )
                     comfyui_prompt_id = _submit_wan_workflow(workflow)
                 elif shot_engine == "wan":
@@ -2505,7 +1677,10 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                 prev_last_frame = last_frame
                 prev_character = character_slug
 
-                _review = 'approved' if auto_approve else 'pending_review'
+                if auto_approve:
+                    _review = 'approved'
+                else:
+                    _review, _qc_score = await _run_vision_qc(conn, shot_id, video_path, shot_dict)
                 await conn.execute("""
                     UPDATE shots SET status = 'completed', output_video_path = $2,
                            last_frame_path = $3, generation_time_seconds = $4,

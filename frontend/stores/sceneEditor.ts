@@ -320,6 +320,12 @@ export const useSceneEditorStore = defineStore('sceneEditor', () => {
               transition_duration: shot.transition_duration ?? undefined,
               dialogue_text: shot.dialogue_text ?? undefined,
               dialogue_character_slug: shot.dialogue_character_slug ?? undefined,
+              characters_present: shot.characters_present ?? undefined,
+              guidance_scale: shot.guidance_scale ?? undefined,
+              lora_name: shot.lora_name ?? undefined,
+              lora_strength: shot.lora_strength ?? undefined,
+              image_lora: shot.image_lora ?? undefined,
+              image_lora_strength: shot.image_lora_strength ?? undefined,
             })
           } else {
             const result = await api.createShot(editSceneId.value, {
@@ -334,6 +340,15 @@ export const useSceneEditorStore = defineStore('sceneEditor', () => {
               use_f1: shot.use_f1 || false,
               dialogue_text: shot.dialogue_text ?? undefined,
               dialogue_character_slug: shot.dialogue_character_slug ?? undefined,
+              generation_prompt: shot.generation_prompt ?? undefined,
+              generation_negative: shot.generation_negative ?? undefined,
+              characters_present: shot.characters_present ?? undefined,
+              video_engine: shot.video_engine ?? undefined,
+              guidance_scale: shot.guidance_scale ?? undefined,
+              lora_name: shot.lora_name ?? undefined,
+              lora_strength: shot.lora_strength ?? undefined,
+              image_lora: shot.image_lora ?? undefined,
+              image_lora_strength: shot.image_lora_strength ?? undefined,
             })
             shot.id = result.id
           }
@@ -363,6 +378,15 @@ export const useSceneEditorStore = defineStore('sceneEditor', () => {
             use_f1: shot.use_f1 || false,
             dialogue_text: shot.dialogue_text ?? undefined,
             dialogue_character_slug: shot.dialogue_character_slug ?? undefined,
+            generation_prompt: shot.generation_prompt ?? undefined,
+            generation_negative: shot.generation_negative ?? undefined,
+            characters_present: shot.characters_present ?? undefined,
+            video_engine: shot.video_engine ?? undefined,
+            guidance_scale: shot.guidance_scale ?? undefined,
+            lora_name: shot.lora_name ?? undefined,
+            lora_strength: shot.lora_strength ?? undefined,
+            image_lora: shot.image_lora ?? undefined,
+            image_lora_strength: shot.image_lora_strength ?? undefined,
           })
           shot.id = shotResult.id
         }

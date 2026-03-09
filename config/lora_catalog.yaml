@@ -1,0 +1,1228 @@
+# LoRA Catalog — categorization, content tiers, and action presets
+# Used by GET /api/loras/catalog to serve the frontend LoRA browser
+
+content_tiers:
+  universal:
+    - camera
+    - speed
+    - motion
+  wholesome:   # G, PG — Mira, Small Wonders, Scramble City, Mario
+    - walk
+    - run
+    - idle
+    - emotion
+    - environment_sfw
+  mature:      # R — CGS, Echo Chamber
+    - fight
+    - explosion
+    - weapon
+    - cyberpunk
+    - chase
+  explicit:    # XXX — TDD, Rosa, Fury
+    - position
+    - oral
+    - group
+    - finish
+    - nude
+  furry_explicit:  # XXX + nova_animal — Fury only
+    - furry_enhancer
+    - anthro_interaction
+
+# Rating gates — which content_rating values unlock which tiers
+rating_gates:
+  G: [universal, wholesome]
+  PG: [universal, wholesome]
+  PG-13: [universal, wholesome, mature]
+  R: [universal, wholesome, mature]
+  XXX: [universal, wholesome, mature, explicit, furry_explicit]
+
+# Checkpoint compatibility
+checkpoint_compat:
+  illustrious:
+    - waiIllustriousSDXL_v160.safetensors
+  nova_animal:
+    - nova_animal_xl_v11.safetensors
+
+# ---- VIDEO LORA PAIRS (WAN 2.2 14B) ----
+video_lora_pairs:
+  cowgirl:
+    label: "Cowgirl"
+    tier: explicit
+    high: wan22_nsfw/wan22_cowgirl_HIGH.safetensors
+    low: wan22_nsfw/wan22_cowgirl_LOW.safetensors
+    tags: [cowgirl, riding, position]
+
+  assertive_cowgirl:
+    label: "Assertive Cowgirl"
+    tier: explicit
+    high: wan22_nsfw/wan22_assertive_cowgirl_HIGH.safetensors
+    low: wan22_nsfw/wan22_assertive_cowgirl_LOW.safetensors
+    tags: [cowgirl, assertive, dominant, riding, position]
+
+  reverse_cowgirl:
+    label: "Reverse Cowgirl"
+    tier: explicit
+    high: wan22_nsfw/wan22_reverse_cowgirl_HIGH.safetensors
+    low: wan22_nsfw/wan22_reverse_cowgirl_LOW.safetensors
+    tags: [cowgirl, reverse, riding, position]
+
+  missionary:
+    label: "Missionary"
+    tier: explicit
+    high: wan22_nsfw/wan22_missionary_HIGH.safetensors
+    low: wan22_nsfw/wan22_missionary_LOW.safetensors
+    tags: [missionary, position]
+
+  prone_bone:
+    label: "Prone Bone"
+    tier: explicit
+    high: wan22_nsfw/wan22_prone_bone_HIGH.safetensors
+    low: wan22_nsfw/wan22_prone_bone_LOW.safetensors
+    tags: [prone, position]
+
+  doggy_front:
+    label: "Doggy (Front View)"
+    tier: explicit
+    high: wan22_nsfw/wan22_doggy_front_HIGH.safetensors
+    low: wan22_nsfw/wan22_doggy_front_LOW.safetensors
+    tags: [doggy, front, position]
+
+  doggy_back:
+    label: "Doggy (Back View)"
+    tier: explicit
+    high: wan22_nsfw/wan22_doggy_back_HIGH.safetensors
+    low: wan22_nsfw/wan22_doggy_back_LOW.safetensors
+    tags: [doggy, back, position]
+
+  from_behind:
+    label: "Sex From Behind"
+    tier: explicit
+    high: wan22_nsfw/wan22_from_behind_HIGH.safetensors
+    low: wan22_nsfw/wan22_from_behind_LOW.safetensors
+    tags: [behind, standing, position]
+
+  spooning:
+    label: "Spooning"
+    tier: explicit
+    high: wan22_nsfw/wan22_spooning_HIGH.safetensors
+    low: wan22_nsfw/wan22_spooning_LOW.safetensors
+    tags: [spooning, side, intimate, position]
+
+  combo_hj_bj:
+    label: "HJ/BJ Combo"
+    tier: explicit
+    high: wan22_nsfw/wan22_combo_hj_bj_HIGH.safetensors
+    low: wan22_nsfw/wan22_combo_hj_bj_LOW.safetensors
+    tags: [blowjob, handjob, oral]
+
+  sensual_bj:
+    label: "Sensual BJ"
+    tier: explicit
+    high: wan22_nsfw/wan22_sensual_bj_HIGH.safetensors
+    low: wan22_nsfw/wan22_sensual_bj_LOW.safetensors
+    tags: [blowjob, sensual, teasing, oral]
+
+  titjob:
+    label: "Titjob / Paizuri"
+    tier: explicit
+    high: wan22_nsfw/wan22_titjob_HIGH.safetensors
+    low: wan22_nsfw/wan22_titjob_LOW.safetensors
+    tags: [titjob, paizuri]
+
+  facial:
+    label: "Facial"
+    tier: explicit
+    high: wan22_nsfw/wan22_facial_HIGH.safetensors
+    low: wan22_nsfw/wan22_facial_LOW.safetensors
+    tags: [facial, cumshot, finish]
+
+  nsfw_group_girls:
+    label: "Group (Girls)"
+    tier: explicit
+    high: wan22_nsfw/wan22_nsfw_group_girls.safetensors
+    low: null
+    tags: [group, girls, lesbian]
+
+  # --- NEW: DR34ML4Y All-in-One (trigger words: m15510n4ry, bl0wj0b, d0gg1e, c0wg1rl, d0ubl3_bj) ---
+  dr34ml4y:
+    label: "DR34ML4Y All-in-One NSFW"
+    tier: explicit
+    high: DR34ML4Y_I2V_14B_HIGH.safetensors
+    low: DR34ML4Y_I2V_14B_LOW_V2.safetensors
+    tags: [missionary, blowjob, doggy, cowgirl, all_in_one]
+
+  # --- NEW: HuggingFace lkzd7 collection ---
+  squatting_cowgirl:
+    label: "Squatting Cowgirl"
+    tier: explicit
+    high: wan22_nsfw/Blink_Squatting_Cowgirl_Position_I2V_HIGH.safetensors
+    low: wan22_nsfw/Blink_Squatting_Cowgirl_Position_I2V_LOW.safetensors
+    tags: [cowgirl, squatting, riding, position]
+
+  double_blowjob:
+    label: "Double Blowjob"
+    tier: explicit
+    high: wan22_nsfw/WAN-2.2-I2V-Double-Blowjob-HIGH-v1.safetensors
+    low: wan22_nsfw/WAN-2.2-I2V-Double-Blowjob-LOW-v1.safetensors
+    tags: [blowjob, double, oral, group]
+
+  lips_bj:
+    label: "Lips BJ (Close-up)"
+    tier: explicit
+    high: wan22_nsfw/lips-bj_high_noise.safetensors
+    low: wan22_nsfw/lips-bj_low_noise.safetensors
+    tags: [blowjob, closeup, lips, oral]
+
+  mouthful:
+    label: "Mouthful"
+    tier: explicit
+    high: wan22_nsfw/wan22-mouthfull-140epoc-high-k3nk.safetensors
+    low: wan22_nsfw/wan22-mouthfull-152epoc-low-k3nk.safetensors
+    tags: [oral, mouthful, finish]
+
+  bukkake:
+    label: "Bukkake"
+    tier: explicit
+    high: "wan22_nsfw/Pornmaster_wan 2.2_14b_I2V_bukkake_v1.4_high_noise.safetensors"
+    low: "wan22_nsfw/Pornmaster_wan 2.2_14b_I2V_bukkake_v1.4_low_noise.safetensors"
+    tags: [bukkake, group, finish]
+
+  casting_doggy:
+    label: "Casting Doggy (Diagonal Behind)"
+    tier: explicit
+    high: wan22_nsfw/mql_casting_sex_doggy_kneel_diagonally_behind_vagina_wan22_i2v_v1_high_noise.safetensors
+    low: wan22_nsfw/mql_casting_sex_doggy_kneel_diagonally_behind_vagina_wan22_i2v_v1_low_noise.safetensors
+    tags: [doggy, casting, diagonal, position]
+
+  massage_tits:
+    label: "Massage / Tit Play"
+    tier: explicit
+    high: wan22_nsfw/mql_massage_tits_wan22_i2v_v1_high_noise.safetensors
+    low: wan22_nsfw/mql_massage_tits_wan22_i2v_v1_low_noise.safetensors
+    tags: [massage, tits, foreplay]
+
+  panties_aside:
+    label: "Panties Aside"
+    tier: explicit
+    high: wan22_nsfw/mql_panties_aside_wan22_i2v_v1_high_noise.safetensors
+    low: wan22_nsfw/mql_panties_aside_wan22_i2v_v1_low_noise.safetensors
+    tags: [panties, teasing, position]
+
+  sex_from_behind_v2:
+    label: "Sex From Behind v2"
+    tier: explicit
+    high: wan22_nsfw/sfbehind_v2.1_high_noise.safetensors
+    low: wan22_nsfw/sfbehind_v2.1_low_noise.safetensors
+    tags: [behind, standing, position]
+
+  penis_enhancer:
+    label: "Penis Enhancer"
+    tier: explicit
+    high: wan22_nsfw/PENISLORA_22_i2v_HIGH_e320.safetensors
+    low: wan22_nsfw/PENISLORA_22_i2v_LOW_e496.safetensors
+    tags: [anatomy, male, enhancer]
+
+  pussy_asshole_closeup:
+    label: "Pussy/Asshole Close-up"
+    tier: explicit
+    high: wan22_nsfw/wan2.2_i2v_high_ulitmate_pussy_asshole.safetensors
+    low: wan22_nsfw/wan2.2_i2v_low_ulitmate_pussy_asshole.safetensors
+    tags: [closeup, anatomy, female]
+
+  softcore_photoshoot:
+    label: "Softcore Photoshoot"
+    tier: explicit
+    high: wan22_nsfw/W22_Multiscene_Photoshoot_Softcore_i2v_HN.safetensors
+    low: wan22_nsfw/W22_Multiscene_Photoshoot_Softcore_i2v_LN.safetensors
+    tags: [softcore, photoshoot, teasing, glamour]
+
+  side_transition:
+    label: "Side Legs Transition"
+    tier: explicit
+    high: wan22_nsfw/sid3l3g_transition_v2.0_H.safetensors
+    low: wan22_nsfw/sid3l3g_transition_v2.0_L.safetensors
+    tags: [transition, side, position_change]
+
+  # General NSFW quality enhancer — stacks with position LoRAs
+  general_nsfw:
+    label: "WAN General NSFW Enhancer"
+    tier: explicit
+    high: wan22_nsfw/wan22_general_nsfw_HIGH.safetensors
+    low: wan22_nsfw/wan22_general_nsfw_LOW.safetensors
+    tags: [nsfw, quality, enhancer, general]
+
+  # --- CAMERA LORAS (WAN 2.2 14B I2V) ---
+  camera_push_in:
+    label: "Camera Push In / Dolly"
+    tier: universal
+    high: wan22_camera/camera_push_in.safetensors
+    low: null
+    tags: [camera, push_in, dolly, zoom]
+
+  camera_rotation:
+    label: "Camera Rotation"
+    tier: universal
+    high: wan22_camera/camera_rotation_HIGH.safetensors
+    low: null
+    tags: [camera, rotation, orbit]
+
+  orbit_v2:
+    label: "Orbit Around Subject V2"
+    tier: universal
+    high: wan22_camera/orbit_v2_HIGH.safetensors
+    low: wan22_camera/orbit_v2_LOW.safetensors
+    tags: [camera, orbit, surround, 360]
+
+  drone_shot:
+    label: "Drone Shot / Aerial"
+    tier: universal
+    high: wan22_camera/drone_shot_HIGH.safetensors
+    low: null
+    tags: [camera, drone, aerial, overhead]
+
+  tilt_down:
+    label: "Camera Tilt-down Undershot"
+    tier: universal
+    high: wan22_camera/tilt_down_HIGH.safetensors
+    low: wan22_camera/tilt_down_LOW.safetensors
+    tags: [camera, tilt, undershot, dramatic]
+
+  rotation_360:
+    label: "360 Rotation"
+    tier: universal
+    high: wan22_camera/360_rotation_HIGH.safetensors
+    low: null
+    tags: [camera, 360, rotation, turntable]
+
+  turntable_360:
+    label: "Turntable 360"
+    tier: universal
+    high: wan22_camera/turntable_360_HIGH.safetensors
+    low: null
+    tags: [camera, turntable, reveal, product]
+
+  lazy_susan:
+    label: "Lazy Susan Rotation"
+    tier: universal
+    high: wan22_camera/lazy_susan_rotation_HIGH.safetensors
+    low: null
+    tags: [camera, rotation, table, product]
+
+  cinematic_smash_cut:
+    label: "Cinematic Smash Cut"
+    tier: universal
+    high: wan22_camera/cinematic_smash_cut.safetensors
+    low: null
+    tags: [camera, smash_cut, transition, cinematic]
+
+  hard_cut:
+    label: "Cinematic Hard Cut v3"
+    tier: universal
+    high: wan22_camera/hard_cut_v3_HIGH.safetensors
+    low: null
+    tags: [camera, hard_cut, transition, scene_change]
+
+  set_reveal:
+    label: "Set Reveal"
+    tier: universal
+    high: wan22_camera/set_reveal_HIGH.safetensors
+    low: null
+    tags: [camera, reveal, zoom_out, establishing]
+
+  eyes_in:
+    label: "Eyes In (Close-up Zoom)"
+    tier: universal
+    high: wan22_camera/eyes_in_HIGH.safetensors
+    low: null
+    tags: [camera, eyes, close_up, zoom, dramatic]
+
+  cinematic_flare:
+    label: "Cinematic Lens Flare"
+    tier: universal
+    high: null
+    low: wan22_camera/cinematic_flare_LOW.safetensors
+    tags: [camera, flare, cinematic, atmosphere]
+
+  live2d_background:
+    label: "Live2D Background"
+    tier: universal
+    high: wan22_camera/live2d_background_HIGH.safetensors
+    low: wan22_camera/live2d_background_LOW.safetensors
+    tags: [style, live2d, background, parallax]
+
+  # --- ACTION / EFFECT LORAS ---
+  fight:
+    label: "Fight / Combat"
+    tier: mature
+    high: wan22_action/wan_fight.safetensors
+    low: null
+    tags: [fight, combat, punch, kick, action]
+
+  explosion:
+    label: "Explosion"
+    tier: mature
+    high: wan22_action/explosion_HIGH.safetensors
+    low: wan22_action/explosion_LOW.safetensors
+    tags: [explosion, blast, vfx, destruction]
+
+  atomic_explosion:
+    label: "Atomic Explosion"
+    tier: mature
+    high: wan22_action/atomic_explosion_HIGH.safetensors
+    low: wan22_action/atomic_explosion_LOW.safetensors
+    tags: [explosion, atomic, mushroom_cloud, vfx]
+
+  pixel_walk:
+    label: "Pixel Walk"
+    tier: wholesome
+    high: wan22_action/pixel_walk_HIGH.safetensors
+    low: wan22_action/pixel_walk_LOW.safetensors
+    tags: [walk, movement, character]
+
+  catwalk:
+    label: "Catwalk / Model Walk"
+    tier: universal
+    high: wan22_action/catwalk.safetensors
+    low: null
+    tags: [walk, model, strut, fashion]
+
+  tiktok_dance:
+    label: "TikTok Hip Dance"
+    tier: universal
+    high: wan22_action/tiktok_hip_dance_HIGH.safetensors
+    low: null
+    tags: [dance, hip, tiktok, movement]
+
+  retro_90s_anime:
+    label: "Retro 90s Anime Style"
+    tier: universal
+    high: null
+    low: wan22_action/retro_90s_anime_LOW.safetensors
+    tags: [style, retro, 90s, anime, vhs]
+
+  slap:
+    label: "Slap (I2V)"
+    tier: mature
+    high: wan22_action/slap_HIGH.safetensors
+    low: wan22_action/slap_LOW.safetensors
+    tags: [slap, hit, impact, comedy, action]
+
+  bullet_time:
+    label: "Bullet Time"
+    tier: mature
+    high: wan22_action/bullet_time_HIGH.safetensors
+    low: null
+    tags: [bullet_time, slow_motion, matrix, action]
+
+  timelapse:
+    label: "Time-lapse"
+    tier: universal
+    high: wan22_action/timelapse_HIGH.safetensors
+    low: wan22_action/timelapse_LOW.safetensors
+    tags: [timelapse, speed, passage_of_time]
+
+  hip_swing:
+    label: "Hip Swing Twist (Dance)"
+    tier: universal
+    high: wan22_action/hip_swing_twist_HIGH.safetensors
+    low: null
+    tags: [dance, hip, swing, movement]
+
+  anguish_wail:
+    label: "Anguish Wail (Emotion)"
+    tier: universal
+    high: wan22_action/anguish_wail_HIGH.safetensors
+    low: null
+    tags: [emotion, cry, anguish, dramatic, expression]
+
+  sigma_face:
+    label: "Sigma Face Expression"
+    tier: universal
+    high: wan22_action/sigma_face_HIGH.safetensors
+    low: wan22_action/sigma_face_LOW.safetensors
+    tags: [expression, sigma, dramatic, meme, face]
+
+  transformation:
+    label: "Realistic Transformation"
+    tier: mature
+    high: wan22_action/transformation_HIGH.safetensors
+    low: null
+    tags: [transformation, morph, change, vfx]
+
+  outfit_transform:
+    label: "Outfit Transformation"
+    tier: universal
+    high: wan22_action/outfit_transform_HIGH.safetensors
+    low: null
+    tags: [outfit, costume, change, transformation]
+
+  transition_v2:
+    label: "Deepfake / Transition V2"
+    tier: universal
+    high: wan22_camera/transition_v2_HIGH.safetensors
+    low: null
+    tags: [transition, deepfake, face_swap, scene_change]
+
+  # --- FURRY / ANTHRO (for Fury project) ---
+  furry_nsfw_general:
+    label: "Furry NSFW General (14B I2V)"
+    tier: furry_explicit
+    high: wan22_nsfw/wan_furry_nsfw_14b_i2v.safetensors
+    low: null
+    tags: [furry, anthro, nsfw, general]
+
+  furry_transformation:
+    label: "Anthro Furry Transformation"
+    tier: furry_explicit
+    high: wan22_nsfw/wan22_furry_tf_HIGH.safetensors
+    low: null
+    tags: [furry, anthro, transformation]
+
+  # --- POV VIDEO LORAS ---
+  pov_doggystyle:
+    label: "POV Doggystyle"
+    tier: explicit
+    high: pov_doggystyle_sdxl.safetensors
+    low: null
+    tags: [pov, doggy, doggystyle, first_person, position]
+
+  pov_cowgirl:
+    label: "POV Cowgirl"
+    tier: explicit
+    high: wan22_nsfw/WAN-2.2-I2V-POV-Cowgirl-HIGH-v1.0-fixed.safetensors
+    low: null
+    tags: [pov, cowgirl, riding, first_person]
+
+  pov_fellatio:
+    label: "POV Fellatio (Taker)"
+    tier: explicit
+    high: wan22_nsfw/wan22_i2v_taker_pov_bj_high_noise.safetensors
+    low: null
+    tags: [pov, blowjob, fellatio, oral, first_person]
+
+# ---- IMAGE LORA CATEGORIES ----
+image_lora_categories:
+  # Explicit positions (Illustrious)
+  position:
+    tier: explicit
+    loras:
+      - filename: ass_ride_illustrious.safetensors
+        label: "Ass Ride / Cowgirl"
+        tags: [cowgirl, riding]
+      - filename: IL_doggy.safetensors
+        label: "Doggy Style"
+        tags: [doggy]
+      - filename: Doggystyle_leaning_on_the_counter.safetensors
+        label: "Doggy (Counter)"
+        tags: [doggy, counter, standing]
+      - filename: Squatting_Doggy.safetensors
+        label: "Squatting Doggy"
+        tags: [doggy, squatting]
+      - filename: prone_face_cam_v0_2.safetensors
+        label: "Prone Face Cam"
+        tags: [prone, pov]
+      - filename: sex_wall_1.safetensors
+        label: "Wall Sex"
+        tags: [wall, standing]
+      - filename: "Standing 69 (Illustrious) v1.safetensors"
+        label: "Standing 69"
+        tags: [standing, oral, 69]
+      - filename: spitroast_illustrious.safetensors
+        label: "Spitroast"
+        tags: [spitroast, group]
+      - filename: breeding_slave_illustrious.safetensors
+        label: "Breeding"
+        tags: [breeding, intense]
+      - filename: Upright_straddle_back_XL.safetensors
+        label: "Upright Straddle (Back View)"
+        tags: [straddle, riding, leg_lock, back_view]
+        trigger: "girl on top, straddling, upright straddle, leg lock"
+      - filename: pov_doggystyle_sdxl.safetensors
+        label: "POV Doggystyle (SDXL)"
+        tags: [doggy, pov, first_person]
+        trigger: "dggy, girl, pov, penis"
+      - filename: mating_press_illustrious.safetensors
+        label: "Mating Press"
+        tags: [mating_press, missionary, intense]
+        trigger: "matpress"
+      - filename: bi_mmf_threesome_sdxl.safetensors
+        label: "Bi MMF Threesome"
+        tags: [mmf, threesome, bisexual, group]
+
+  choking:
+    tier: explicit
+    loras:
+      - filename: Choking__Neck_Grab_-_SDXL.safetensors
+        label: "Choking / Neck Grab"
+        tags: [choking, neck, rough, bdsm]
+        trigger: "neckchoke, 1girl, 1boy, hand on neck"
+      - filename: POVThroatGrab_Ill_v1.safetensors
+        label: "POV Throat Grab"
+        tags: [choking, throat, pov, rough]
+        trigger: "POV_throatgrab, pov choking"
+
+  oral:
+    tier: explicit
+    loras:
+      - filename: deepthroat_doggy.safetensors
+        label: "Deepthroat + Doggy"
+        tags: [deepthroat, doggy, oral]
+      - filename: choking-doggy-style-IL-000011.safetensors
+        label: "Choking Doggy"
+        tags: [choking, doggy, rough]
+      - filename: side_view_reverse_blowjobthroatfuckdeepthroatmouthfuck.safetensors
+        label: "Side View BJ/Throatfuck"
+        tags: [blowjob, throatfuck, side]
+      - filename: Face_Fucking.safetensors
+        label: "Face Fucking"
+        tags: [facefuck, rough, oral]
+      - filename: LoRASexAndAnalFingering.safetensors
+        label: "Sex & Fingering"
+        tags: [fingering, anal]
+
+  group:
+    tier: explicit
+    loras:
+      - filename: group_sex_orgy_illustrious.safetensors
+        label: "Group Sex / Orgy"
+        tags: [group, orgy]
+      - filename: group_grab_illustrious.safetensors
+        label: "Group Grab"
+        tags: [group, grab]
+      - filename: mmmf_doggy.safetensors
+        label: "MMMF Doggy"
+        tags: [group, mmmf, doggy]
+      - filename: mounted_dp-000001.safetensors
+        label: "Mounted DP"
+        tags: [dp, mounted, group]
+      - filename: multiple-boys-v8-illustriousxl-lora-nochekaiser.safetensors
+        label: "Multiple Males"
+        tags: [group, multiple_males]
+
+  nude:
+    tier: explicit
+    loras:
+      - filename: NM_FitButt_illv4.safetensors
+        label: "Fit Butt"
+        tags: [butt, fitness, nude]
+      - filename: cold_fresh_skin_ill.safetensors
+        label: "Realistic Skin"
+        tags: [skin, realism, quality]
+      - filename: kangoku_gakuen_gamecg_ill.safetensors
+        label: "Prison School CG"
+        tags: [anime, ecchi]
+      - filename: melkor_mancin_style_ill.safetensors
+        label: "Melkor Mancin Style"
+        tags: [style, western, comic]
+
+  # Furry-specific
+  furry:
+    tier: furry_explicit
+    checkpoint: nova_animal
+    loras:
+      - filename: furry_enhancer_v8.2.safetensors
+        label: "Furry Enhancer"
+        tags: [furry, quality, enhancer]
+      - filename: furry_realism_illus.safetensors
+        label: "Furry Realism"
+        tags: [furry, realism]
+      - filename: human_on_anthro_male_pov_il.safetensors
+        label: "Human on Anthro (Male POV)"
+        tags: [furry, human_anthro, pov]
+      - filename: human_male_on_furry_female_concept.safetensors
+        label: "Human Male on Furry Female"
+        tags: [furry, human_anthro, concept]
+      - filename: human_female_on_furry_male_concept.safetensors
+        label: "Human Female on Furry Male"
+        tags: [furry, human_anthro]
+      - filename: ma_tianba_horse_anthro.safetensors
+        label: "Horse Anthro"
+        tags: [furry, horse, anthro]
+
+  # Monster / Interspecies / Unrealistic concepts
+  monster:
+    tier: explicit
+    loras:
+      - filename: unrealistic_nsfw_concepts_sdxl.safetensors
+        label: "Unrealistic NSFW Concepts (Non-Pony SDXL)"
+        tags: [monster, demon, alien, interspecies, unrealistic]
+        trigger: "monster, demon, alien, dominant male, submissive female, interspecies, sex from behind, hetero"
+      - filename: enhanced_unrealistic_bigasp_v2.safetensors
+        label: "Enhanced Unrealistic (bigASP V2)"
+        tags: [monster, demon, alien, interspecies, creature, bigasp]
+        trigger: "source_render, monster, demon, alien, interspecies"
+        note: "Requires bigASP V2 checkpoint — may not work with Illustrious"
+      - filename: cc_cyborg_sdxl.safetensors
+        label: "Cyborg Concept"
+        tags: [cyborg, robot, mechanical, scifi]
+      - filename: monster_crowd_ilxl_v1.0_ex.safetensors
+        label: "Monster Crowd"
+        tags: [monster, crowd, group, creature]
+      - filename: aliens_ailf_sdxl.safetensors
+        label: "Aliens AILF"
+        tags: [alien, xenomorph, interspecies, scifi]
+        trigger: "alienailf"
+      - filename: piccolhoe_alien_babe_sdxl.safetensors
+        label: "Piccolhoe Alien Babe"
+        tags: [alien, babe, interspecies, scifi, exotic]
+        trigger: "Tw3ak1t"
+      - filename: symbiote_she_venom_sdxl.safetensors
+        label: "Symbiote She-Venom"
+        tags: [symbiote, venom, tentacle, monster, latex]
+      - filename: scifi_sex_machine_rider_ill.safetensors
+        label: "Sci-fi Sex Machine Rider"
+        tags: [machine, robot, riding, scifi, mechanical]
+
+  # Style (universal / mature)
+  style:
+    tier: universal
+    loras:
+      - filename: cyberpunk_style_ill.safetensors
+        label: "Cyberpunk Style"
+        tags: [cyberpunk, neon, style]
+      - filename: fantasy_forge_v3_il.safetensors
+        label: "Fantasy Forge"
+        tags: [fantasy, style]
+      - filename: "Nightclub_-_IL.safetensors"
+        label: "Nightclub Environment"
+        tags: [nightclub, environment, dark]
+      - filename: loviante_v2_illustrious.safetensors
+        label: "Loviante Style"
+        tags: [style, anime]
+      - filename: rrumirumi_artstyle_ill.safetensors
+        label: "Rrumirumi Art Style"
+        tags: [style, anime, art]
+      - filename: honovy_pony_v6.safetensors
+        label: "Honovy (Pony)"
+        tags: [style, pony]
+
+  # Violence / Action
+  action:
+    tier: mature
+    loras:
+      - filename: "Illustrious - Nuclear_Explosion.safetensors"
+        label: "Nuclear Explosion"
+        tags: [explosion, destruction, vfx]
+      - filename: weapon_rifle_shoulder_carry_illustrious.safetensors
+        label: "Rifle Carry"
+        tags: [weapon, rifle, military]
+      - filename: cybernetic_limbs_illustrious.safetensors
+        label: "Cybernetic Limbs"
+        tags: [cyberpunk, cybernetic, augmentation]
+      - filename: helldivers_b08_light_gunner_illustrious.safetensors
+        label: "Helldivers Gunner"
+        tags: [military, armor, gunner]
+
+  # Camera / Motion (universal)
+  camera:
+    tier: universal
+    loras:
+      - filename: wan22_arcshot_high.safetensors
+        label: "Arc Shot (Camera Orbit)"
+        tags: [camera, orbit, cinematic]
+        video_only: true
+      - filename: WanAnimate_relight_lora_fp16.safetensors
+        label: "Relight (Atmospheric)"
+        tags: [lighting, atmosphere, mood]
+        video_only: true
+      - filename: DR34ML4Y_I2V_14B_LOW_V2.safetensors
+        label: "DR34ML4Y LOW (Anime Style)"
+        tags: [anime, style, quality]
+        video_only: true
+      - filename: DR34ML4Y_I2V_14B_HIGH_V2.safetensors
+        label: "DR34ML4Y HIGH (Anime Style)"
+        tags: [anime, style, quality]
+        video_only: true
+
+# ---- ACTION PRESETS (one-click combos) ----
+action_presets:
+  cowgirl:
+    label: "Cowgirl"
+    tier: explicit
+    image_lora: ass_ride_illustrious.safetensors
+    image_lora_strength: 0.7
+    video_lora: cowgirl
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+
+  assertive_cowgirl:
+    label: "Assertive Cowgirl"
+    tier: explicit
+    image_lora: ass_ride_illustrious.safetensors
+    image_lora_strength: 0.7
+    video_lora: assertive_cowgirl
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+
+  reverse_cowgirl:
+    label: "Reverse Cowgirl"
+    tier: explicit
+    image_lora: ass_ride_illustrious.safetensors
+    image_lora_strength: 0.7
+    video_lora: reverse_cowgirl
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+
+  missionary:
+    label: "Missionary"
+    tier: explicit
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: missionary
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+
+  doggy_front:
+    label: "Doggy (Face View)"
+    tier: explicit
+    image_lora: IL_doggy.safetensors
+    image_lora_strength: 0.7
+    video_lora: doggy_front
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+
+  doggy_back:
+    label: "Doggy (Rear View)"
+    tier: explicit
+    image_lora: Doggystyle_leaning_on_the_counter.safetensors
+    image_lora_strength: 0.7
+    video_lora: doggy_back
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+
+  prone_bone:
+    label: "Prone Bone"
+    tier: explicit
+    image_lora: prone_face_cam_v0_2.safetensors
+    image_lora_strength: 0.7
+    video_lora: prone_bone
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+
+  from_behind:
+    label: "From Behind"
+    tier: explicit
+    image_lora: Doggystyle_leaning_on_the_counter.safetensors
+    image_lora_strength: 0.7
+    video_lora: from_behind
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+
+  spooning:
+    label: "Spooning"
+    tier: explicit
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: spooning
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+
+  wall_sex:
+    label: "Wall Sex"
+    tier: explicit
+    image_lora: sex_wall_1.safetensors
+    image_lora_strength: 0.7
+    video_lora: from_behind
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+
+  blowjob:
+    label: "Blowjob"
+    tier: explicit
+    image_lora: deepthroat_doggy.safetensors
+    image_lora_strength: 0.7
+    video_lora: combo_hj_bj
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+
+  sensual_blowjob:
+    label: "Sensual BJ"
+    tier: explicit
+    image_lora: deepthroat_doggy.safetensors
+    image_lora_strength: 0.65
+    video_lora: sensual_bj
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+
+  titjob:
+    label: "Titjob"
+    tier: explicit
+    image_lora: NM_FitButt_illv4.safetensors
+    image_lora_strength: 0.6
+    video_lora: titjob
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+
+  facial_finish:
+    label: "Facial"
+    tier: explicit
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: facial
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+
+  group_girls:
+    label: "Group (Girls)"
+    tier: explicit
+    image_lora: group_sex_orgy_illustrious.safetensors
+    image_lora_strength: 0.6
+    video_lora: nsfw_group_girls
+    video_lora_strength: 0.8
+    video_engine: wan22_14b
+
+  # Furry-specific presets
+  furry_cowgirl:
+    label: "Furry Cowgirl"
+    tier: furry_explicit
+    image_lora: human_male_on_furry_female_concept.safetensors
+    image_lora_strength: 0.75
+    video_lora: assertive_cowgirl
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+
+  furry_prone:
+    label: "Furry Prone Bone"
+    tier: furry_explicit
+    image_lora: human_male_on_furry_female_concept.safetensors
+    image_lora_strength: 0.75
+    video_lora: prone_bone
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+
+  furry_blowjob:
+    label: "Furry BJ"
+    tier: furry_explicit
+    image_lora: human_on_anthro_male_pov_il.safetensors
+    image_lora_strength: 0.7
+    video_lora: combo_hj_bj
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+
+  furry_from_behind:
+    label: "Furry From Behind"
+    tier: furry_explicit
+    image_lora: human_male_on_furry_female_concept.safetensors
+    image_lora_strength: 0.75
+    video_lora: from_behind
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+
+  # --- NEW presets ---
+  squatting_cowgirl:
+    label: "Squatting Cowgirl"
+    tier: explicit
+    image_lora: ass_ride_illustrious.safetensors
+    image_lora_strength: 0.7
+    video_lora: squatting_cowgirl
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+
+  double_blowjob:
+    label: "Double Blowjob"
+    tier: explicit
+    image_lora: deepthroat_doggy.safetensors
+    image_lora_strength: 0.65
+    video_lora: double_blowjob
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+
+  lips_closeup_bj:
+    label: "Lips BJ (Close-up)"
+    tier: explicit
+    image_lora: deepthroat_doggy.safetensors
+    image_lora_strength: 0.6
+    video_lora: lips_bj
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+
+  bukkake:
+    label: "Bukkake"
+    tier: explicit
+    image_lora: group_sex_orgy_illustrious.safetensors
+    image_lora_strength: 0.6
+    video_lora: bukkake
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+
+  massage:
+    label: "Massage / Tit Play"
+    tier: explicit
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: massage_tits
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+
+  softcore:
+    label: "Softcore Photoshoot"
+    tier: explicit
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: softcore_photoshoot
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+
+  dr34ml4y_universal:
+    label: "DR34ML4Y All-in-One"
+    tier: explicit
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: dr34ml4y
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+
+  # --- POV PRESETS ---
+  pov_cowgirl:
+    label: "POV Cowgirl"
+    tier: explicit
+    image_lora: ass_ride_illustrious.safetensors
+    image_lora_strength: 0.5
+    video_lora: pov_cowgirl
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+
+  pov_blowjob:
+    label: "POV Blowjob"
+    tier: explicit
+    image_lora: deepthroat_doggy.safetensors
+    image_lora_strength: 0.5
+    video_lora: pov_fellatio
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+
+  upright_straddle:
+    label: "Upright Straddle (Back)"
+    tier: explicit
+    image_lora: Upright_straddle_back_XL.safetensors
+    image_lora_strength: 0.7
+    video_lora: cowgirl
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+
+  furry_straddle:
+    label: "Furry Straddle (Back)"
+    tier: furry_explicit
+    image_lora: Upright_straddle_back_XL.safetensors
+    image_lora_strength: 0.65
+    video_lora: cowgirl
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+
+  choking_sex:
+    label: "Choking / Neck Grab"
+    tier: explicit
+    image_lora: POVThroatGrab_Ill_v1.safetensors
+    image_lora_strength: 0.65
+    video_lora: from_behind
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+
+  # --- NEW: Love, Sex, and Robots presets ---
+  pov_doggystyle:
+    label: "POV Doggystyle"
+    tier: explicit
+    image_lora: pov_doggystyle_sdxl.safetensors
+    image_lora_strength: 0.8
+    video_lora: doggy_back
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+
+  mating_press:
+    label: "Mating Press"
+    tier: explicit
+    image_lora: mating_press_illustrious.safetensors
+    image_lora_strength: 0.7
+    video_lora: missionary
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+
+  mmf_threesome:
+    label: "MMF Threesome"
+    tier: explicit
+    image_lora: bi_mmf_threesome_sdxl.safetensors
+    image_lora_strength: 0.7
+    video_lora: dr34ml4y
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+
+  monster_sex:
+    label: "Monster / Interspecies"
+    tier: explicit
+    image_lora: unrealistic_nsfw_concepts_sdxl.safetensors
+    image_lora_strength: 0.7
+    video_lora: from_behind
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+
+  cyborg_sex:
+    label: "Cyborg / Robot"
+    tier: explicit
+    image_lora: cc_cyborg_sdxl.safetensors
+    image_lora_strength: 0.7
+    video_lora: cowgirl
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+
+  alien_ailf:
+    label: "Alien AILF"
+    tier: explicit
+    image_lora: aliens_ailf_sdxl.safetensors
+    image_lora_strength: 0.7
+    video_lora: from_behind
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+
+  alien_babe:
+    label: "Alien Babe"
+    tier: explicit
+    image_lora: piccolhoe_alien_babe_sdxl.safetensors
+    image_lora_strength: 0.7
+    video_lora: cowgirl
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+
+  symbiote_venom:
+    label: "Symbiote / She-Venom"
+    tier: explicit
+    image_lora: symbiote_she_venom_sdxl.safetensors
+    image_lora_strength: 0.7
+    video_lora: from_behind
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+
+  sex_machine:
+    label: "Sex Machine Rider"
+    tier: explicit
+    image_lora: scifi_sex_machine_rider_ill.safetensors
+    image_lora_strength: 0.7
+    video_lora: assertive_cowgirl
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+
+  # --- SFW / ACTION PRESETS (for trailers) ---
+  fight_scene:
+    label: "Fight Scene"
+    tier: mature
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: fight
+    video_lora_strength: 0.7
+    video_engine: wan22_14b
+
+  explosion_scene:
+    label: "Explosion"
+    tier: mature
+    image_lora: "Illustrious - Nuclear_Explosion.safetensors"
+    image_lora_strength: 0.6
+    video_lora: explosion
+    video_lora_strength: 0.8
+    video_engine: wan22_14b
+
+  atomic_explosion_scene:
+    label: "Atomic Explosion"
+    tier: mature
+    image_lora: "Illustrious - Nuclear_Explosion.safetensors"
+    image_lora_strength: 0.7
+    video_lora: atomic_explosion
+    video_lora_strength: 0.8
+    video_engine: wan22_14b
+
+  bullet_time_scene:
+    label: "Bullet Time"
+    tier: mature
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: bullet_time
+    video_lora_strength: 0.8
+    video_engine: wan22_14b
+
+  slap_scene:
+    label: "Slap"
+    tier: mature
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: slap
+    video_lora_strength: 0.8
+    video_engine: wan22_14b
+
+  drone_reveal:
+    label: "Drone Reveal"
+    tier: universal
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: drone_shot
+    video_lora_strength: 0.8
+    video_engine: wan22_14b
+
+  orbit_reveal:
+    label: "Orbit Reveal"
+    tier: universal
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: orbit_v2
+    video_lora_strength: 0.8
+    video_engine: wan22_14b
+
+  dramatic_tilt:
+    label: "Dramatic Tilt-down"
+    tier: universal
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: tilt_down
+    video_lora_strength: 0.8
+    video_engine: wan22_14b
+
+  scene_transition:
+    label: "Hard Cut Transition"
+    tier: universal
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: hard_cut
+    video_lora_strength: 0.8
+    video_engine: wan22_14b
+
+  dramatic_eyes:
+    label: "Dramatic Eyes Close-up"
+    tier: universal
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: eyes_in
+    video_lora_strength: 0.8
+    video_engine: wan22_14b
+
+  character_walk:
+    label: "Character Walk"
+    tier: wholesome
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: pixel_walk
+    video_lora_strength: 0.7
+    video_engine: wan22_14b
+
+  emotional_anguish:
+    label: "Emotional Anguish"
+    tier: universal
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: anguish_wail
+    video_lora_strength: 0.8
+    video_engine: wan22_14b
+
+  timelapse_scene:
+    label: "Time-lapse"
+    tier: universal
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: timelapse
+    video_lora_strength: 0.8
+    video_engine: wan22_14b
+
+  transformation_scene:
+    label: "Transformation"
+    tier: mature
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: transformation
+    video_lora_strength: 0.8
+    video_engine: wan22_14b

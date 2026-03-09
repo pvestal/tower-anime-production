@@ -222,6 +222,7 @@
       :source-image-url="sourceImageUrl"
       :characters="characters"
       :auto-dialogue-busy="autoDialogueBusy"
+      :content-rating="projectStore.currentProject?.content_rating || 'PG-13'"
       @remove="emit('remove-shot', selectedShotIdx)"
       @browse-image="emit('browse-image')"
       @update-field="(field: string, value: unknown) => emit('update-shot-field', selectedShotIdx, field, value)"

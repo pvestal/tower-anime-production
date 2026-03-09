@@ -490,6 +490,9 @@ def build_wan22_14b_i2v_workflow(
     use_lightx2v: bool = True,
     motion_lora: str | None = None,
     motion_lora_strength: float = 0.8,
+    content_lora_high: str | None = None,
+    content_lora_low: str | None = None,
+    content_lora_strength: float = 0.8,
 ) -> tuple[dict, str]:
     """Build a Wan 2.2 14B I2V ComfyUI workflow with dual high/low noise models.
 
@@ -517,6 +520,9 @@ def build_wan22_14b_i2v_workflow(
         use_lightx2v: Use lightx2v distill LoRA for 4x speed (changes steps/cfg).
         motion_lora: Optional motion/camera LoRA filename (applied to high noise model).
         motion_lora_strength: Strength for motion LoRA (0.0-1.0).
+        content_lora_high: Optional content LoRA for high noise model (e.g. wan22_cowgirl_HIGH).
+        content_lora_low: Optional content LoRA for low noise model (e.g. wan22_cowgirl_LOW).
+        content_lora_strength: Strength for content LoRAs (0.0-1.0).
     """
     import random as _random
     if seed is None:
@@ -588,10 +594,15 @@ def build_wan22_14b_i2v_workflow(
             logger.warning("lightx2v LoRA not found, running without acceleration")
 
     # --- DR34ML4Y I2V LoRA (applied to low noise model for anime style preservation) ---
+    # Skip for photorealistic/live-action content — the anime LoRA fights realism
 
     from pathlib import Path as _P
+    _prompt_lower = prompt_text.lower()
+    _is_photorealistic = any(kw in _prompt_lower for kw in (
+        "photorealistic", "live action", "realistic", "real photo", "photography",
+    ))
     _dr34mlay_path = _P("/opt/ComfyUI/models/loras/DR34ML4Y_I2V_14B_LOW_V2.safetensors")
-    if _dr34mlay_path.exists():
+    if _dr34mlay_path.exists() and not _is_photorealistic:
         dr34mlay_node = str(nid)
         workflow[dr34mlay_node] = {
             "class_type": "LoraLoaderModelOnly",
@@ -604,6 +615,8 @@ def build_wan22_14b_i2v_workflow(
         low_model_node, low_model_slot = dr34mlay_node, 0
         nid += 1
         logger.info("Wan22 14B: DR34ML4Y anime style LoRA applied to low noise model @ 0.6")
+    elif _is_photorealistic:
+        logger.info("Wan22 14B: DR34ML4Y skipped (photorealistic content detected)")
 
     # --- Optional: motion/camera LoRA (applied to high noise model only) ---
 
@@ -619,6 +632,51 @@ def build_wan22_14b_i2v_workflow(
         }
         high_model_node, high_model_slot = motion_lora_node, 0
         nid += 1
+
+    # --- Optional: content LoRA pair (HIGH on high noise, LOW on low noise) ---
+
+    if content_lora_high:
+        _clh_path = _P(f"/opt/ComfyUI/models/loras/{content_lora_high}")
+        if not _clh_path.exists():
+            _clh_path = _P(f"/opt/ComfyUI/models/loras/wan22_nsfw/{content_lora_high}")
+        if _clh_path.exists():
+            _clh_node = str(nid)
+            # Use path relative to loras dir
+            _clh_name = str(_clh_path.relative_to(_P("/opt/ComfyUI/models/loras")))
+            workflow[_clh_node] = {
+                "class_type": "LoraLoaderModelOnly",
+                "inputs": {
+                    "model": [high_model_node, high_model_slot],
+                    "lora_name": _clh_name,
+                    "strength_model": content_lora_strength,
+                },
+            }
+            high_model_node, high_model_slot = _clh_node, 0
+            nid += 1
+            logger.info(f"Wan22 14B: content LoRA HIGH '{_clh_name}' applied @ {content_lora_strength}")
+        else:
+            logger.warning(f"Content LoRA HIGH not found: {content_lora_high}")
+
+    if content_lora_low:
+        _cll_path = _P(f"/opt/ComfyUI/models/loras/{content_lora_low}")
+        if not _cll_path.exists():
+            _cll_path = _P(f"/opt/ComfyUI/models/loras/wan22_nsfw/{content_lora_low}")
+        if _cll_path.exists():
+            _cll_node = str(nid)
+            _cll_name = str(_cll_path.relative_to(_P("/opt/ComfyUI/models/loras")))
+            workflow[_cll_node] = {
+                "class_type": "LoraLoaderModelOnly",
+                "inputs": {
+                    "model": [low_model_node, low_model_slot],
+                    "lora_name": _cll_name,
+                    "strength_model": content_lora_strength,
+                },
+            }
+            low_model_node, low_model_slot = _cll_node, 0
+            nid += 1
+            logger.info(f"Wan22 14B: content LoRA LOW '{_cll_name}' applied @ {content_lora_strength}")
+        else:
+            logger.warning(f"Content LoRA LOW not found: {content_lora_low}")
 
     # --- ModelSamplingSD3 for sigma scaling ---
 
@@ -1046,6 +1104,9 @@ async def generate_wan22_14b_video(
     use_lightx2v: bool = True,
     motion_lora: str | None = None,
     motion_lora_strength: float = 0.8,
+    content_lora_high: str | None = None,
+    content_lora_low: str | None = None,
+    content_lora_strength: float = 0.85,
 ):
     """Generate a Wan 2.2 14B I2V video with dual high/low noise models.
 
@@ -1077,6 +1138,9 @@ async def generate_wan22_14b_video(
         use_lightx2v=use_lightx2v,
         motion_lora=motion_lora,
         motion_lora_strength=motion_lora_strength,
+        content_lora_high=content_lora_high,
+        content_lora_low=content_lora_low,
+        content_lora_strength=content_lora_strength,
     )
 
     try:

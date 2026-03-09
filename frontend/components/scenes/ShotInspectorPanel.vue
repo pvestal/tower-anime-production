@@ -43,6 +43,13 @@
         @update-field="(field: string, value: unknown) => $emit('update-field', field, value)"
         @regenerate="$emit('regenerate')"
       />
+      <ShotLoraTab
+        v-if="activeTab === 'loras'"
+        :shot="shot"
+        :characters="characters"
+        :content-rating="contentRating"
+        @update-field="(field: string, value: unknown) => $emit('update-field', field, value)"
+      />
       <ShotHistoryTab
         v-if="activeTab === 'history'"
         :shot="shot"
@@ -59,6 +66,7 @@ import ShotCreativeTab from './tabs/ShotCreativeTab.vue'
 import ShotTechnicalTab from './tabs/ShotTechnicalTab.vue'
 import ShotScoresTab from './tabs/ShotScoresTab.vue'
 import ShotHistoryTab from './tabs/ShotHistoryTab.vue'
+import ShotLoraTab from './tabs/ShotLoraTab.vue'
 
 defineProps<{
   shot: Partial<BuilderShot> | null
@@ -66,6 +74,7 @@ defineProps<{
   sourceImageUrl: (path: string) => string
   characters: { slug: string; name: string }[]
   autoDialogueBusy?: boolean
+  contentRating?: string
 }>()
 
 defineEmits<{
@@ -79,6 +88,7 @@ defineEmits<{
 const tabs = [
   { id: 'creative', label: 'Creative' },
   { id: 'technical', label: 'Technical' },
+  { id: 'loras', label: 'LoRAs' },
   { id: 'scores', label: 'Scores' },
   { id: 'history', label: 'History' },
 ]

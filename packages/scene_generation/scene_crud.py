@@ -87,15 +87,18 @@ async def list_scenes(project_id: int, allowed_projects: list[int] = Depends(get
     conn = await connect_direct()
     try:
         rows = await conn.fetch("""
-            SELECT id, project_id, title, description, location, time_of_day,
-                   weather, mood, generation_status, target_duration_seconds,
-                   actual_duration_seconds, total_shots, completed_shots,
-                   final_video_path, created_at,
-                   audio_track_id, audio_track_name, audio_track_artist,
-                   audio_preview_url, audio_fade_in, audio_fade_out, audio_start_offset,
-                   audio_auto_duck, audio_generation_mode, audio_source_playlist_id
-            FROM scenes WHERE project_id = $1
-            ORDER BY scene_number NULLS LAST, created_at
+            SELECT s.id, s.project_id, s.scene_number, s.title, s.description, s.location, s.time_of_day,
+                   s.weather, s.mood, s.generation_status, s.target_duration_seconds,
+                   s.actual_duration_seconds, s.total_shots, s.completed_shots,
+                   s.final_video_path, s.created_at,
+                   s.audio_track_id, s.audio_track_name, s.audio_track_artist,
+                   s.audio_preview_url, s.audio_fade_in, s.audio_fade_out, s.audio_start_offset,
+                   s.audio_auto_duck, s.audio_generation_mode, s.audio_source_playlist_id,
+                   s.episode_id, e.title as episode_title, e.episode_number
+            FROM scenes s
+            LEFT JOIN episodes e ON s.episode_id = e.id
+            WHERE s.project_id = $1
+            ORDER BY e.episode_number NULLS LAST, s.scene_number NULLS LAST, s.created_at
         """, project_id)
         scenes = []
         for r in rows:
@@ -103,10 +106,14 @@ async def list_scenes(project_id: int, allowed_projects: list[int] = Depends(get
                 "SELECT COUNT(*) FROM shots WHERE scene_id = $1", r["id"])
             scene_data = {
                 "id": str(r["id"]), "project_id": r["project_id"],
+                "scene_number": r["scene_number"],
                 "title": r["title"], "description": r["description"],
                 "location": r["location"], "time_of_day": r["time_of_day"],
                 "weather": r["weather"], "mood": r["mood"],
                 "generation_status": r["generation_status"] or "draft",
+                "episode_id": str(r["episode_id"]) if r["episode_id"] else None,
+                "episode_title": r["episode_title"],
+                "episode_number": r["episode_number"],
                 "target_duration_seconds": r["target_duration_seconds"],
                 "actual_duration_seconds": r["actual_duration_seconds"],
                 "total_shots": shot_count,
@@ -492,6 +499,37 @@ async def get_motion_presets(shot_type: str | None = None):
     return {"presets": MOTION_PRESETS}
 
 
+@router.get("/scenes/lora-catalog")
+async def lora_catalog_endpoint(content_rating: str = "XXX"):
+    """Return the LoRA catalog filtered by content rating."""
+    import yaml
+    from pathlib import Path
+
+    catalog_path = Path("/opt/anime-studio/config/lora_catalog.yaml")
+    if not catalog_path.exists():
+        raise HTTPException(status_code=500, detail="LoRA catalog not found")
+
+    with open(catalog_path) as f:
+        catalog = yaml.safe_load(f) or {}
+
+    rating_gates = catalog.get("rating_gates", {})
+    allowed_tiers = set(rating_gates.get(content_rating, rating_gates.get("G", ["universal"])))
+
+    pairs = catalog.get("video_lora_pairs", {})
+    filtered_pairs = {k: v for k, v in pairs.items() if v.get("tier", "universal") in allowed_tiers}
+
+    presets = catalog.get("action_presets", {})
+    filtered_presets = {k: v for k, v in presets.items() if v.get("tier", "universal") in allowed_tiers}
+
+    return {
+        "content_rating": content_rating,
+        "allowed_tiers": sorted(allowed_tiers),
+        "video_lora_pairs": filtered_pairs,
+        "action_presets": filtered_presets,
+        "content_tiers": catalog.get("content_tiers", {}),
+    }
+
+
 @router.get("/scenes/{scene_id}/shot-recommendations")
 async def get_shot_recommendations(scene_id: str, top_n: int = 5):
     """Get smart image recommendations for each shot in a scene."""
@@ -672,18 +710,25 @@ async def create_shot(scene_id: str, body: ShotCreateRequest):
     try:
         row = await conn.fetchrow("""
             INSERT INTO shots (scene_id, shot_number, source_image_path, shot_type,
-                               camera_angle, duration_seconds, motion_prompt,
+                               camera_angle, duration_seconds, generation_prompt,
+                               generation_negative, motion_prompt,
                                characters_present, seed, steps, use_f1, status,
                                dialogue_text, dialogue_character_slug,
-                               transition_type, transition_duration, video_engine)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'pending', $12, $13, $14, $15, $16)
+                               transition_type, transition_duration, video_engine,
+                               guidance_scale, lora_name, lora_strength,
+                               image_lora, image_lora_strength)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'pending',
+                    $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
             RETURNING id
         """, sid, body.shot_number, body.source_image_path, body.shot_type,
-            body.camera_angle, body.duration_seconds, body.motion_prompt,
+            body.camera_angle, body.duration_seconds,
+            body.generation_prompt, body.generation_negative, body.motion_prompt,
             body.characters_present if body.characters_present else None,
             body.seed, body.steps, body.use_f1,
             body.dialogue_text, body.dialogue_character_slug,
-            body.transition_type, body.transition_duration, body.video_engine)
+            body.transition_type, body.transition_duration, body.video_engine,
+            body.guidance_scale, body.lora_name, body.lora_strength,
+            body.image_lora, body.image_lora_strength)
         return {"id": str(row["id"]), "shot_number": body.shot_number}
     finally:
         await conn.close()
@@ -706,7 +751,9 @@ async def update_shot(scene_id: str, shot_id: str, body: ShotUpdateRequest):
             ("seed", "seed"), ("steps", "steps"), ("use_f1", "use_f1"),
             ("dialogue_text", "dialogue_text"), ("dialogue_character_slug", "dialogue_character_slug"),
             ("transition_type", "transition_type"), ("transition_duration", "transition_duration"),
-            ("video_engine", "video_engine"),
+            ("video_engine", "video_engine"), ("guidance_scale", "guidance_scale"),
+            ("lora_name", "lora_name"), ("lora_strength", "lora_strength"),
+            ("image_lora", "image_lora"), ("image_lora_strength", "image_lora_strength"),
         ]:
             val = getattr(body, field, None)
             if val is not None:
@@ -1001,10 +1048,13 @@ async def regenerate_shot(scene_id: str, shot_id: str):
     """
     shid = uuid.UUID(shot_id)
     sid = uuid.UUID(scene_id)
+    # Allow per-shot regeneration even when a scene-level task is running.
+    # The scene-level task (from generate_scene or recovery) handles ALL shots
+    # sequentially, but per-shot regenerate should still work for batch runners.
     if scene_id in _scene_generation_tasks:
         task = _scene_generation_tasks[scene_id]
-        if not task.done():
-            raise HTTPException(status_code=409, detail="Scene is currently generating")
+        if task.done():
+            del _scene_generation_tasks[scene_id]
     conn = await connect_direct()
     try:
         shot = await conn.fetchrow("SELECT * FROM shots WHERE id = $1 AND scene_id = $2", shid, sid)
@@ -1178,6 +1228,23 @@ async def regenerate_shot(scene_id: str, shot_id: str):
                 _scene_seed_bytes = hashlib.sha256(str(sid).encode()).digest()
                 _scene_base_seed = int.from_bytes(_scene_seed_bytes[:8], "big") % (2**63)
                 shot_seed = _scene_base_seed + (shot["shot_number"] or 0)
+
+            # Resolve content LoRA pair from lora_name field
+            _content_high = None
+            _content_low = None
+            _content_strength = float(shot.get("lora_strength") or 0.8)
+            _shot_lora = shot.get("lora_name") or ""
+            if _shot_lora:
+                if "_HIGH" in _shot_lora.upper():
+                    _content_high = _shot_lora
+                    _content_low = _shot_lora.replace("_HIGH", "_LOW").replace("_high", "_low")
+                elif "_LOW" in _shot_lora.upper():
+                    _content_low = _shot_lora
+                    _content_high = _shot_lora.replace("_LOW", "_HIGH").replace("_low", "_high")
+                else:
+                    # Single LoRA — apply to high noise model as motion_lora
+                    _content_high = _shot_lora
+
             workflow, prefix = build_wan22_14b_i2v_workflow(
                 prompt_text=prompt_text,
                 ref_image=image_filename,
@@ -1187,6 +1254,9 @@ async def regenerate_shot(scene_id: str, shot_id: str):
                 seed=shot_seed,
                 negative_text=negative_text,
                 use_lightx2v=True,
+                content_lora_high=_content_high if _content_high else None,
+                content_lora_low=_content_low if _content_low else None,
+                content_lora_strength=_content_strength,
             )
             comfyui_prompt_id = _submit_wan(workflow)
         else:
@@ -1708,7 +1778,7 @@ class SelectEngineRequest(BaseModel):
     lora_strength: float = 0.8
 
 
-KNOWN_ENGINES = {"framepack", "framepack_f1", "ltx", "wan", "wan22", "reference_v2v"}
+KNOWN_ENGINES = {"framepack", "framepack_f1", "ltx", "wan", "wan22", "wan22_14b", "reference_v2v"}
 
 
 @router.post("/scenes/{scene_id}/shots/{shot_id}/select-engine")

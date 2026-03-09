@@ -244,7 +244,7 @@ async def keyframe_pass(scene_id: uuid.UUID, conn, stats: BatchStats,
     return results
 
 
-async def generate_and_poll(scene_id: uuid.UUID, shot_id: uuid.UUID, conn, timeout: int = 600) -> dict:
+async def generate_and_poll(scene_id: uuid.UUID, shot_id: uuid.UUID, conn, timeout: int = 900) -> dict:
     """Call regenerate_shot API and poll for completion."""
     import httpx
 

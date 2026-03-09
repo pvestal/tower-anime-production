@@ -359,6 +359,7 @@ export interface ProjectCreate {
   name: string
   description?: string
   genre?: string
+  content_rating?: string
   checkpoint_model: string
   cfg_scale?: number
   steps?: number
@@ -578,6 +579,10 @@ export interface BuilderScene {
   id: string
   project_id: number
   project_name?: string
+  scene_number?: number
+  episode_id?: string | null
+  episode_title?: string | null
+  episode_number?: number | null
   title: string
   description: string | null
   location: string | null
@@ -642,6 +647,8 @@ export interface BuilderShot {
   guidance_scale: number | null
   lora_name: string | null
   lora_strength: number | null
+  image_lora: string | null
+  image_lora_strength: number | null
   clip_score: number | null
   clip_variety_score: number | null
 }
