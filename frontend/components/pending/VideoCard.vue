@@ -69,6 +69,14 @@
         </span>
       </div>
 
+      <!-- LoRA tag -->
+      <div v-if="video.lora_name" class="lora-row">
+        <span class="lora-tag" :title="video.lora_name">
+          {{ loraLabel }}
+        </span>
+        <span v-if="video.lora_strength" class="lora-strength">{{ video.lora_strength }}</span>
+      </div>
+
       <!-- Motion prompt (truncated) -->
       <div v-if="video.motion_prompt" class="motion-prompt" :title="video.motion_prompt">
         {{ video.motion_prompt }}
@@ -157,6 +165,21 @@ const ENGINE_LABELS: Record<string, string> = {
 }
 
 const engineLabel = computed(() => ENGINE_LABELS[props.video.video_engine] || props.video.video_engine)
+
+const loraLabel = computed(() => {
+  const name = props.video.lora_name || ''
+  // Extract just the meaningful part: wan22_nsfw/wan22_doggy_back_HIGH.safetensors -> doggy_back HIGH
+  const base = name.split('/').pop()?.replace('.safetensors', '') || name
+  return base
+    .replace(/^wan22_/, '')
+    .replace(/^wan2\.2_/, '')
+    .replace(/_i2v_/g, '_')
+    .replace(/_wan22/g, '')
+    .replace(/_high_noise$/i, ' HIGH')
+    .replace(/_low_noise$/i, ' LOW')
+    .replace(/_HIGH$/i, ' HIGH')
+    .replace(/_LOW$/i, ' LOW')
+})
 
 const videoUrl = computed(() => {
   return scenesApi.shotVideoUrl(props.video.scene_id, props.video.id)
@@ -410,6 +433,30 @@ function handleMouseLeave(e: Event) {
 }
 .btn-danger-outline:hover {
   background: rgba(200, 80, 80, 0.15);
+}
+
+.lora-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+.lora-tag {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 2px;
+  background: rgba(200, 120, 50, 0.15);
+  color: #d4844e;
+  border: 1px solid #d4844e;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
+}
+.lora-strength {
+  font-size: 9px;
+  color: var(--text-muted);
+  font-family: monospace;
 }
 
 .motion-prompt {

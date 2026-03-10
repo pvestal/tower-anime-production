@@ -1772,6 +1772,66 @@ async def generate_all_scenes(project_id: int, auto_approve: bool = False):
         await conn.close()
 
 
+@router.post("/scenes/cancel-generation")
+async def cancel_generation(project_id: int = None, scene_id: str = None):
+    """Cancel running generation pipeline(s).
+
+    - project_id: cancel the generate-all pipeline for this project
+    - scene_id: cancel a single scene generation task
+    - Neither: cancel ALL running pipelines
+    """
+    cancelled = []
+
+    if scene_id:
+        task = _scene_generation_tasks.get(scene_id)
+        if task and not task.done():
+            task.cancel()
+            cancelled.append(scene_id)
+        _scene_generation_tasks.pop(scene_id, None)
+    elif project_id:
+        pipeline_key = f"pipeline_{project_id}"
+        task = _scene_generation_tasks.get(pipeline_key)
+        if task and not task.done():
+            task.cancel()
+            cancelled.append(pipeline_key)
+        _scene_generation_tasks.pop(pipeline_key, None)
+        # Also pause any pending shots for this project
+        conn = await connect_direct()
+        try:
+            n = await conn.execute(
+                "UPDATE shots SET status = 'paused' "
+                "WHERE scene_id IN (SELECT id FROM scenes WHERE project_id = $1) "
+                "AND status = 'pending'", project_id)
+            cancelled.append(f"paused shots: {n}")
+        finally:
+            await conn.close()
+    else:
+        # Cancel everything
+        for key, task in list(_scene_generation_tasks.items()):
+            if not task.done():
+                task.cancel()
+                cancelled.append(key)
+        _scene_generation_tasks.clear()
+
+    return {"cancelled": cancelled, "remaining_tasks": len(_scene_generation_tasks)}
+
+
+@router.post("/scenes/resume-generation")
+async def resume_generation(project_id: int):
+    """Resume paused shots for a project and restart the generate-all pipeline."""
+    conn = await connect_direct()
+    try:
+        result = await conn.execute(
+            "UPDATE shots SET status = 'pending' "
+            "WHERE scene_id IN (SELECT id FROM scenes WHERE project_id = $1) "
+            "AND status = 'paused'", project_id)
+    finally:
+        await conn.close()
+
+    # Re-trigger generate-all
+    return await generate_all_scenes(project_id)
+
+
 class SelectEngineRequest(BaseModel):
     video_engine: str
     lora_name: str | None = None

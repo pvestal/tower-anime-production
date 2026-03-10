@@ -119,6 +119,10 @@ async def startup():
     orchestrator.register_orchestrator_handlers()
     await orchestrator.start_tick_loop()
 
+    # Register SFX auto-apply handler
+    from packages.core.events import register_sfx_handlers
+    register_sfx_handlers()
+
     # Register NSM EventBus handlers
     from packages.narrative_state.hooks import register_nsm_handlers
     register_nsm_handlers()

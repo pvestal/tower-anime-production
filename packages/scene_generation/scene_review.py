@@ -53,6 +53,7 @@ async def get_pending_videos(
                    sh.video_engine, sh.seed, sh.steps, sh.generation_time_seconds,
                    sh.review_status, sh.qc_issues, sh.qc_category_averages, sh.qc_per_frame,
                    sh.review_feedback, sh.reviewed_at,
+                   sh.lora_name, sh.lora_strength,
                    s.title as scene_title, s.project_id,
                    p.name as project_name
             FROM shots sh
@@ -91,6 +92,8 @@ async def get_pending_videos(
                 "qc_issues": r["qc_issues"] or [],
                 "qc_category_averages": cat_avgs or {},
                 "qc_per_frame": per_frame or [],
+                "lora_name": r["lora_name"],
+                "lora_strength": float(r["lora_strength"]) if r["lora_strength"] else None,
                 "scene_title": r["scene_title"],
                 "project_id": r["project_id"],
                 "project_name": r["project_name"],
@@ -363,6 +366,56 @@ async def qc_review_shot(scene_id: str, shot_id: str, auto_fix: bool = False):
         return result
     finally:
         await conn.close()
+
+
+@router.post("/scenes/{scene_id}/shots/{shot_id}/apply-sfx")
+async def apply_sfx_to_shot(scene_id: str, shot_id: str):
+    """Auto-assign and overlay SFX on a shot based on its LoRA mapping."""
+    from .sfx_mapper import match_lora_to_sfx, overlay_sfx_on_video
+
+    shid = uuid.UUID(shot_id)
+    conn = await connect_direct()
+    try:
+        shot = await conn.fetchrow(
+            "SELECT id, lora_name, output_video_path FROM shots WHERE id = $1 AND scene_id = $2",
+            shid, uuid.UUID(scene_id),
+        )
+        if not shot:
+            raise HTTPException(status_code=404, detail="Shot not found")
+        if not shot["output_video_path"]:
+            raise HTTPException(status_code=400, detail="Shot has no video")
+
+        clips = match_lora_to_sfx(shot["lora_name"])
+        if not clips:
+            return {"message": "No SFX mapping found for this LoRA", "sfx_clips": []}
+
+        output = overlay_sfx_on_video(shot["output_video_path"], clips)
+        return {
+            "message": "SFX applied" if output else "SFX overlay failed",
+            "sfx_output": output,
+            "sfx_clips": [
+                {"category": c["category"], "clip_name": c["clip_name"],
+                 "weight": c["weight"], "gender": c["gender"]}
+                for c in clips
+            ],
+        }
+    finally:
+        await conn.close()
+
+
+@router.get("/scenes/sfx-mapping")
+async def get_sfx_mapping():
+    """Return the current SFX-to-LoRA mapping config."""
+    from .sfx_mapper import _load_config
+    return _load_config()
+
+
+@router.post("/scenes/sfx-mapping/reload")
+async def reload_sfx_mapping():
+    """Reload the SFX mapping config from disk."""
+    from .sfx_mapper import reload_config
+    reload_config()
+    return {"message": "SFX mapping config reloaded"}
 
 
 @router.post("/scenes/{scene_id}/shots/{shot_id}/qc-regenerate")

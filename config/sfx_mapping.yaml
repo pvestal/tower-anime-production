@@ -1,0 +1,501 @@
+# SFX + Voice Auto-Mapper — maps video LoRA names to foley sounds AND voice lines
+# Used by post-generation hook to auto-assign audio to shots
+#
+# Each mapping has:
+#   sfx: list of foley SFX categories with weights
+#   voice_lines: contextual dialogue/vocalizations per gender (randomly picked)
+#
+# Voice lines are synthesized via the character's voice profile (edge-tts/f5-tts).
+# If shot already has dialogue_text, that takes priority over auto-generated lines.
+
+# Default for any NSFW shot without a specific mapping
+default_nsfw:
+  sfx:
+    - { category: moan_soft, weight: 0.4, gender: female }
+    - { category: breathing, weight: 0.3, gender: female }
+  voice_lines:
+    female:
+      - "Mmm..."
+      - "Ahh... yes..."
+      - "Oh..."
+      - "Mmm, that feels good..."
+    male:
+      - "Yeah..."
+      - "Mmm..."
+
+# Default for SFW / non-NSFW shots (no foley, optional ambient voice)
+default_sfw:
+  sfx: []
+  voice_lines: {}
+
+# Same-sex defaults (applied when all characters share a gender)
+default_nsfw_mm:
+  sfx:
+    - { category: grunt, weight: 0.5, gender: male }
+    - { category: breathing, weight: 0.3, gender: male }
+  voice_lines:
+    male:
+      - "Yeah... just like that..."
+      - "Harder..."
+      - "Mmm... fuck..."
+      - "Take it..."
+
+default_nsfw_ff:
+  sfx:
+    - { category: moan_soft, weight: 0.5, gender: female }
+    - { category: breathing, weight: 0.3, gender: female }
+    - { category: gasp, weight: 0.2, gender: female }
+  voice_lines:
+    female:
+      - "Mmm... you taste so good..."
+      - "Right there... yes..."
+      - "Your turn now..."
+      - "So soft... I love touching you..."
+
+# Anthro / furry defaults (beast-like vocalizations + speech)
+default_nsfw_anthro:
+  sfx:
+    - { category: moan_intense, weight: 0.5, gender: female }
+    - { category: grunt, weight: 0.4, gender: male }
+    - { category: breathing, weight: 0.2, gender: female }
+  voice_lines:
+    female:
+      - "Rrr... harder!"
+      - "Yes! More!"
+      - "Ahh... don't stop, alpha..."
+      - "Mmm... claim me..."
+    male:
+      - "Mine..."
+      - "Grr... take it..."
+      - "Good girl..."
+      - "Rrgh..."
+
+# --- Camera / action LoRAs (non-sexual) ---
+camera_actions:
+  camera_push_in:
+    sfx: []
+    voice_lines: {}
+  bullet_time:
+    sfx: []
+    voice_lines: {}
+  explosion:
+    sfx: []
+    voice_lines:
+      female: ["What the—!", "Get down!", "No!"]
+      male: ["Take cover!", "Move!", "Holy—!"]
+  fight:
+    sfx: []
+    voice_lines:
+      female: ["Hyah!", "Take this!", "You'll pay for that!"]
+      male: ["Come on!", "Is that all you got?", "Rragh!"]
+  slap:
+    sfx: []
+    voice_lines:
+      female: ["How dare you!", "Don't touch me!", "Stop!"]
+      male: ["What the—!", "Hey!"]
+  transformation:
+    sfx: []
+    voice_lines:
+      female: ["What's happening to me?!", "I can feel it... changing!", "This power...!"]
+      male: ["Aarrgh!", "I can feel the power!", "It's... transforming!"]
+  sigma_face:
+    sfx: []
+    voice_lines: {}
+  catwalk:
+    sfx: []
+    voice_lines: {}
+  retro_90s:
+    sfx: []
+    voice_lines: {}
+  timelapse:
+    sfx: []
+    voice_lines: {}
+  hip_swing:
+    sfx: []
+    voice_lines: {}
+  anguish:
+    sfx: []
+    voice_lines:
+      female: ["Why... why is this happening?", "I can't take this anymore...", "Please... stop..."]
+      male: ["Damn it all...", "This can't be happening...", "No... not like this..."]
+
+# Position-based mappings (matched by LoRA filename substring)
+mappings:
+  # --- Penetration positions ---
+  missionary:
+    sfx:
+      - { category: moan_soft, weight: 0.5, gender: female }
+      - { category: breathing, weight: 0.3, gender: female }
+      - { category: grunt, weight: 0.2, gender: male }
+    voice_lines:
+      female:
+        - "Yes... right there..."
+        - "Mmm, don't stop..."
+        - "Ahh... deeper..."
+        - "Oh god... yes..."
+        - "Keep going..."
+      male:
+        - "You feel so good..."
+        - "Mmm... yeah..."
+        - "So tight..."
+
+  doggy:
+    sfx:
+      - { category: moan_intense, weight: 0.6, gender: female }
+      - { category: grunt, weight: 0.3, gender: male }
+      - { category: breathing, weight: 0.2, gender: female }
+    voice_lines:
+      female:
+        - "Harder... oh god, harder!"
+        - "Yes! Right there!"
+        - "Ahh! Don't stop!"
+        - "Oh fuck... yes!"
+        - "More... give me more!"
+      male:
+        - "Take it..."
+        - "Yeah, just like that..."
+        - "Mmm... good girl..."
+
+  from_behind:
+    sfx:
+      - { category: moan_intense, weight: 0.6, gender: female }
+      - { category: grunt, weight: 0.3, gender: male }
+    voice_lines:
+      female:
+        - "Ahh! Yes!"
+        - "Oh god... harder!"
+        - "Don't stop... please!"
+      male:
+        - "Mmm... yeah..."
+        - "Take it all..."
+
+  sfbehind:
+    sfx:
+      - { category: moan_intense, weight: 0.6, gender: female }
+      - { category: grunt, weight: 0.3, gender: male }
+    voice_lines:
+      female:
+        - "Ahh! Oh god!"
+        - "Yes... deeper!"
+      male:
+        - "Mmm..."
+
+  cowgirl:
+    sfx:
+      - { category: moan_intense, weight: 0.5, gender: female }
+      - { category: gasp, weight: 0.3, gender: female }
+      - { category: grunt, weight: 0.2, gender: male }
+    voice_lines:
+      female:
+        - "Mmm... I love being on top..."
+        - "Oh yes... ride it..."
+        - "Ahh... so deep like this..."
+        - "You like watching me?"
+      male:
+        - "Ride me... yeah..."
+        - "God you look amazing..."
+        - "Don't stop..."
+
+  reverse_cowgirl:
+    sfx:
+      - { category: moan_intense, weight: 0.5, gender: female }
+      - { category: gasp, weight: 0.3, gender: female }
+    voice_lines:
+      female:
+        - "Mmm... you like this view?"
+        - "Ahh... so deep..."
+        - "Oh god... yes..."
+      male:
+        - "That view... amazing..."
+        - "Keep going..."
+
+  prone_bone:
+    sfx:
+      - { category: moan_long, weight: 0.6, gender: female }
+      - { category: grunt, weight: 0.3, gender: male }
+      - { category: breathing, weight: 0.2, gender: female }
+    voice_lines:
+      female:
+        - "Mmm... so deep..."
+        - "Ahh... yes, just like that..."
+        - "Oh god... don't stop..."
+        - "I can feel every inch..."
+      male:
+        - "So tight like this..."
+        - "Yeah..."
+
+  spooning:
+    sfx:
+      - { category: moan_soft, weight: 0.5, gender: female }
+      - { category: breathing, weight: 0.4, gender: female }
+      - { category: moan_soft, weight: 0.2, gender: male }
+    voice_lines:
+      female:
+        - "Mmm... hold me closer..."
+        - "Yes... just like this..."
+        - "So warm..."
+      male:
+        - "You feel amazing..."
+        - "I've got you..."
+
+  squatting_cowgirl:
+    sfx:
+      - { category: moan_intense, weight: 0.6, gender: female }
+      - { category: gasp, weight: 0.4, gender: female }
+    voice_lines:
+      female:
+        - "Ahh! Oh god yes!"
+        - "So deep... ahh!"
+        - "I can't... ahh!"
+
+  # --- Oral ---
+  sensual_bj:
+    sfx:
+      - { category: moan_soft, weight: 0.4, gender: female }
+      - { category: grunt, weight: 0.3, gender: male }
+    voice_lines:
+      female:
+        - "Mmm..."
+        - "You taste so good..."
+        - "Mmm... like this?"
+      male:
+        - "Oh god... yes..."
+        - "Don't stop..."
+        - "Just like that..."
+
+  combo_hj_bj:
+    sfx:
+      - { category: moan_soft, weight: 0.4, gender: female }
+      - { category: grunt, weight: 0.3, gender: male }
+    voice_lines:
+      female:
+        - "Mmm... you like that?"
+        - "Let me take care of you..."
+      male:
+        - "Yeah... just like that..."
+        - "So good..."
+
+  lips-bj:
+    sfx:
+      - { category: moan_soft, weight: 0.3, gender: female }
+    voice_lines:
+      female:
+        - "Mmm..."
+        - "Like this?"
+
+  taker_pov_bj:
+    sfx:
+      - { category: moan_soft, weight: 0.4, gender: female }
+      - { category: grunt, weight: 0.3, gender: male }
+    voice_lines:
+      female:
+        - "Look at me..."
+        - "Mmm... you like watching?"
+      male:
+        - "Oh fuck..."
+        - "Yeah..."
+
+  mouthfull:
+    sfx:
+      - { category: gasp, weight: 0.4, gender: female }
+      - { category: moan_soft, weight: 0.3, gender: female }
+    voice_lines:
+      female:
+        - "Mmph..."
+        - "Mmm..."
+
+  double_blowjob:
+    sfx:
+      - { category: moan_soft, weight: 0.4, gender: female }
+      - { category: moan_soft, weight: 0.3, gender: female }
+      - { category: grunt, weight: 0.3, gender: male }
+    voice_lines:
+      female:
+        - "Share with me..."
+        - "Mmm... my turn..."
+        - "Together..."
+      male:
+        - "Oh god... both of you..."
+
+  # --- Finishing ---
+  facial:
+    sfx:
+      - { category: gasp, weight: 0.5, gender: female }
+      - { category: climax, weight: 0.4, gender: male }
+    voice_lines:
+      female:
+        - "Give it to me!"
+        - "Yes! On my face!"
+        - "Ahh!"
+      male:
+        - "I'm gonna—!"
+        - "Oh fuck... here it comes..."
+
+  maleejac:
+    sfx:
+      - { category: climax, weight: 0.6, gender: male }
+      - { category: moan_intense, weight: 0.4, gender: female }
+    voice_lines:
+      female:
+        - "Yes! Give it to me!"
+        - "Cum for me!"
+        - "I want it all..."
+      male:
+        - "I'm cumming!"
+        - "Oh god... ahh!"
+        - "Fuck... yes!"
+
+  bukkake:
+    sfx:
+      - { category: gasp, weight: 0.5, gender: female }
+      - { category: climax, weight: 0.5, gender: male }
+    voice_lines:
+      female:
+        - "All of you... give it to me!"
+        - "Ahh! So much!"
+      male:
+        - "Here it comes..."
+
+  # --- Specialty ---
+  titjob:
+    sfx:
+      - { category: moan_soft, weight: 0.4, gender: female }
+      - { category: grunt, weight: 0.2, gender: male }
+    voice_lines:
+      female:
+        - "You like my tits around you?"
+        - "Mmm... feels good between them..."
+      male:
+        - "Oh yeah..."
+        - "They feel amazing..."
+
+  massage_tits:
+    sfx:
+      - { category: moan_soft, weight: 0.5, gender: female }
+      - { category: breathing, weight: 0.3, gender: female }
+    voice_lines:
+      female:
+        - "Mmm... that feels nice..."
+        - "Yes... right there..."
+        - "Gentle... ahh..."
+
+  panties_aside:
+    sfx:
+      - { category: gasp, weight: 0.4, gender: female }
+      - { category: whimper, weight: 0.3, gender: female }
+    voice_lines:
+      female:
+        - "We shouldn't... but I want it..."
+        - "Just move them aside..."
+        - "Hurry... I need you..."
+
+  pussy_asshole:
+    sfx:
+      - { category: moan_soft, weight: 0.3, gender: female }
+    voice_lines:
+      female:
+        - "Ahh... touch me there..."
+        - "Mmm... yes..."
+
+  # --- Equipment ---
+  fucking_machine:
+    sfx:
+      - { category: moan_intense, weight: 0.6, gender: female }
+      - { category: gasp, weight: 0.3, gender: female }
+      - { category: breathing, weight: 0.3, gender: female }
+    voice_lines:
+      female:
+        - "Oh god... it's too much!"
+        - "I can't... ahh! Faster!"
+        - "Please... slow down... no, don't stop!"
+        - "It won't stop... ahh!"
+
+  all_tied_up:
+    sfx:
+      - { category: whimper, weight: 0.4, gender: female }
+      - { category: moan_soft, weight: 0.4, gender: female }
+      - { category: breathing, weight: 0.3, gender: female }
+    voice_lines:
+      female:
+        - "I can't move... please..."
+        - "What are you going to do to me?"
+        - "The ropes... so tight..."
+        - "Please... be gentle..."
+
+  # --- Other ---
+  softcore:
+    sfx:
+      - { category: breathing, weight: 0.3, gender: female }
+      - { category: moan_soft, weight: 0.2, gender: female }
+    voice_lines:
+      female:
+        - "Mmm..."
+        - "Touch me..."
+      male:
+        - "You're beautiful..."
+
+  general_nsfw:
+    sfx:
+      - { category: moan_soft, weight: 0.4, gender: female }
+      - { category: breathing, weight: 0.3, gender: female }
+    voice_lines:
+      female:
+        - "Mmm... yes..."
+        - "Oh..."
+      male:
+        - "Yeah..."
+
+  group_girls:
+    sfx:
+      - { category: moan_intense, weight: 0.5, gender: female }
+      - { category: moan_soft, weight: 0.4, gender: female }
+      - { category: gasp, weight: 0.3, gender: female }
+    voice_lines:
+      female:
+        - "Girls... let's have some fun..."
+        - "Mmm... your turn..."
+        - "Come here..."
+
+  transition:
+    sfx:
+      - { category: moan_soft, weight: 0.3, gender: female }
+      - { category: breathing, weight: 0.2, gender: female }
+    voice_lines:
+      female:
+        - "Now let's try..."
+        - "Turn over..."
+
+  PENISLORA:
+    sfx:
+      - { category: grunt, weight: 0.3, gender: male }
+    voice_lines:
+      male:
+        - "Mmm..."
+
+  # --- Climax variants ---
+  climax:
+    sfx:
+      - { category: climax, weight: 0.7, gender: female }
+      - { category: moan_intense, weight: 0.4, gender: female }
+    voice_lines:
+      female:
+        - "I'm cumming! Oh god, I'm cumming!"
+        - "Ahh! Yes! YES!"
+        - "Don't stop! I'm almost—AHHH!"
+        - "Oh god oh god oh god—YES!"
+      male:
+        - "I'm gonna—!"
+        - "Oh fuck!"
+
+  post_climax:
+    sfx:
+      - { category: post_climax, weight: 0.5, gender: female }
+      - { category: breathing, weight: 0.4, gender: female }
+    voice_lines:
+      female:
+        - "Oh my god... that was..."
+        - "I can't feel my legs..."
+        - "Mmm... wow..."
+      male:
+        - "That was incredible..."
+        - "Holy shit..."
