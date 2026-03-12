@@ -414,10 +414,14 @@ async def _synthesize_edge_tts(profile: dict, text: str, output_path: Path) -> b
     voice = profile.get("voice_preset", DEFAULT_EDGE_VOICE)
 
     try:
+        # Sanitize env — PYTHONHASHSEED can be invalid when inherited from parent
+        clean_env = {k: v for k, v in os.environ.items() if k != "PYTHONHASHSEED"}
+        clean_env["PYTHONHASHSEED"] = "random"
         proc = await asyncio.create_subprocess_exec(
             "edge-tts", "--voice", voice, "--text", text,
             "--write-media", str(output_path),
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            env=clean_env,
         )
         await asyncio.wait_for(proc.wait(), timeout=30)
         if proc.returncode != 0:

@@ -528,8 +528,11 @@ def build_wan22_14b_i2v_workflow(
     if seed is None:
         seed = _random.randint(0, 2**63 - 1)
 
-    # Override settings when using lightx2v
-    if use_lightx2v:
+    # Note: lightx2v step/cfg overrides are now handled by the motion_intensity
+    # system in builder.py. Callers pass explicit steps/split/cfg values.
+    # Legacy callers using defaults (6/3/3.5) with use_lightx2v=True get
+    # the standard lightx2v speedup.
+    if use_lightx2v and total_steps == 6 and split_steps == 3 and cfg == 3.5:
         total_steps = 4
         split_steps = 2
         cfg = 1.0

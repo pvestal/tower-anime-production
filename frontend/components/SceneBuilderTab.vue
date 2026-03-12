@@ -64,8 +64,10 @@
       :characters="projectCharacters"
       :gap-characters="gapByCharSlug"
       :keyframe-blitz-busy="store.keyframeBlitzBusy"
+      :cancelling="store.cancelling"
       @save="store.saveScene"
       @confirm-generate="store.confirmGenerate"
+      @cancel-generation="store.cancelGeneration"
       @back="store.backToLibrary"
       @select-shot="store.selectShot"
       @add-shot="store.addShot"
@@ -85,10 +87,12 @@
       :scene-title="editScene.title || ''"
       :monitor-status="monitorStatus"
       :scene-video-src="sceneVideoSrc"
+      :cancelling="store.cancelling"
       @back="store.backToLibrary"
       @retry-shot="store.retryShot"
       @play-shot="store.playShotVideo"
       @reassemble="store.reassemble"
+      @cancel-generation="store.cancelGeneration"
     />
 
     <!-- Image Picker Modal -->

@@ -651,6 +651,8 @@ export interface BuilderShot {
   image_lora_strength: number | null
   clip_score: number | null
   clip_variety_score: number | null
+  sfx_audio_path: string | null
+  voice_audio_path: string | null
 }
 
 export interface SceneCreateRequest {
@@ -1233,6 +1235,11 @@ export interface PendingVideo {
   qc_issues: string[]
   qc_category_averages: Record<string, number>
   qc_per_frame: Array<Record<string, unknown>>
+  lora_name: string | null
+  lora_strength: number | null
+  sfx_audio_path: string | null
+  dialogue_text: string | null
+  dialogue_character: string | null
   scene_title: string
   project_id: number
   project_name: string

@@ -40,6 +40,17 @@
         <input v-model="form.genre" type="text" placeholder="anime, sci-fi, etc." class="field-input" />
       </div>
       <div>
+        <label class="field-label">Content Rating</label>
+        <select v-model="form.content_rating" class="field-input" style="width: 100%;">
+          <option value="G">G</option>
+          <option value="PG">PG</option>
+          <option value="PG-13">PG-13</option>
+          <option value="R">R</option>
+          <option value="NC-17">NC-17</option>
+          <option value="XXX">XXX</option>
+        </select>
+      </div>
+      <div>
         <label class="field-label">Sampler</label>
         <select v-model="form.sampler" class="field-input" style="width: 100%;">
           <option v-for="s in samplerOptions" :key="s" :value="s">{{ s }}</option>
@@ -111,6 +122,7 @@ const form = reactive<ProjectCreate>({
   name: '',
   description: '',
   genre: '',
+  content_rating: 'PG-13',
   checkpoint_model: '',
   cfg_scale: 7,
   steps: 25,
@@ -140,6 +152,7 @@ function resetForm() {
   form.name = ''
   form.description = ''
   form.genre = ''
+  form.content_rating = 'PG-13'
   form.checkpoint_model = ''
   form.cfg_scale = 7
   form.steps = 25

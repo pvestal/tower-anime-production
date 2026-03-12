@@ -65,6 +65,21 @@
               <label class="field-label">Genre</label>
               <input v-model="editProject.genre" type="text" class="field-input" />
             </div>
+            <div>
+              <label class="field-label">Content Rating</label>
+              <select v-model="editProject.content_rating" class="field-input" style="width: 100%;">
+                <option value="G">G</option>
+                <option value="PG">PG</option>
+                <option value="PG-13">PG-13</option>
+                <option value="R">R</option>
+                <option value="NC-17">NC-17</option>
+                <option value="XXX">XXX</option>
+              </select>
+            </div>
+            <div>
+              <label class="field-label">Premise</label>
+              <textarea v-model="editProject.premise" rows="2" placeholder="Story premise..." class="field-input" style="width: 100%; resize: vertical;"></textarea>
+            </div>
           </div>
           <div style="margin-bottom: 10px;">
             <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
@@ -154,6 +169,8 @@ const editProject = reactive<ProjectUpdate>({
   name: '',
   description: '',
   genre: '',
+  premise: '',
+  content_rating: 'PG-13',
 })
 
 // Populate edit forms when currentProject changes
@@ -162,6 +179,8 @@ watch(() => projectStore.currentProject, (proj) => {
   editProject.name = proj.name
   editProject.description = proj.description || ''
   editProject.genre = proj.genre || ''
+  editProject.premise = proj.premise || ''
+  editProject.content_rating = proj.content_rating || 'PG-13'
   snapshotProject()
 }, { immediate: true })
 
@@ -179,17 +198,21 @@ const echoContext = computed(() => ({
 }))
 
 // Dirty tracking
-const savedProjectSnapshot = ref({ name: '', description: '', genre: '' })
+const savedProjectSnapshot = ref({ name: '', description: '', genre: '', premise: '', content_rating: 'PG-13' })
 
 const detailsDirty = computed(() => {
   const s = savedProjectSnapshot.value
   return editProject.name !== s.name || editProject.description !== s.description || editProject.genre !== s.genre
+    || editProject.premise !== s.premise || editProject.content_rating !== s.content_rating
 })
 
 const detailsSaved = ref(false)
 
 function snapshotProject() {
-  savedProjectSnapshot.value = { name: editProject.name || '', description: editProject.description || '', genre: editProject.genre || '' }
+  savedProjectSnapshot.value = {
+    name: editProject.name || '', description: editProject.description || '', genre: editProject.genre || '',
+    premise: editProject.premise || '', content_rating: editProject.content_rating || 'PG-13',
+  }
 }
 
 function showSaved() {

@@ -583,6 +583,14 @@ async def run_migrations():
                 UNIQUE(entity_type, entity_id, phase)
             )
         """)
+        # Add priority column (higher = processed first, default 0)
+        await conn.execute("""
+            DO $$ BEGIN
+                ALTER TABLE production_pipeline ADD COLUMN priority INTEGER DEFAULT 0;
+            EXCEPTION WHEN duplicate_column THEN NULL;
+            END $$
+        """)
+
         for idx_sql in [
             "CREATE INDEX IF NOT EXISTS idx_pipeline_project ON production_pipeline(project_id)",
             "CREATE INDEX IF NOT EXISTS idx_pipeline_status ON production_pipeline(status)",

@@ -50,6 +50,12 @@
         :content-rating="contentRating"
         @update-field="(field: string, value: unknown) => $emit('update-field', field, value)"
       />
+      <ShotAudioTab
+        v-if="activeTab === 'audio'"
+        :shot="shot"
+        :scene-id="sceneId ?? undefined"
+        @updated="(s: Partial<BuilderShot>) => $emit('shot-audio-updated', s)"
+      />
       <ShotHistoryTab
         v-if="activeTab === 'history'"
         :shot="shot"
@@ -67,9 +73,11 @@ import ShotTechnicalTab from './tabs/ShotTechnicalTab.vue'
 import ShotScoresTab from './tabs/ShotScoresTab.vue'
 import ShotHistoryTab from './tabs/ShotHistoryTab.vue'
 import ShotLoraTab from './tabs/ShotLoraTab.vue'
+import ShotAudioTab from './tabs/ShotAudioTab.vue'
 
 defineProps<{
   shot: Partial<BuilderShot> | null
+  sceneId?: string | null
   shotVideoSrc: string
   sourceImageUrl: (path: string) => string
   characters: { slug: string; name: string }[]
@@ -83,12 +91,14 @@ defineEmits<{
   'update-field': [field: string, value: unknown]
   'auto-dialogue': []
   'regenerate': []
+  'shot-audio-updated': [shot: Partial<BuilderShot>]
 }>()
 
 const tabs = [
   { id: 'creative', label: 'Creative' },
   { id: 'technical', label: 'Technical' },
   { id: 'loras', label: 'LoRAs' },
+  { id: 'audio', label: 'Audio' },
   { id: 'scores', label: 'Scores' },
   { id: 'history', label: 'History' },
 ]

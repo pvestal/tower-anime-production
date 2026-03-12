@@ -189,7 +189,10 @@
       <!-- Action buttons -->
       <div style="display: flex; gap: 8px; padding: 12px; flex-wrap: wrap; border-top: 1px solid var(--border-primary);">
         <button class="btn btn-primary" @click="emit('save')" :disabled="saving">Save</button>
-        <button class="btn btn-success" :disabled="shots.length === 0 || generating" @click="emit('confirm-generate')">Generate</button>
+        <button v-if="!generating" class="btn btn-success" :disabled="shots.length === 0" @click="emit('confirm-generate')">Generate</button>
+        <button v-if="generating" class="btn btn-cancel" :disabled="cancelling" @click="emit('cancel-generation')">
+          {{ cancelling ? 'Cancelling...' : 'Cancel Gen' }}
+        </button>
         <button class="btn" :disabled="shots.length === 0 || allShotsHaveImages" @click="emit('auto-assign')" title="Auto-assign best source images to all unassigned shots">Auto-assign</button>
         <button
           class="btn"
@@ -218,6 +221,7 @@
     <ShotInspectorPanel
       v-if="selectedShotIdx >= 0 && shots[selectedShotIdx]"
       :shot="shots[selectedShotIdx]"
+      :scene-id="sceneId"
       :shot-video-src="shotVideoSrc"
       :source-image-url="sourceImageUrl"
       :characters="characters"
@@ -227,6 +231,7 @@
       @browse-image="emit('browse-image')"
       @update-field="(field: string, value: unknown) => emit('update-shot-field', selectedShotIdx, field, value)"
       @auto-dialogue="emit('auto-dialogue')"
+      @shot-audio-updated="(updated: Partial<BuilderShot>) => Object.assign(shots[selectedShotIdx], updated)"
     />
 
     <!-- Rehearsal Mode -->
@@ -268,6 +273,7 @@ const props = defineProps<{
   gapCharacters?: Record<string, GapAnalysisCharacter>
   autoDialogueBusy?: boolean
   keyframeBlitzBusy?: boolean
+  cancelling?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -285,6 +291,7 @@ const emit = defineEmits<{
   'go-to-training': []
   'auto-dialogue': []
   'keyframe-blitz': []
+  'cancel-generation': []
 }>()
 
 const allShotsHaveImages = computed(() =>
@@ -402,6 +409,14 @@ function estimateMinutes(shots: Partial<BuilderShot>[]): number {
 </script>
 
 <style scoped>
+.btn-cancel {
+  background: rgba(218, 54, 51, 0.12);
+  border-color: rgba(218, 54, 51, 0.4);
+  color: #f85149;
+}
+.btn-cancel:hover {
+  background: rgba(218, 54, 51, 0.25);
+}
 .field-group {
   margin-bottom: 10px;
 }

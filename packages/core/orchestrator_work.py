@@ -464,34 +464,22 @@ async def work_shot_preparation(conn, project_id: int):
         """, project_id)
 
         for shot_row in all_shots:
-            chars = shot_row["characters_present"] or []
-            if isinstance(chars, str):
-                chars = [chars]
-
-            # Collect blacklisted engines for all characters in this shot
-            blocked = set()
-            for c in chars:
-                blocked.update(char_blacklists.get(c, []))
+            # Only assign engine if not already set (respect manual overrides)
+            if shot_row["video_engine"]:
+                continue
 
             has_image = bool(shot_row["source_image_path"])
-            shot_type = shot_row["shot_type"] or "medium"
+            selection = select_engine(has_source_image=has_image)
 
-            selection = select_engine(
-                shot_type=shot_type,
-                characters_present=chars,
-                has_source_image=has_image,
-                blacklisted_engines=list(blocked),
-            )
-
+            # Only set engine — never overwrite lora_name (set manually per shot)
             await conn.execute(
-                "UPDATE shots SET video_engine = $1, lora_name = $2, lora_strength = $3 WHERE id = $4",
-                selection.engine, selection.lora_name, selection.lora_strength, shot_row["id"],
+                "UPDATE shots SET video_engine = $1 WHERE id = $2",
+                selection.engine, shot_row["id"],
             )
             engine_details.append({
                 "shot_id": str(shot_row["id"]),
                 "engine": selection.engine,
                 "reason": selection.reason,
-                "lora_name": selection.lora_name,
             })
 
         logger.info(
@@ -536,17 +524,33 @@ async def work_shot_preparation(conn, project_id: int):
 
 
 async def work_video_generation(conn, project_id: int):
-    """Generate video for one scene at a time (GPU constraint)."""
-    from packages.scene_generation.builder import generate_scene, _scene_generation_tasks
+    """Generate video for one scene at a time (GPU constraint).
 
+    Scene selection: pick the first scene that still has pending/generating shots,
+    NOT based on final_video_path (which is an assembly artifact).
+    After generation completes, auto-assemble the scene immediately.
+    """
+    from packages.scene_generation.builder import (
+        generate_scene, _scene_generation_tasks,
+        SCENE_OUTPUT_DIR, concat_videos, apply_scene_audio,
+    )
+
+    # Find scene with pending shots (not yet generated), ordered by scene_number
     scene = await conn.fetchrow("""
-        SELECT id FROM scenes
-        WHERE project_id = $1 AND final_video_path IS NULL
-        ORDER BY scene_number
+        SELECT s.id, s.title FROM scenes s
+        WHERE s.project_id = $1
+          AND EXISTS (
+              SELECT 1 FROM shots sh
+              WHERE sh.scene_id = s.id
+                AND sh.status IN ('pending', 'generating')
+          )
+        ORDER BY s.scene_number
         LIMIT 1
     """, project_id)
 
     if not scene:
+        # No pending scenes — try assembling any scene with completed but unassembled shots
+        await _auto_assemble_scenes(conn, project_id)
         return
 
     scene_id = str(scene["id"])
@@ -557,18 +561,21 @@ async def work_video_generation(conn, project_id: int):
             logger.info(f"Orchestrator: scene {scene_id} already generating (via API), skipping")
             return
 
-    logger.info(f"Orchestrator: starting video generation for scene {scene_id}")
+    logger.info(f"Orchestrator: starting video generation for scene {scene_id} ({scene['title']})")
 
     sentinel = asyncio.get_event_loop().create_future()
     _scene_generation_tasks[scene_id] = sentinel
 
     try:
-        await generate_scene(scene_id)
+        await generate_scene(scene_id, auto_approve=True)
         await event_bus.emit(SCENE_READY, {
             "project_id": project_id,
             "scene_id": scene_id,
         })
-        logger.info(f"Orchestrator: scene {scene_id} generation complete")
+        logger.info(f"Orchestrator: scene {scene_id} generation complete, auto-assembling")
+
+        # Auto-assemble this scene immediately after generation
+        await _assemble_single_scene(conn, scene["id"], scene_id)
     except Exception as e:
         logger.error(f"Orchestrator: video generation failed for scene {scene_id}: {e}")
     finally:
@@ -580,10 +587,83 @@ async def work_video_generation(conn, project_id: int):
         decision_type="orchestrator_video_gen",
         project_name=str(project_id),
         input_context={"scene_id": scene_id},
-        decision_made="generated_scene_video",
+        decision_made="generated_and_assembled_scene",
         confidence_score=0.8,
-        reasoning="Generated video for next incomplete scene",
+        reasoning=f"Generated video for scene '{scene['title']}' and auto-assembled",
     )
+
+
+async def _assemble_single_scene(conn, scene_id_uuid, scene_id_str: str):
+    """Assemble a single scene from its completed shots."""
+    from packages.scene_generation.builder import (
+        SCENE_OUTPUT_DIR, concat_videos, apply_scene_audio,
+    )
+
+    shot_videos = await conn.fetch("""
+        SELECT output_video_path FROM shots
+        WHERE scene_id = $1
+          AND status IN ('completed', 'accepted_best')
+          AND output_video_path IS NOT NULL
+        ORDER BY shot_number
+    """, scene_id_uuid)
+
+    video_paths = [r["output_video_path"] for r in shot_videos]
+    if not video_paths:
+        return
+
+    scene_video_path = str(SCENE_OUTPUT_DIR / f"scene_{scene_id_str}.mp4")
+
+    try:
+        await concat_videos(video_paths, scene_video_path)
+        await apply_scene_audio(conn, scene_id_uuid, scene_video_path)
+
+        probe = await asyncio.create_subprocess_exec(
+            "ffprobe", "-v", "quiet", "-show_entries", "format=duration",
+            "-of", "csv=p=0", scene_video_path,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await probe.communicate()
+        duration = float(stdout.decode().strip()) if stdout.decode().strip() else None
+
+        total_shots = await conn.fetchval(
+            "SELECT COUNT(*) FROM shots WHERE scene_id = $1", scene_id_uuid
+        )
+        gen_status = "completed" if len(video_paths) >= total_shots else "partial"
+
+        await conn.execute("""
+            UPDATE scenes SET final_video_path = $2, actual_duration_seconds = $3,
+                   generation_status = $4
+            WHERE id = $1
+        """, scene_id_uuid, scene_video_path, duration, gen_status)
+
+        logger.info(
+            f"Orchestrator: assembled scene {scene_id_str} "
+            f"({len(video_paths)} shots, {duration:.1f}s, status={gen_status})"
+        )
+    except Exception as e:
+        logger.error(f"Orchestrator: auto-assembly failed for scene {scene_id_str}: {e}")
+
+
+async def _auto_assemble_scenes(conn, project_id: int):
+    """Assemble any scenes with completed shots but no final_video_path."""
+    scenes = await conn.fetch("""
+        SELECT s.id, s.title FROM scenes s
+        WHERE s.project_id = $1
+          AND s.final_video_path IS NULL
+          AND EXISTS (
+              SELECT 1 FROM shots sh
+              WHERE sh.scene_id = s.id
+                AND sh.status IN ('completed', 'accepted_best')
+                AND sh.output_video_path IS NOT NULL
+          )
+        ORDER BY s.scene_number
+    """, project_id)
+
+    for scene in scenes:
+        await _assemble_single_scene(conn, scene["id"], str(scene["id"]))
+        logger.info(f"Orchestrator: auto-assembled scene '{scene['title']}'")
+    if scenes:
+        logger.info(f"Orchestrator: auto-assembled {len(scenes)} scenes for project {project_id}")
 
 
 async def work_video_qc(conn, project_id: int):

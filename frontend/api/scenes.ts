@@ -81,6 +81,22 @@ export const scenesApi = {
     return request(`/${sceneId}/keyframe-blitz?skip_existing=${skipExisting}`, { method: 'POST' })
   },
 
+  async cancelGeneration(opts?: { scene_id?: string; project_id?: number }): Promise<{
+    cancelled: string[]; remaining_tasks: number
+  }> {
+    const params = new URLSearchParams()
+    if (opts?.scene_id) params.set('scene_id', opts.scene_id)
+    if (opts?.project_id) params.set('project_id', String(opts.project_id))
+    const qs = params.toString()
+    return request(`/cancel-generation${qs ? '?' + qs : ''}`, { method: 'POST' })
+  },
+
+  async resumeGeneration(projectId: number): Promise<{
+    project_id: number; scenes: Array<{ scene_id: string; title: string; shots_created: number }>; count: number
+  }> {
+    return request(`/generate-all?project_id=${projectId}`, { method: 'POST' })
+  },
+
   async getSceneStatus(sceneId: string): Promise<SceneGenerationStatus> {
     return request(`/${sceneId}/status`)
   },
@@ -109,6 +125,10 @@ export const scenesApi = {
 
   shotVideoUrl(sceneId: string, shotId: string): string {
     return `${SCENES_BASE}/${sceneId}/shots/${shotId}/video`
+  },
+
+  shotAudioUrl(sceneId: string, shotId: string): string {
+    return `${SCENES_BASE}/${sceneId}/shots/${shotId}/audio`
   },
 
   async getApprovedImagesForScene(sceneId: string, projectId: number): Promise<ApprovedImagesResponse> {
@@ -370,6 +390,27 @@ export const scenesApi = {
     }>
   }> {
     return voiceRequest(`/episode/${episodeId}/synthesize-all`, { method: 'POST', timeoutMs: 300000 })
+  },
+
+  async generateShotAudio(sceneId: string, shotId: string): Promise<{
+    shot_id: string; sfx_audio_path: string | null; voice_audio_path: string | null;
+    dialogue_text: string | null; dialogue_character_slug: string | null; status: string
+  }> {
+    return request(`/${sceneId}/shots/${shotId}/generate-audio`, { method: 'POST', timeoutMs: 130000 })
+  },
+
+  async generateSceneAllAudio(sceneId: string): Promise<{
+    scene_id: string; processed: number; skipped: number; total: number;
+    shots: Array<{ shot_id: string; status: string }>
+  }> {
+    return request(`/${sceneId}/generate-all-audio`, { method: 'POST', timeoutMs: 300000 })
+  },
+
+  async synthesizeProjectDialogue(projectId: number, force = false): Promise<{
+    project_id: number; processed: number; failed: number; total: number;
+    results: Array<{ shot_id: string; character: string; engine?: string; status: string; error?: string }>
+  }> {
+    return voiceRequest(`/project/${projectId}/synthesize-all?force=${force}`, { method: 'POST', timeoutMs: 600000 })
   },
 
   async getVoiceModels(characterSlug: string): Promise<{

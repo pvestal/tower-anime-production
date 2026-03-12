@@ -576,6 +576,52 @@ export const useSceneEditorStore = defineStore('sceneEditor', () => {
     }
   }
 
+  // --- Cancel / Resume ---
+  const cancelling = ref(false)
+
+  async function cancelGeneration() {
+    if (!editSceneId.value) return
+    cancelling.value = true
+    try {
+      const result = await api.cancelGeneration({ scene_id: editSceneId.value })
+      generating.value = false
+      stopMonitorPolling()
+      await loadShots()
+      return result
+    } catch (e) {
+      console.error('Cancel failed:', e)
+    } finally {
+      cancelling.value = false
+    }
+  }
+
+  async function cancelProjectGeneration() {
+    if (!selectedProjectId.value) return
+    cancelling.value = true
+    try {
+      const result = await api.cancelGeneration({ project_id: selectedProjectId.value })
+      generating.value = false
+      stopMonitorPolling()
+      return result
+    } catch (e) {
+      console.error('Cancel project generation failed:', e)
+    } finally {
+      cancelling.value = false
+    }
+  }
+
+  async function resumeProjectGeneration() {
+    if (!selectedProjectId.value) return
+    try {
+      const result = await api.resumeGeneration(selectedProjectId.value)
+      generating.value = true
+      startMonitorPolling()
+      return result
+    } catch (e) {
+      console.error('Resume failed:', e)
+    }
+  }
+
   // --- Monitor polling ---
   function startMonitorPolling() {
     stopMonitorPolling()
@@ -731,6 +777,10 @@ export const useSceneEditorStore = defineStore('sceneEditor', () => {
     playEpisodeVideo,
     playShotVideo,
     estimateMinutes,
+    cancelling,
+    cancelGeneration,
+    cancelProjectGeneration,
+    resumeProjectGeneration,
     cleanup,
   }
 })

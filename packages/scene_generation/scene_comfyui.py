@@ -22,6 +22,35 @@ async def copy_to_comfyui_input(image_path: str) -> str:
     return src.name
 
 
+def is_source_already_queued(source_name: str) -> str | None:
+    """Check if a source image/video is already running or pending in ComfyUI.
+
+    Inspects both queue_running and queue_pending for LoadImage or
+    VHS_LoadVideoPath nodes referencing the same file.  Returns the
+    prompt_id of the existing job if found, otherwise None.
+    """
+    import urllib.request
+
+    try:
+        req = urllib.request.Request(f"{COMFYUI_URL}/queue")
+        resp = urllib.request.urlopen(req, timeout=5)
+        queue = json.loads(resp.read())
+    except Exception:
+        return None  # Can't reach ComfyUI — let caller decide
+
+    for bucket in ("queue_running", "queue_pending"):
+        for item in queue.get(bucket, []):
+            pid = item[1] if len(item) > 1 else None
+            nodes = item[2] if len(item) > 2 and isinstance(item[2], dict) else {}
+            for node in nodes.values():
+                ct = node.get("class_type", "")
+                if ct in ("LoadImage", "VHS_LoadVideoPath"):
+                    img = node.get("inputs", {}).get("image", "") or node.get("inputs", {}).get("video", "")
+                    if img and Path(img).name == Path(source_name).name:
+                        return pid
+    return None
+
+
 async def poll_comfyui_completion(prompt_id: str, timeout_seconds: int = 1800) -> dict:
     """Poll ComfyUI /history until the prompt completes or times out."""
     import urllib.request

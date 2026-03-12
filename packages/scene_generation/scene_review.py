@@ -54,6 +54,7 @@ async def get_pending_videos(
                    sh.review_status, sh.qc_issues, sh.qc_category_averages, sh.qc_per_frame,
                    sh.review_feedback, sh.reviewed_at,
                    sh.lora_name, sh.lora_strength,
+                   sh.sfx_audio_path, sh.dialogue_text, sh.dialogue_character_slug,
                    s.title as scene_title, s.project_id,
                    p.name as project_name
             FROM shots sh
@@ -94,6 +95,9 @@ async def get_pending_videos(
                 "qc_per_frame": per_frame or [],
                 "lora_name": r["lora_name"],
                 "lora_strength": float(r["lora_strength"]) if r["lora_strength"] else None,
+                "sfx_audio_path": r["sfx_audio_path"],
+                "dialogue_text": r["dialogue_text"],
+                "dialogue_character": r["dialogue_character_slug"],
                 "scene_title": r["scene_title"],
                 "project_id": r["project_id"],
                 "project_name": r["project_name"],

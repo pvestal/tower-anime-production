@@ -221,12 +221,43 @@ async def run_qc_loop(
     motion_prompt = shot_data["motion_prompt"] or shot_data.get("generation_prompt") or ""
     current_negative = "low quality, blurry, distorted, watermark"
     shot_engine = shot_data.get("video_engine") or "framepack"
-    shot_steps = shot_data.get("steps") or 30
     shot_guidance = shot_data.get("guidance_scale") or 6.0
     shot_seconds = float(shot_data.get("duration_seconds") or 3)
     shot_use_f1 = shot_data.get("use_f1") or False
     original_seed = shot_data.get("seed")
     character_slug = None
+
+    # Use motion intensity system for WAN 14B instead of hard-coded defaults
+    if shot_engine in ("wan", "wan22", "wan22_14b"):
+        from .motion_intensity import classify_motion_intensity, get_motion_params
+        _motion_tier = classify_motion_intensity(shot_data)
+        _motion_params = get_motion_params(_motion_tier)
+        shot_steps = _motion_params.total_steps
+        _shot_split_steps = _motion_params.split_steps
+        _shot_cfg = _motion_params.cfg
+        _shot_use_lightx2v = _motion_params.use_lightx2v
+        _shot_content_lora_str = _motion_params.content_lora_strength
+        # Resolve content LoRA pair
+        _shot_lora = shot_data.get("lora_name")
+        _shot_clh, _shot_cll = None, None
+        if _shot_lora:
+            _base = _shot_lora.rsplit("_HIGH", 1)[0].rsplit("_LOW", 1)[0]
+            _shot_clh = f"{_base}_HIGH.safetensors" if not _shot_lora.endswith("_HIGH.safetensors") else _shot_lora
+            _shot_cll = f"{_base}_LOW.safetensors" if not _shot_lora.endswith("_LOW.safetensors") else _shot_lora
+            # Use the V2 dreamlayer LOW if no explicit LOW variant
+            if _shot_clh == _shot_cll:
+                _shot_cll = None
+        logger.info(
+            f"Shot {shot_id} QC: motion_tier={_motion_tier} steps={shot_steps} "
+            f"split={_shot_split_steps} cfg={_shot_cfg} lightx2v={_shot_use_lightx2v}"
+        )
+    else:
+        shot_steps = shot_data.get("steps") or 30
+        _shot_split_steps = None
+        _shot_cfg = None
+        _shot_use_lightx2v = None
+        _shot_clh, _shot_cll = None, None
+        _shot_content_lora_str = 0.8
 
     # Try to extract character slug from characters_present
     chars = shot_data.get("characters_present")
@@ -279,20 +310,46 @@ async def run_qc_loop(
 
             # Vary seed on retry
             shot_seed = original_seed if attempt == 0 else random.randint(0, 2**63 - 1)
-            retry_steps = shot_steps + (attempt * 5)
+            # WAN 14B: small step bumps (1 per retry) since it uses 4-8 steps total
+            # Other engines: larger bumps (5 per retry) since they use 20-30+ steps
+            if shot_engine in ("wan", "wan22", "wan22_14b"):
+                retry_steps = shot_steps + attempt  # 4→5→6 etc
+                retry_split = (_shot_split_steps or retry_steps // 2) + (attempt > 1)
+            else:
+                retry_steps = shot_steps + (attempt * 5)
+                retry_split = None
 
             # Dispatch to the right video engine
-            if shot_engine == "wan":
+            if shot_engine in ("wan", "wan22", "wan22_14b"):
+                from .wan_video import build_wan22_14b_i2v_workflow
                 fps = 16
                 num_frames = max(9, int(shot_seconds * fps) + 1)
-                workflow, prefix = build_wan_t2v_workflow(
-                    prompt_text=current_prompt,
-                    num_frames=num_frames,
-                    fps=fps,
-                    steps=retry_steps,
-                    seed=shot_seed,
-                    use_gguf=True,
-                )
+                if shot_engine == "wan22_14b" and image_filename:
+                    workflow, prefix = build_wan22_14b_i2v_workflow(
+                        prompt_text=current_prompt,
+                        ref_image=image_filename,
+                        width=480, height=720,
+                        num_frames=num_frames, fps=fps,
+                        total_steps=retry_steps,
+                        split_steps=retry_split,
+                        cfg=_shot_cfg or 3.5,
+                        seed=shot_seed,
+                        negative_text=current_negative,
+                        output_prefix=f"qc_{int(time.time())}",
+                        use_lightx2v=_shot_use_lightx2v if _shot_use_lightx2v is not None else True,
+                        content_lora_high=_shot_clh,
+                        content_lora_low=_shot_cll,
+                        content_lora_strength=_shot_content_lora_str,
+                    )
+                else:
+                    workflow, prefix = build_wan_t2v_workflow(
+                        prompt_text=current_prompt,
+                        num_frames=num_frames,
+                        fps=fps,
+                        steps=retry_steps,
+                        seed=shot_seed,
+                        use_gguf=True,
+                    )
                 comfyui_prompt_id = _submit_wan_workflow(workflow)
             elif shot_engine == "ltx":
                 fps = 24
@@ -310,6 +367,13 @@ async def run_qc_loop(
                 comfyui_prompt_id = _submit_ltx_workflow(workflow)
             else:
                 # framepack or framepack_f1
+                # Dedup: skip if this source image is already in ComfyUI queue
+                from .scene_comfyui import is_source_already_queued
+                _existing = is_source_already_queued(image_filename) if image_filename else None
+                if _existing:
+                    logger.warning(f"Shot {shot_id} QC: source {image_filename} already queued (prompt={_existing}), skipping")
+                    continue
+
                 use_f1 = shot_engine == "framepack_f1" or shot_use_f1
                 # Lower guidance on retry to lean harder on the source image
                 retry_guidance = shot_guidance if attempt == 0 else max(5.0, shot_guidance - 1.0)

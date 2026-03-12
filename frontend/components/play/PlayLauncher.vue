@@ -78,12 +78,15 @@
 import { ref, onMounted } from 'vue'
 import { storyApi } from '@/api/story'
 import { interactiveApi } from '@/api/interactive'
+import { useAuthStore } from '@/stores/auth'
 import type { InteractiveSession } from '@/api/interactive'
 
 defineProps<{
   starting: boolean
   activeSessions: InteractiveSession[]
 }>()
+
+const authStore = useAuthStore()
 
 defineEmits<{
   start: [projectId: number]
@@ -94,17 +97,32 @@ defineEmits<{
 
 const selectedProjectId = ref(0)
 
-interface ProjectInfo { id: number; name: string; character_count: number }
+interface ProjectInfo { id: number; name: string; character_count: number; content_rating: string | null }
 const projects = ref<ProjectInfo[]>([])
+
+const RATING_LEVELS: Record<string, number> = {
+  'G': 1, 'PG': 2, 'PG-13': 3, 'R': 4, 'NC-17': 5, 'XXX': 6,
+}
+
+function isRatingAllowed(projectRating: string | null): boolean {
+  const userMax = authStore.user?.max_rating || 'PG'
+  const userLevel = RATING_LEVELS[userMax] ?? 2
+  if (!projectRating) return true
+  const projLevel = RATING_LEVELS[projectRating.toUpperCase()] ?? RATING_LEVELS[projectRating] ?? 3
+  return projLevel <= userLevel
+}
 
 onMounted(async () => {
   try {
     const resp = await storyApi.getProjects()
-    projects.value = (resp.projects || []).map((p: any) => ({
-      id: p.id,
-      name: p.name,
-      character_count: p.character_count || 0,
-    }))
+    projects.value = (resp.projects || [])
+      .map((p: any) => ({
+        id: p.id,
+        name: p.name,
+        character_count: p.character_count || 0,
+        content_rating: p.content_rating || null,
+      }))
+      .filter((p: ProjectInfo) => isRatingAllowed(p.content_rating))
   } catch (e) {
     console.error('Failed to load projects:', e)
   }

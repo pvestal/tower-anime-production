@@ -637,6 +637,8 @@ async def sync_video_generations(conn: asyncpg.Connection | None = None) -> int:
                    sh.guidance_scale, sh.lora_name, sh.lora_strength,
                    sh.quality_score, sh.qc_category_averages, sh.qc_issues,
                    sh.generation_time_seconds, sh.status, sh.created_at,
+                   sh.motion_tier, sh.gen_split_steps, sh.gen_lightx2v,
+                   sh.content_lora_high, sh.content_lora_low,
                    s.project_id, p.name as project_name,
                    gs.checkpoint_model
             FROM shots sh
@@ -668,7 +670,12 @@ async def sync_video_generations(conn: asyncpg.Connection | None = None) -> int:
                     g.lora_name = {_esc(lora)},
                     g.lora_weight = {_esc(lora_w)},
                     g.generation_time_seconds = {_esc(gen_time)},
-                    g.ts = {_esc(ts)}
+                    g.ts = {_esc(ts)},
+                    g.motion_tier = {_esc(row.get('motion_tier'))},
+                    g.split_steps = {_esc(row.get('gen_split_steps'))},
+                    g.lightx2v = {_esc(row.get('gen_lightx2v'))},
+                    g.content_lora_high = {_esc(row.get('content_lora_high'))},
+                    g.content_lora_low = {_esc(row.get('content_lora_low'))}
                 RETURN g
             """
             await _cypher(conn, query)
@@ -746,7 +753,8 @@ async def sync_video_generations(conn: asyncpg.Connection | None = None) -> int:
                     SET e.semantic_score = {_esc(semantic)},
                         e.structural_score = {_esc(structural)},
                         e.style_score = {_esc(style)},
-                        e.mhp_bucket = {_esc(mhp)}
+                        e.mhp_bucket = {_esc(mhp)},
+                        e.motion_execution = {_esc(qc_avgs.get("motion_execution", 0))}
                     RETURN e
                 """
                 await _cypher(conn, query)

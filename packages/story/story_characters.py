@@ -232,6 +232,9 @@ _PATCH_ALLOWED = {
     "relationships": "jsonb",
     "voice_profile": "jsonb",
     "archived": "bool",
+    "lora_path": "text",
+    "lora_trigger": "text",
+    "lora_status": "text",
 }
 
 

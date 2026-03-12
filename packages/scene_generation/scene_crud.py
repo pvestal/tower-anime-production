@@ -12,7 +12,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 
-from packages.core.config import BASE_PATH, COMFYUI_OUTPUT_DIR
+from packages.core.config import BASE_PATH, COMFYUI_OUTPUT_DIR, COMFYUI_URL
 from packages.core.db import connect_direct, get_char_project_map
 from packages.core.auth import get_user_projects
 from packages.core.events import event_bus, SCENE_UPDATED, SHOT_UPDATED, SHOT_GENERATED
@@ -623,6 +623,10 @@ async def get_scene(scene_id: str):
                 "generation_negative": sh.get("generation_negative"),
                 "clip_score": sh.get("clip_score"),
                 "clip_variety_score": sh.get("clip_variety_score"),
+                "sfx_audio_path": sh.get("sfx_audio_path"),
+                "voice_audio_path": sh.get("voice_audio_path"),
+                "lora_name": sh.get("lora_name"),
+                "lora_strength": sh.get("lora_strength"),
             })
         return {
             "id": str(scene["id"]), "project_id": scene["project_id"],
@@ -1355,6 +1359,8 @@ async def regenerate_shot(scene_id: str, shot_id: str):
                         "lora_name": _shot_info["lora_name"],
                         "lora_strength": float(_shot_info["lora_strength"] or 0.8),
                         "generation_time_seconds": _shot_info["generation_time_seconds"],
+                        "last_frame_path": last_frame,
+                        "video_path": vpath,
                     })
                 except Exception as _evt_err:
                     logger.debug(f"SHOT_GENERATED event skipped: {_evt_err}")
@@ -1432,6 +1438,20 @@ async def serve_shot_video(scene_id: str, shot_id: str):
     return FileResponse(path, media_type="video/mp4", filename=f"shot_{shot_id}.mp4")
 
 
+@router.get("/scenes/{scene_id}/shots/{shot_id}/audio")
+async def serve_shot_audio(scene_id: str, shot_id: str):
+    """Serve shot SFX/voice mixed audio file."""
+    shid = uuid.UUID(shot_id)
+    conn = await connect_direct()
+    try:
+        path = await conn.fetchval("SELECT sfx_audio_path FROM shots WHERE id = $1", shid)
+    finally:
+        await conn.close()
+    if not path or not Path(path).exists():
+        raise HTTPException(status_code=404, detail="Shot audio not found")
+    return FileResponse(path, media_type="video/mp4", filename=f"shot_{shot_id}_audio.mp4")
+
+
 @router.post("/scenes/{scene_id}/synthesize-dialogue")
 async def synthesize_scene_dialogue_endpoint(scene_id: str):
     """Synthesize dialogue for a scene from its shot data and return status.
@@ -1488,6 +1508,91 @@ async def get_scene_dialogue_status(scene_id: str):
     path = row["dialogue_audio_path"]
     has_audio = bool(path and Path(path).exists())
     return {"scene_id": scene_id, "has_dialogue_audio": has_audio, "dialogue_audio_path": path if has_audio else None}
+
+
+@router.post("/scenes/{scene_id}/shots/{shot_id}/generate-audio")
+async def generate_shot_audio(scene_id: str, shot_id: str):
+    """Generate voice + foley SFX audio for a specific shot.
+
+    Reads the shot's dialogue, LoRA, and characters, then synthesizes
+    voice and mixes foley SFX. Updates sfx_audio_path and voice_audio_path.
+    """
+    from packages.core.events import event_bus, SHOT_GENERATED
+
+    shid = uuid.UUID(shot_id)
+    conn = await connect_direct()
+    try:
+        row = await conn.fetchrow(
+            "SELECT output_video_path, status FROM shots WHERE id = $1", shid
+        )
+        if not row:
+            raise HTTPException(status_code=404, detail="Shot not found")
+        video_path = row["output_video_path"]
+        if not video_path:
+            raise HTTPException(status_code=400, detail="Shot has no video yet — generate video first")
+    finally:
+        await conn.close()
+
+    # Emit SHOT_GENERATED to trigger the audio handler
+    await event_bus.emit(SHOT_GENERATED, {
+        "shot_id": shid,
+        "video_path": video_path,
+    })
+
+    # Read back the result
+    conn = await connect_direct()
+    try:
+        result = await conn.fetchrow(
+            "SELECT sfx_audio_path, voice_audio_path, dialogue_text, dialogue_character_slug "
+            "FROM shots WHERE id = $1", shid
+        )
+    finally:
+        await conn.close()
+
+    return {
+        "shot_id": shot_id,
+        "sfx_audio_path": result["sfx_audio_path"] if result else None,
+        "voice_audio_path": result["voice_audio_path"] if result else None,
+        "dialogue_text": result["dialogue_text"] if result else None,
+        "dialogue_character_slug": result["dialogue_character_slug"] if result else None,
+        "status": "generated" if (result and result["sfx_audio_path"]) else "no_audio",
+    }
+
+
+@router.post("/scenes/{scene_id}/generate-all-audio")
+async def generate_scene_all_audio(scene_id: str):
+    """Generate voice + foley SFX for ALL shots in a scene that have video but no audio."""
+    from packages.core.events import event_bus, SHOT_GENERATED
+
+    sid = uuid.UUID(scene_id)
+    conn = await connect_direct()
+    try:
+        shots = await conn.fetch(
+            "SELECT id, output_video_path, sfx_audio_path FROM shots "
+            "WHERE scene_id = $1 AND output_video_path IS NOT NULL "
+            "ORDER BY shot_number", sid
+        )
+    finally:
+        await conn.close()
+
+    results = []
+    for sh in shots:
+        if sh["sfx_audio_path"]:
+            results.append({"shot_id": str(sh["id"]), "status": "already_has_audio"})
+            continue
+        await event_bus.emit(SHOT_GENERATED, {
+            "shot_id": sh["id"],
+            "video_path": sh["output_video_path"],
+        })
+        results.append({"shot_id": str(sh["id"]), "status": "generated"})
+
+    return {
+        "scene_id": scene_id,
+        "processed": len([r for r in results if r["status"] == "generated"]),
+        "skipped": len([r for r in results if r["status"] == "already_has_audio"]),
+        "total": len(results),
+        "shots": results,
+    }
 
 
 @router.get("/scenes/{scene_id}/approved-images")
@@ -1779,7 +1884,10 @@ async def cancel_generation(project_id: int = None, scene_id: str = None):
     - project_id: cancel the generate-all pipeline for this project
     - scene_id: cancel a single scene generation task
     - Neither: cancel ALL running pipelines
+
+    Also interrupts ComfyUI, resets generating shots, and force-releases the lock.
     """
+    from packages.scene_generation.builder import signal_cancel, force_release_scene_lock
     cancelled = []
 
     if scene_id:
@@ -1812,6 +1920,42 @@ async def cancel_generation(project_id: int = None, scene_id: str = None):
                 task.cancel()
                 cancelled.append(key)
         _scene_generation_tasks.clear()
+
+    # Signal cancellation to any running generation loops
+    signal_cancel()
+
+    # Interrupt ComfyUI queue (stop running + clear pending)
+    try:
+        import urllib.request
+        urllib.request.urlopen(
+            urllib.request.Request(f"{COMFYUI_URL}/interrupt", method="POST"),
+            timeout=5,
+        )
+        req = urllib.request.Request(
+            f"{COMFYUI_URL}/queue",
+            data=json.dumps({"clear": True}).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        urllib.request.urlopen(req, timeout=5)
+        cancelled.append("comfyui_interrupted")
+    except Exception as e:
+        logger.warning(f"cancel-generation: ComfyUI interrupt failed: {e}")
+
+    # Reset any stuck 'generating' shots back to 'pending'
+    conn = await connect_direct()
+    try:
+        result = await conn.execute(
+            "UPDATE shots SET status = 'pending', error_message = NULL "
+            "WHERE status = 'generating'"
+        )
+        cancelled.append(f"reset_generating_shots: {result}")
+    finally:
+        await conn.close()
+
+    # Force-release the scene generation lock
+    force_release_scene_lock()
+    cancelled.append("lock_released")
 
     return {"cancelled": cancelled, "remaining_tasks": len(_scene_generation_tasks)}
 

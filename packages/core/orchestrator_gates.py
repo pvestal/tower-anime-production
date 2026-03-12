@@ -133,6 +133,29 @@ def _check_comfyui_health() -> bool:
         return False
 
 
+async def _gate_trailer_validation(conn, project_id: int) -> dict:
+    """Check if project has at least one approved trailer.
+
+    Pass condition: at least one trailer with status 'approved'.
+    Action needed: trailers exist but none approved (manual review needed).
+    """
+    total = await conn.fetchval(
+        "SELECT COUNT(*) FROM trailers WHERE project_id = $1", project_id
+    )
+    approved = await conn.fetchval(
+        "SELECT COUNT(*) FROM trailers WHERE project_id = $1 AND status = 'approved'",
+        project_id,
+    )
+    return {
+        "passed": approved > 0,
+        "action_needed": total > 0 and approved == 0,
+        "blocked": total == 0,
+        "blocked_reason": "No trailers created yet — POST /api/trailers/create" if total == 0 else None,
+        "total_trailers": total,
+        "approved_trailers": approved,
+    }
+
+
 async def _gate_video_generation(conn, project_id: int) -> dict:
     """Check if all shots have completed video generation."""
     total = await conn.fetchval("""
@@ -182,7 +205,11 @@ async def _gate_video_qc(conn, project_id: int) -> dict:
 
 
 async def _gate_scene_assembly(conn, project_id: int) -> dict:
-    """Check if all scenes have final_video_path."""
+    """Check if all scenes have final_video_path.
+
+    Also counts scenes with completed shots but no assembly yet,
+    so we can assemble incrementally while video_generation continues.
+    """
     total = await conn.fetchval(
         "SELECT COUNT(*) FROM scenes WHERE project_id = $1", project_id
     )
@@ -190,11 +217,23 @@ async def _gate_scene_assembly(conn, project_id: int) -> dict:
         SELECT COUNT(*) FROM scenes
         WHERE project_id = $1 AND final_video_path IS NOT NULL
     """, project_id)
+    # Scenes that have completed shots but aren't assembled yet
+    assemblable = await conn.fetchval("""
+        SELECT COUNT(*) FROM scenes s
+        WHERE s.project_id = $1 AND s.final_video_path IS NULL
+          AND EXISTS (
+              SELECT 1 FROM shots sh
+              WHERE sh.scene_id = s.id
+                AND sh.status IN ('completed', 'accepted_best')
+                AND sh.output_video_path IS NOT NULL
+          )
+    """, project_id)
     return {
         "passed": total > 0 and assembled >= total,
-        "action_needed": assembled < total,
+        "action_needed": assemblable > 0,
         "total_scenes": total,
         "assembled_scenes": assembled,
+        "assemblable_scenes": assemblable,
     }
 
 
@@ -246,6 +285,8 @@ async def check_gate(conn, entity_type: str, entity_id: str, project_id: int, ph
             return await _gate_scene_planning(conn, project_id)
         elif phase == "shot_preparation":
             return await _gate_shot_preparation(conn, project_id)
+        elif phase == "trailer_validation":
+            return await _gate_trailer_validation(conn, project_id)
         elif phase == "video_generation":
             return await _gate_video_generation(conn, project_id)
         elif phase == "video_qc":

@@ -95,6 +95,8 @@ def _resolve_content_lora_pair(
 from .framepack import build_framepack_workflow, _submit_comfyui_workflow
 from .ltx_video import build_ltx_workflow, build_ltxv_looping_workflow, _submit_comfyui_workflow as _submit_ltx_workflow
 from .wan_video import build_wan_t2v_workflow, build_wan22_workflow, build_wan22_14b_i2v_workflow, _submit_comfyui_workflow as _submit_wan_workflow
+from .video_config import get_engine_defaults
+from .motion_intensity import classify_motion_intensity, get_motion_params, get_counter_motion
 from .image_recommender import recommend_for_scene, batch_read_metadata
 
 # Re-export from sub-modules so existing imports keep working
@@ -164,6 +166,57 @@ _scene_generation_tasks: dict[str, asyncio.Task] = {}
 
 # Semaphore: only 1 scene generates at a time (GPU memory constraint)
 _scene_generation_lock = asyncio.Semaphore(1)
+
+# Lock acquisition timeout (seconds) — prevents indefinite blocking
+_LOCK_TIMEOUT = 1800  # 30 minutes max wait
+
+# Cancellation event — set to signal all active generation to stop
+_cancel_event = asyncio.Event()
+
+
+async def acquire_scene_lock(timeout: float = _LOCK_TIMEOUT) -> bool:
+    """Acquire the scene generation lock with a timeout.
+
+    Returns True if acquired, False if timed out.
+    """
+    try:
+        await asyncio.wait_for(_scene_generation_lock.acquire(), timeout=timeout)
+        return True
+    except asyncio.TimeoutError:
+        logger.error(f"Scene generation lock timeout after {timeout}s — force-releasing")
+        force_release_scene_lock()
+        # Try once more after force release
+        try:
+            await asyncio.wait_for(_scene_generation_lock.acquire(), timeout=5)
+            return True
+        except asyncio.TimeoutError:
+            return False
+
+
+def force_release_scene_lock():
+    """Force-release the scene generation lock.
+
+    Used by cancel endpoint to unblock stuck pipelines.
+    """
+    # Semaphore(1) — if _value is 0, it's locked. Force it back to 1.
+    if _scene_generation_lock._value == 0:
+        _scene_generation_lock.release()
+        logger.warning("Scene generation lock force-released")
+
+
+def signal_cancel():
+    """Signal all active generation to cancel."""
+    _cancel_event.set()
+
+
+def clear_cancel():
+    """Clear the cancellation signal."""
+    _cancel_event.clear()
+
+
+def is_cancelled() -> bool:
+    """Check if cancellation has been signalled."""
+    return _cancel_event.is_set()
 
 
 
@@ -358,14 +411,19 @@ async def generate_scene(scene_id: str, auto_approve: bool = False):
 
     Uses _scene_generation_lock to ensure only one scene generates at a time,
     so scenes complete fully (all shots in order) before the next scene starts.
+    Lock has a 30-minute timeout to prevent indefinite blocking.
 
     Args:
         auto_approve: If True, shots are auto-approved after generation so the
             full downstream pipeline (voice → music → assembly) fires without
             manual review. Also enabled by project metadata auto_approve_shots=true.
     """
-    await _scene_generation_lock.acquire()
+    acquired = await acquire_scene_lock()
+    if not acquired:
+        logger.error(f"Scene {scene_id}: could not acquire lock, skipping")
+        return
     try:
+        clear_cancel()  # Reset cancel signal for this run
         await _generate_scene_impl(scene_id, auto_approve=auto_approve)
     finally:
         _scene_generation_lock.release()
@@ -382,6 +440,8 @@ async def roll_forward_wan_shot(
     height: int = 720,
     fps: int = 16,
     steps: int = 4,
+    split_steps: int | None = None,
+    cfg: float = 3.5,
     seed: int | None = None,
     output_prefix: str = "rollforward",
     use_lightx2v: bool = True,
@@ -418,12 +478,15 @@ async def roll_forward_wan_shot(
         seg_prefix = f"{output_prefix}_seg{seg_idx:02d}"
         seg_seed = seed + seg_idx
 
+        _rf_split = split_steps if split_steps is not None else (steps // 2)
         workflow, prefix = build_wan22_14b_i2v_workflow(
             prompt_text=prompt_text,
             ref_image=current_source,
             width=width, height=height,
             num_frames=num_frames_per_seg, fps=fps,
             total_steps=steps,
+            split_steps=_rf_split,
+            cfg=cfg,
             seed=seg_seed,
             negative_text=negative_text,
             output_prefix=seg_prefix,
@@ -557,12 +620,17 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
         )
 
         # Step 0: Auto-assign source VIDEO clips (for V2V reference pipeline)
-        video_assigned = await ensure_source_videos(conn, scene_id, shots)
-        if video_assigned:
-            shots = await conn.fetch(
-                "SELECT * FROM shots WHERE scene_id = $1 ORDER BY shot_number",
-                scene_id,
-            )
+        # Skip for trailer scenes — trailers use keyframes as I2V source, not movie clips
+        _is_trailer_scene = await conn.fetchval(
+            "SELECT EXISTS(SELECT 1 FROM trailers WHERE scene_id = $1)", scene_id
+        )
+        if not _is_trailer_scene:
+            video_assigned = await ensure_source_videos(conn, scene_id, shots)
+            if video_assigned:
+                shots = await conn.fetch(
+                    "SELECT * FROM shots WHERE scene_id = $1 ORDER BY shot_number",
+                    scene_id,
+                )
 
         # Step 1: Auto-assign source images FIRST (before engine selection)
         # This ensures solo shots get images, then engine selector sees
@@ -709,15 +777,21 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
             )
 
             # Shot spec enrichment: AI-driven pose/camera/emotion before generation
-            try:
-                from .shot_spec import enrich_shot_spec, get_scene_context, get_recent_shots
-                _scene_ctx = await get_scene_context(conn, scene_id)
-                _prev_shots = await get_recent_shots(conn, scene_id, limit=5)
-                await enrich_shot_spec(conn, dict(shot), _scene_ctx, _prev_shots)
-                # Re-fetch shot with enriched fields (shot_dict created below in generation try block)
-                shot = await conn.fetchrow("SELECT * FROM shots WHERE id = $1", shot_id)
-            except Exception as _enrich_err:
-                logger.debug(f"Shot {shot_id}: spec enrichment skipped: {_enrich_err}")
+            # SKIP enrichment when the shot already has a generation_prompt set —
+            # enrichment overwrites LoRA-aligned prompts with generic SFW content.
+            _existing_prompt = (shot.get("generation_prompt") or "").strip()
+            if _existing_prompt:
+                logger.info(f"Shot {shot_id}: skipping enrichment — generation_prompt already set ({len(_existing_prompt)} chars)")
+            else:
+                try:
+                    from .shot_spec import enrich_shot_spec, get_scene_context, get_recent_shots
+                    _scene_ctx = await get_scene_context(conn, scene_id)
+                    _prev_shots = await get_recent_shots(conn, scene_id, limit=5)
+                    await enrich_shot_spec(conn, dict(shot), _scene_ctx, _prev_shots)
+                    # Re-fetch shot with enriched fields
+                    shot = await conn.fetchrow("SELECT * FROM shots WHERE id = $1", shot_id)
+                except Exception as _enrich_err:
+                    logger.debug(f"Shot {shot_id}: spec enrichment skipped: {_enrich_err}")
 
             # Single-pass generation — no QC vision review, all shots go to manual review
             try:
@@ -988,11 +1062,14 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                 if _shot_nsm and character_slug and character_slug in _shot_nsm:
                     _nsm_neg = _shot_nsm[character_slug].get("negative_additions", "")
                 current_negative = _build_video_negative(style_anchor, genre_profile, _nsm_neg)
-                # Engine-tuned defaults: Wan converges by 20, FramePack needs 25, 14B lightx2v uses 4
-                _default_steps = 4 if shot_engine == "wan22_14b" else (20 if shot_engine in ("wan", "wan22") else 25)
+                # Engine-tuned defaults from video_models.yaml config
+                _eng_cfg = get_engine_defaults(shot_engine) if shot_engine else {}
+                _default_steps = _eng_cfg.get("steps", 20) if _eng_cfg else (20 if shot_engine in ("wan", "wan22") else 25)
                 shot_steps = shot_dict.get("steps") or _default_steps
-                shot_guidance = shot_dict.get("guidance_scale") or 6.0
-                shot_seconds = float(shot_dict.get("duration_seconds") or 3)
+                shot_guidance = shot_dict.get("guidance_scale") or _eng_cfg.get("cfg", 6.0)
+                _raw_dur = shot_dict.get("duration_seconds")
+                shot_seconds = float(_raw_dur) if _raw_dur else 5.0
+                logger.info(f"Shot {shot_id}: duration_seconds raw={_raw_dur!r} → shot_seconds={shot_seconds}")
                 shot_use_f1 = shot_dict.get("use_f1") or False
                 shot_seed = shot_dict.get("seed")
 
@@ -1286,13 +1363,15 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                         "project_id": project_id,
                         "video_engine": shot_engine,
                         "video_path": video_path,
+                        "last_frame_path": last_frame,
                         "generation_time_seconds": gen_time,
                         "auto_approve": auto_approve,
                     })
                     continue
 
                 elif shot_engine == "wan22":
-                    fps = 16
+                    _wan22_cfg = get_engine_defaults("wan22_14b")
+                    fps = _wan22_cfg.get("fps", 16)
                     num_frames = max(9, int(shot_seconds * fps) + 1)
                     import hashlib as _hashlib
                     if not shot_seed:
@@ -1300,7 +1379,8 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                         _scene_base_seed = int.from_bytes(_scene_seed_bytes[:8], "big") % (2**63)
                         shot_seed = _scene_base_seed + (shot_dict.get("shot_number", 0) or 0)
                     wan_cfg = max(shot_guidance, 7.5)  # higher CFG keeps prompt control over LoRA
-                    wan_w, wan_h = 512, 768
+                    wan_w = _wan22_cfg.get("width", 480)
+                    wan_h = _wan22_cfg.get("height", 720)
                     if _project_width and _project_height and _project_width > _project_height:
                         wan_w, wan_h = 768, 512
                     # Get LoRA from engine selector (set by _find_wan_lora)
@@ -1332,16 +1412,18 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                             shot_id, "wan22_14b requires a source image (I2V only)",
                         )
                         continue
-                    fps = 16
+                    _14b_cfg = get_engine_defaults("wan22_14b")
+                    fps = _14b_cfg.get("fps", 16)
                     num_frames = max(9, int(shot_seconds * fps) + 1)
                     import hashlib as _hashlib
                     if not shot_seed:
                         _scene_seed_bytes = _hashlib.sha256(str(scene_id).encode()).digest()
                         _scene_base_seed = int.from_bytes(_scene_seed_bytes[:8], "big") % (2**63)
                         shot_seed = _scene_base_seed + (shot_dict.get("shot_number", 0) or 0)
-                    wan_w, wan_h = 512, 768
+                    wan_w = _14b_cfg.get("width", 480)
+                    wan_h = _14b_cfg.get("height", 720)
                     if _project_width and _project_height and _project_width > _project_height:
-                        wan_w, wan_h = 768, 512
+                        wan_w, wan_h = wan_h, wan_w
                     # Get motion LoRA from engine selector
                     _14b_motion_lora = engine_sel.motion_loras[0] if engine_sel.motion_loras else None
                     _14b_motion_str = 0.8
@@ -1355,6 +1437,24 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                             f"Shot {shot_id}: content LoRA HIGH={_14b_clh} LOW={_14b_cll} "
                             f"str={_14b_cl_str} (from {'shot' if _shot_lora else 'project'})"
                         )
+                    # Dynamic motion intensity — classify shot and apply params
+                    _motion_tier = classify_motion_intensity(shot_dict)
+                    _motion_params = get_motion_params(_motion_tier)
+                    _14b_use_lightx2v = _motion_params.use_lightx2v
+                    _14b_steps = _motion_params.total_steps
+                    _14b_split = _motion_params.split_steps
+                    _14b_cfg = _motion_params.cfg
+                    _14b_cl_str = _motion_params.content_lora_strength
+                    # Inject counter-motion cues into prompt if available
+                    _counter_motion = get_counter_motion(_shot_lora)
+                    if _counter_motion and _counter_motion not in current_prompt:
+                        current_prompt = f"{current_prompt}, {_counter_motion}"
+                        logger.info(f"Shot {shot_id}: counter-motion injected: {_counter_motion[:60]}")
+                    logger.info(
+                        f"Shot {shot_id}: motion_tier={_motion_tier} "
+                        f"steps={_14b_steps} split={_14b_split} cfg={_14b_cfg} "
+                        f"lora_str={_14b_cl_str} lightx2v={_14b_use_lightx2v}"
+                    )
                     _WAN_SEGMENT_SECONDS = 5.0
                     if shot_seconds > _WAN_SEGMENT_SECONDS:
                         # Pattern C: roll-forward for long shots
@@ -1371,9 +1471,11 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                             segment_seconds=_WAN_SEGMENT_SECONDS,
                             crossfade_seconds=0.3,
                             width=wan_w, height=wan_h,
-                            fps=fps, steps=shot_steps, seed=shot_seed,
+                            fps=fps, steps=_14b_steps,
+                            split_steps=_14b_split, cfg=_14b_cfg,
+                            seed=shot_seed,
                             output_prefix=_file_prefix,
-                            use_lightx2v=True,
+                            use_lightx2v=_14b_use_lightx2v,
                             motion_lora=_14b_motion_lora,
                             motion_lora_strength=_14b_motion_str,
                             content_lora_high=_14b_clh,
@@ -1420,9 +1522,15 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                             await conn.execute("""
                                 UPDATE shots SET status = 'completed', output_video_path = $2,
                                        last_frame_path = $3, generation_time_seconds = $4,
-                                       review_status = $5
+                                       review_status = $5,
+                                       motion_tier = $6, guidance_scale = $7, steps = $8,
+                                       gen_split_steps = $9, gen_lightx2v = $10,
+                                       content_lora_high = $11, content_lora_low = $12
                                 WHERE id = $1
-                            """, shot_id, video_path, last_frame, gen_time, _review)
+                            """, shot_id, video_path, last_frame, gen_time, _review,
+                                _motion_tier, _14b_cfg, _14b_steps,
+                                _14b_split, _14b_use_lightx2v,
+                                _14b_clh, _14b_cll)
                             if character_slug and last_frame and project_id:
                                 try:
                                     await _save_continuity_frame(
@@ -1444,24 +1552,33 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                         f"Shot {shot_id}: Wan22-14B I2V dims={wan_w}x{wan_h} "
                         f"ref_image={image_filename} motion_lora={_14b_motion_lora} "
                         f"content_high={_14b_clh} content_low={_14b_cll} "
-                        f"seed={shot_seed} steps={shot_steps} frames={num_frames}"
+                        f"seed={shot_seed} steps={_14b_steps} cfg={_14b_cfg} "
+                        f"tier={_motion_tier} frames={num_frames}"
                     )
                     workflow, prefix = build_wan22_14b_i2v_workflow(
                         prompt_text=current_prompt,
                         ref_image=image_filename,
                         width=wan_w, height=wan_h,
                         num_frames=num_frames, fps=fps,
-                        total_steps=shot_steps,
+                        total_steps=_14b_steps,
+                        split_steps=_14b_split,
+                        cfg=_14b_cfg,
                         seed=shot_seed,
                         negative_text=current_negative,
                         output_prefix=_file_prefix,
-                        use_lightx2v=True,
+                        use_lightx2v=_14b_use_lightx2v,
                         motion_lora=_14b_motion_lora,
                         motion_lora_strength=_14b_motion_str,
                         content_lora_high=_14b_clh,
                         content_lora_low=_14b_cll,
                         content_lora_strength=_14b_cl_str,
                     )
+                    # Dedup: skip if this source image is already in ComfyUI queue
+                    from .scene_comfyui import is_source_already_queued
+                    _existing = is_source_already_queued(image_filename) if image_filename else None
+                    if _existing:
+                        logger.warning(f"Shot {shot_id}: source {image_filename} already queued (prompt={_existing}), skipping duplicate")
+                        continue
                     comfyui_prompt_id = _submit_wan_workflow(workflow)
                 elif shot_engine == "wan":
                     fps = 16
@@ -1493,30 +1610,15 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                     comfyui_prompt_id = _submit_wan_workflow(workflow)
                 elif shot_engine == "ltx_long":
                     # LTXVLoopingSampler — Pattern 3 long-shot engine (30-60s+)
-                    fps = 24
+                    _ltx_cfg = get_engine_defaults("ltx_long")
+                    fps = _ltx_cfg.get("fps", 24)
                     num_frames = max(25, int(shot_seconds * fps) + 1)
-                    # Load engine defaults from video_models.yaml
-                    _ltx_tile_size = 80
-                    _ltx_overlap = 24
-                    _ltx_overlap_cond = 0.5
-                    _ltx_guiding = 1.0
-                    _ltx_cond_img = 1.0
-                    _ltx_adain = 0.0
-                    try:
-                        import yaml as _yaml
-                        _vm_path = Path(__file__).resolve().parent.parent.parent / "config" / "video_models.yaml"
-                        if _vm_path.exists():
-                            with open(_vm_path) as _f:
-                                _vm = _yaml.safe_load(_f) or {}
-                            _ltx_defaults = _vm.get("engine_defaults", {}).get("ltx_long", {})
-                            _ltx_tile_size = _ltx_defaults.get("temporal_tile_size", _ltx_tile_size)
-                            _ltx_overlap = _ltx_defaults.get("temporal_overlap", _ltx_overlap)
-                            _ltx_overlap_cond = _ltx_defaults.get("temporal_overlap_cond_strength", _ltx_overlap_cond)
-                            _ltx_guiding = _ltx_defaults.get("guiding_strength", _ltx_guiding)
-                            _ltx_cond_img = _ltx_defaults.get("cond_image_strength", _ltx_cond_img)
-                            _ltx_adain = _ltx_defaults.get("adain_factor", _ltx_adain)
-                    except Exception:
-                        pass
+                    _ltx_tile_size = _ltx_cfg.get("temporal_tile_size", 80)
+                    _ltx_overlap = _ltx_cfg.get("temporal_overlap", 24)
+                    _ltx_overlap_cond = _ltx_cfg.get("temporal_overlap_cond_strength", 0.5)
+                    _ltx_guiding = _ltx_cfg.get("guiding_strength", 1.0)
+                    _ltx_cond_img = _ltx_cfg.get("cond_image_strength", 1.0)
+                    _ltx_adain = _ltx_cfg.get("adain_factor", 0.0)
                     wan_w, wan_h = 512, 320
                     if _project_width and _project_height and _project_width > _project_height:
                         wan_w, wan_h = 512, 320  # LTX landscape
@@ -1562,6 +1664,13 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                     )
                     comfyui_prompt_id = _submit_ltx_workflow(workflow)
                 else:
+                    # Dedup: skip if this source image is already in ComfyUI queue
+                    from .scene_comfyui import is_source_already_queued
+                    _existing = is_source_already_queued(image_filename) if image_filename else None
+                    if _existing:
+                        logger.warning(f"Shot {shot_id}: source {image_filename} already queued (prompt={_existing}), skipping duplicate")
+                        continue
+
                     use_f1 = shot_engine == "framepack_f1" or shot_use_f1
                     workflow_data, sampler_node_id, prefix = build_framepack_workflow(
                         prompt_text=current_prompt, image_path=image_filename,
@@ -1591,7 +1700,8 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                 video_path = str(COMFYUI_OUTPUT_DIR / video_filename)
 
                 # FramePack V2V refinement for Wan shots (2.1 and 2.2)
-                if shot_engine in ("wan", "wan22") and video_path:
+                # DISABLED: doubles GPU time per shot and floods ComfyUI queue
+                if False and shot_engine in ("wan", "wan22") and video_path:
                     try:
                         from .framepack_refine import refine_wan_video
                         # Auto-detect kohya-format FramePack LoRA for refinement
@@ -1681,12 +1791,28 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                     _review = 'approved'
                 else:
                     _review, _qc_score = await _run_vision_qc(conn, shot_id, video_path, shot_dict)
+                # Persist generation params including motion tier
+                _motion_ctx = {
+                    "tier": locals().get("_motion_tier"),
+                    "cfg": locals().get("_14b_cfg"),
+                    "steps": locals().get("_14b_steps"),
+                    "split": locals().get("_14b_split"),
+                    "lightx2v": locals().get("_14b_use_lightx2v"),
+                    "clh": locals().get("_14b_clh"),
+                    "cll": locals().get("_14b_cll"),
+                }
                 await conn.execute("""
                     UPDATE shots SET status = 'completed', output_video_path = $2,
                            last_frame_path = $3, generation_time_seconds = $4,
-                           review_status = $5
+                           review_status = $5,
+                           motion_tier = $6, guidance_scale = $7, steps = $8,
+                           gen_split_steps = $9, gen_lightx2v = $10,
+                           content_lora_high = $11, content_lora_low = $12
                     WHERE id = $1
-                """, shot_id, video_path, last_frame, gen_time, _review)
+                """, shot_id, video_path, last_frame, gen_time, _review,
+                    _motion_ctx["tier"], _motion_ctx["cfg"], _motion_ctx["steps"],
+                    _motion_ctx["split"], _motion_ctx["lightx2v"],
+                    _motion_ctx["clh"], _motion_ctx["cll"])
 
                 # Save continuity frame for cross-scene reuse
                 if character_slug and last_frame and project_id:
@@ -1714,6 +1840,9 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                     "video_engine": shot_engine,
                     "generation_time": gen_time,
                     "video_path": video_path,
+                    "last_frame_path": last_frame,
+                    "motion_tier": _motion_ctx.get("tier") if isinstance(locals().get("_motion_ctx"), dict) else None,
+                    "lora_name": shot_dict.get("lora_name"),
                 })
 
             except Exception as e:

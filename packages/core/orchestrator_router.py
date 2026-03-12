@@ -28,6 +28,11 @@ class TrainingTargetRequest(BaseModel):
     target: int
 
 
+class PriorityRequest(BaseModel):
+    project_id: int
+    priority: int  # higher = processed first, 0 = default
+
+
 @router.get("/orchestrator/status")
 async def get_status():
     """Global orchestrator on/off + config."""
@@ -100,3 +105,16 @@ async def set_training_target(req: TrainingTargetRequest):
     """Set the approved image threshold for training_data phase."""
     orchestrator.set_training_target(req.target)
     return {"training_target": orchestrator._training_target}
+
+
+@router.post("/orchestrator/priority")
+async def set_priority(req: PriorityRequest):
+    """Set project priority. Higher number = processed first. 0 = default."""
+    return await orchestrator.set_project_priority(req.project_id, req.priority)
+
+
+@router.get("/orchestrator/priorities")
+async def get_priorities():
+    """Get all project priorities with pending phase counts."""
+    priorities = await orchestrator.get_project_priorities()
+    return {"projects": priorities}

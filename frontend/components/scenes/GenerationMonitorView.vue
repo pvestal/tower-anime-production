@@ -7,7 +7,15 @@
           {{ monitorStatus?.completed_shots || 0 }}/{{ monitorStatus?.total_shots || 0 }} shots
         </span>
       </div>
-      <button class="btn" @click="$emit('back')">Back</button>
+      <div style="display: flex; gap: 6px;">
+        <button
+          v-if="monitorStatus?.generation_status === 'generating'"
+          class="btn btn-cancel"
+          :disabled="cancelling"
+          @click="$emit('cancel-generation')"
+        >{{ cancelling ? 'Cancelling...' : 'Cancel' }}</button>
+        <button class="btn" @click="$emit('back')">Back</button>
+      </div>
     </div>
 
     <!-- Overall progress bar -->
@@ -107,6 +115,7 @@ const props = defineProps<{
   sceneTitle: string
   monitorStatus: SceneGenerationStatus | null
   sceneVideoSrc: string
+  cancelling?: boolean
 }>()
 
 defineEmits<{
@@ -114,6 +123,7 @@ defineEmits<{
   'retry-shot': [shot: { id: string }]
   'play-shot': [shot: { id: string }]
   reassemble: []
+  'cancel-generation': []
 }>()
 
 const overallProgress = computed(() => {
@@ -150,6 +160,7 @@ function statusBadgeClass(status: string): string {
     completed: 'badge-completed',
     partial: 'badge-partial',
     failed: 'badge-failed',
+    paused: 'badge-paused',
   }
   return map[status] || 'badge-draft'
 }
@@ -190,4 +201,17 @@ function statusBadgeClass(status: string): string {
 .engine-wan { background: #d4844e; }
 .engine-wan22 { background: #c46e3a; }
 .engine-wan22_14b { background: #a04e2a; }
+
+.badge-paused {
+  background: rgba(200, 160, 60, 0.2);
+  color: #c8a03c;
+}
+.btn-cancel {
+  background: rgba(218, 54, 51, 0.12);
+  border-color: rgba(218, 54, 51, 0.4);
+  color: #f85149;
+}
+.btn-cancel:hover {
+  background: rgba(218, 54, 51, 0.25);
+}
 </style>

@@ -44,6 +44,7 @@ from .orchestrator_gates import (
     _gate_lora_training,
     _gate_scene_planning,
     _gate_shot_preparation,
+    _gate_trailer_validation,
     _gate_video_generation,
     _gate_video_qc,
     _gate_scene_assembly,
@@ -83,13 +84,46 @@ _graph_sync_task = None     # asyncio.Task for periodic graph sync
 _training_target = 100     # approved images needed to advance past training_data
 _active_work: dict[str, asyncio.Task] = {}  # tracks running work tasks
 _last_successful_generation: datetime | None = None  # watchdog timestamp
+_stall_alert_sent: bool = False  # track if we already sent a Telegram alert for this stall
 
 # Phase definitions
 CHARACTER_PHASES = ["training_data", "lora_training", "ready"]
 PROJECT_PHASES = [
-    "scene_planning", "shot_preparation", "video_generation",
-    "video_qc", "scene_assembly", "episode_assembly", "publishing",
+    "scene_planning", "shot_preparation", "trailer_validation",
+    "video_generation", "video_qc", "scene_assembly",
+    "episode_assembly", "publishing",
 ]
+
+
+# ── Project Priority ───────────────────────────────────────────────────
+
+async def set_project_priority(project_id: int, priority: int):
+    """Set orchestrator priority for a project. Higher = processed first."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        updated = await conn.execute(
+            "UPDATE production_pipeline SET priority = $2 WHERE project_id = $1",
+            project_id, priority,
+        )
+        logger.info(f"Project {project_id} priority set to {priority}")
+        return {"project_id": project_id, "priority": priority, "updated": updated}
+
+
+async def get_project_priorities() -> list[dict]:
+    """Get all project priorities for the orchestrator."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT DISTINCT pp.project_id, p.name,
+                   COALESCE(pp.priority, 0) AS priority,
+                   COUNT(*) FILTER (WHERE pp.status NOT IN ('completed', 'skipped')) AS pending_phases,
+                   COUNT(*) AS total_phases
+            FROM production_pipeline pp
+            JOIN projects p ON pp.project_id = p.id
+            GROUP BY pp.project_id, p.name, pp.priority
+            ORDER BY COALESCE(pp.priority, 0) DESC, pp.project_id
+        """)
+        return [dict(r) for r in rows]
 
 
 # ── Enable / Disable ───────────────────────────────────────────────────
@@ -289,7 +323,17 @@ async def initialize_project(project_id: int, training_target: int | None = None
 # ── Tick Logic ─────────────────────────────────────────────────────────
 
 async def _all_characters_ready(conn, project_id: int) -> bool:
-    """Check if all characters in the project have reached 'ready' phase."""
+    """Check if all characters in the project have reached 'ready' phase.
+
+    If no character pipeline entries exist (manual setup), assume ready.
+    """
+    total = await conn.fetchval("""
+        SELECT COUNT(*) FROM production_pipeline
+        WHERE project_id = $1 AND entity_type = 'character'
+    """, project_id)
+    if total == 0:
+        # No character pipeline entries — project was set up manually, assume ready
+        return True
     not_ready = await conn.fetchval("""
         SELECT COUNT(*) FROM production_pipeline
         WHERE project_id = $1
@@ -297,11 +341,7 @@ async def _all_characters_ready(conn, project_id: int) -> bool:
           AND phase != 'ready'
           AND status != 'completed'
     """, project_id)
-    total = await conn.fetchval("""
-        SELECT COUNT(*) FROM production_pipeline
-        WHERE project_id = $1 AND entity_type = 'character'
-    """, project_id)
-    return total > 0 and not_ready == 0
+    return not_ready == 0
 
 
 async def _evaluate_entry(conn, entry: dict):
@@ -390,27 +430,48 @@ async def _evaluate_entry(conn, entry: dict):
 
 
 async def tick():
-    """Single evaluation pass — check all non-completed pipeline entries."""
+    """Single evaluation pass — check all non-completed pipeline entries.
+
+    GPU-exclusive phases (video_generation, shot_preparation) are only dispatched
+    for the single highest-priority project. Non-GPU phases (scene_planning,
+    scene_assembly, episode_assembly, publishing, video_qc) run for all projects.
+    """
     if not _enabled:
         return {"skipped": True, "reason": "orchestrator disabled"}
+
+    _GPU_PHASES = {"video_generation", "shot_preparation"}
 
     pool = await get_pool()
     async with pool.acquire() as conn:
         entries = await conn.fetch("""
             SELECT * FROM production_pipeline
             WHERE status NOT IN ('completed', 'skipped')
-            ORDER BY project_id, entity_type DESC, phase
+            ORDER BY COALESCE(priority, 0) DESC, project_id, entity_type DESC, phase
         """)
 
         evaluated = 0
+        gpu_project_id = None  # only one project gets GPU work per tick
+
         for entry in entries:
-            await _evaluate_entry(conn, dict(entry))
+            entry_dict = dict(entry)
+            phase = entry_dict.get("phase", "")
+
+            if phase in _GPU_PHASES:
+                if gpu_project_id is None:
+                    gpu_project_id = entry_dict["project_id"]
+                elif entry_dict["project_id"] != gpu_project_id:
+                    # Different project wants GPU — skip, highest priority already claimed it
+                    continue
+
+            await _evaluate_entry(conn, entry_dict)
             evaluated += 1
 
-    return {"evaluated": evaluated, "timestamp": datetime.utcnow().isoformat()}
+    return {"evaluated": evaluated, "gpu_project": gpu_project_id, "timestamp": datetime.utcnow().isoformat()}
 
 
 # ── Background Tick Loop ───────────────────────────────────────────────
+
+_adaptive_refresh_counter = 0
 
 async def _tick_loop():
     """Background loop that runs tick() every _tick_interval seconds.
@@ -418,31 +479,70 @@ async def _tick_loop():
     Includes throughput watchdog: warns after 30min of no successful generation,
     and recovers stuck 'generating' shots after 60min.
     """
+    global _adaptive_refresh_counter
     while True:
         try:
             if _enabled:
                 await tick()
                 # Watchdog: check for stalled generation
                 await _check_throughput_watchdog()
+                # Refresh adaptive motion cache every 10 ticks (~10 min)
+                _adaptive_refresh_counter += 1
+                if _adaptive_refresh_counter >= 10:
+                    _adaptive_refresh_counter = 0
+                    try:
+                        from packages.scene_generation.motion_intensity import load_adaptive_cache
+                        await load_adaptive_cache()
+                    except Exception as _ac_err:
+                        logger.debug(f"Adaptive cache refresh failed: {_ac_err}")
         except Exception as e:
             logger.error(f"Orchestrator tick error: {e}")
         await asyncio.sleep(_tick_interval)
 
 
 async def _check_throughput_watchdog():
-    """Detect stalled generation pipeline and recover stuck shots."""
-    global _last_successful_generation
+    """Detect stalled generation pipeline and recover stuck shots.
+
+    Escalation levels:
+      30min  — warning log
+      60min  — reset stuck 'generating' shots, send Telegram alert (once)
+      120min — pause orchestrator to stop wasting cycles
+    """
+    global _last_successful_generation, _stall_alert_sent, _enabled
     if _last_successful_generation is None:
         return
 
     elapsed = (datetime.utcnow() - _last_successful_generation).total_seconds()
     minutes = elapsed / 60
 
-    if minutes > 60:
+    if minutes > 120:
+        if _enabled:
+            logger.error(
+                f"Watchdog: no successful generation in {minutes:.0f} minutes — "
+                f"pausing orchestrator to stop wasting cycles"
+            )
+            await _send_stall_notification(minutes, escalation="paused")
+            # Don't fully disable (that sends shutdown summary), just stop ticking
+            _enabled = False
+            try:
+                pool = await get_pool()
+                async with pool.acquire() as conn:
+                    await conn.execute("""
+                        INSERT INTO system_config (key, value, description, category, updated_at)
+                        VALUES ('orchestrator_enabled', 'false',
+                                'Auto-paused by watchdog after 120min stall', 'orchestrator', NOW())
+                        ON CONFLICT (key) DO UPDATE SET value = 'false', updated_at = NOW()
+                    """)
+            except Exception:
+                pass
+    elif minutes > 60:
         logger.error(
             f"Watchdog: no successful generation in {minutes:.0f} minutes, "
             f"recovering stuck shots"
         )
+        if not _stall_alert_sent:
+            _stall_alert_sent = True
+            await _send_stall_notification(minutes, escalation="alert")
         try:
             pool = await get_pool()
             async with pool.acquire() as conn:
@@ -459,6 +559,48 @@ async def _check_throughput_watchdog():
         logger.warning(
             f"Watchdog: no successful generation in {minutes:.0f} minutes"
         )
+
+
+async def _send_stall_notification(minutes: float, escalation: str = "alert"):
+    """Send a Telegram notification about generation stall."""
+    try:
+        if escalation == "paused":
+            msg = (
+                f"🛑 *Orchestrator Auto-Paused*\n\n"
+                f"No successful generation in {minutes:.0f} minutes.\n"
+                f"ComfyUI may be stuck or occupied by a long job.\n\n"
+                f"Run `curl -X POST http://127.0.0.1:8188/queue -d '{{\"clear\": true}}'` "
+                f"to clear the queue, then re-enable the orchestrator."
+            )
+        else:
+            msg = (
+                f"⚠️ *Generation Stalled*\n\n"
+                f"No successful generation in {minutes:.0f} minutes.\n"
+                f"Watchdog is resetting stuck shots. Will auto-pause at 120min."
+            )
+
+        import urllib.request as urlreq
+        payload = json.dumps({
+            "method": "tools/call",
+            "params": {
+                "name": "send_notification",
+                "arguments": {
+                    "message": msg,
+                    "title": "Generation Stall",
+                    "channels": ["telegram"],
+                    "priority": "high",
+                },
+            },
+        }).encode()
+        req = urlreq.Request(
+            "http://localhost:8309/mcp",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+        )
+        urlreq.urlopen(req, timeout=15)
+        logger.info(f"Watchdog: stall notification sent ({escalation})")
+    except Exception as e:
+        logger.warning(f"Watchdog: failed to send stall notification: {e}")
 
 
 async def _graph_sync_loop():
@@ -793,8 +935,9 @@ async def _handle_scene_ready(data: dict):
 
 async def _handle_shot_generated(data: dict):
     """Log shot completion and update pipeline progress."""
-    global _last_successful_generation
+    global _last_successful_generation, _stall_alert_sent
     _last_successful_generation = datetime.utcnow()
+    _stall_alert_sent = False  # reset stall alert on successful generation
 
     shot_id = data.get("shot_id")
     project_id = data.get("project_id")
@@ -804,6 +947,11 @@ async def _handle_shot_generated(data: dict):
     logger.info(
         f"Orchestrator: shot {shot_id} generated via {engine} in {gen_time:.0f}s"
     )
+
+    # Send Telegram preview if enabled (non-blocking)
+    last_frame = data.get("last_frame_path")
+    if last_frame:
+        asyncio.create_task(_maybe_send_shot_preview(data))
 
     if not project_id:
         return
@@ -834,6 +982,113 @@ async def _handle_shot_generated(data: dict):
                 """, progress["done"], progress["total"], project_id)
     except Exception as e:
         logger.warning(f"Orchestrator: shot_generated progress update failed: {e}")
+
+
+async def _maybe_send_shot_preview(data: dict):
+    """Send last-frame preview to Telegram if telegram_shot_previews is enabled."""
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            enabled = await conn.fetchval(
+                "SELECT value FROM system_config WHERE key = 'telegram_shot_previews'"
+            )
+            if enabled != "true":
+                return
+
+            # Build caption from event data + DB lookup
+            shot_id = data.get("shot_id")
+            scene_id = data.get("scene_id")
+            project_id = data.get("project_id")
+            engine = data.get("video_engine", "?")
+            gen_time = data.get("generation_time") or data.get("generation_time_seconds") or 0
+
+            # Get project name, scene number, shot number
+            info = await conn.fetchrow("""
+                SELECT p.name as project_name, sc.scene_number, sh.shot_number
+                FROM shots sh
+                JOIN scenes sc ON sh.scene_id = sc.id
+                JOIN projects p ON sc.project_id = p.id
+                WHERE sh.id = $1::uuid
+            """, str(shot_id))
+
+            if info:
+                caption = (
+                    f"🎬 *{info['project_name']}* — "
+                    f"Scene {info['scene_number']}, Shot {info['shot_number']}\n"
+                    f"Engine: {engine} | {gen_time:.0f}s"
+                )
+            else:
+                caption = f"🎬 Shot {shot_id} generated ({engine}, {gen_time:.0f}s)"
+
+        # Send via Echo Brain's Telegram client
+        import urllib.request
+        from pathlib import Path
+
+        image_path = data["last_frame_path"]
+        if not Path(image_path).exists():
+            logger.debug(f"Shot preview skipped: {image_path} not found")
+            return
+
+        image_data = Path(image_path).read_bytes()
+        filename = Path(image_path).name
+
+        # Multipart form POST to Echo Brain's internal Telegram send_photo
+        # Use the MCP endpoint pattern but call Telegram API directly via Echo Brain
+        boundary = "----AnimeStudioPreview"
+        import io
+        body = io.BytesIO()
+
+        def _field(name: str, value: str):
+            body.write(f"--{boundary}\r\n".encode())
+            body.write(f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode())
+            body.write(f"{value}\r\n".encode())
+
+        def _file(name: str, fname: str, fdata: bytes):
+            body.write(f"--{boundary}\r\n".encode())
+            body.write(f'Content-Disposition: form-data; name="{name}"; filename="{fname}"\r\n'.encode())
+            body.write(b"Content-Type: image/jpeg\r\n\r\n")
+            body.write(fdata)
+            body.write(b"\r\n")
+
+        # Read bot token + chat ID from Echo Brain's /health or env
+        # Simpler: POST to Echo Brain's notification API with image_path
+        # Echo Brain doesn't expose a photo endpoint via MCP, so call Telegram API directly
+        # using the same Vault credentials pattern as telegram_client.py
+        import os
+        bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+        chat_id = os.environ.get("TELEGRAM_ADMIN_CHAT_ID", "")
+
+        if not bot_token or not chat_id:
+            try:
+                import hvac
+                _vault = hvac.Client(url=os.environ.get("VAULT_ADDR", "http://127.0.0.1:8200"))
+                _resp = _vault.secrets.kv.v2.read_secret_version(path="telegram")
+                _d = _resp["data"]["data"]
+                bot_token = bot_token or _d.get("bot_token", "")
+                chat_id = chat_id or _d.get("patrick_chat_id", "")
+            except Exception:
+                logger.debug("Shot preview: Telegram credentials unavailable")
+                return
+
+        if not bot_token or not chat_id:
+            return
+
+        _field("chat_id", chat_id)
+        _field("caption", caption)
+        _field("parse_mode", "Markdown")
+        _file("photo", filename, image_data)
+        body.write(f"--{boundary}--\r\n".encode())
+
+        req = urllib.request.Request(
+            f"https://api.telegram.org/bot{bot_token}/sendPhoto",
+            data=body.getvalue(),
+            headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+        )
+        urllib.request.urlopen(req, timeout=15)
+        logger.info(f"Shot preview sent to Telegram: {filename}")
+
+    except Exception as e:
+        logger.debug(f"Shot preview notification failed (non-fatal): {e}")
 
 
 async def _handle_episode_assembled(data: dict):

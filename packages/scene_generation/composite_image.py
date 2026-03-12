@@ -289,6 +289,28 @@ def build_composite_workflow(
     return workflow, output_prefix
 
 
+def is_comfyui_queue_busy(max_pending: int = 20) -> bool:
+    """Check if ComfyUI queue is too deep to accept new work.
+
+    Returns True only when pending queue exceeds max_pending threshold.
+    Keyframes are fast (~18s) so we allow them to queue behind each other.
+    Only block when the queue is deep (likely a long FramePack job + backlog).
+    """
+    try:
+        req = urllib.request.Request(f"{COMFYUI_URL}/queue")
+        resp = urllib.request.urlopen(req, timeout=5)
+        data = json.loads(resp.read())
+        running = len(data.get("queue_running", []))
+        pending = len(data.get("queue_pending", []))
+        logger.info(f"ComfyUI queue: {running} running, {pending} pending")
+        if pending >= max_pending:
+            return True
+        return False
+    except Exception as e:
+        logger.warning(f"Failed to check ComfyUI queue: {e}")
+        return True  # Assume busy if we can't check
+
+
 def submit_workflow(workflow: dict) -> str:
     """Submit a workflow to ComfyUI and return the prompt_id."""
     payload = json.dumps({"prompt": workflow}).encode()
@@ -400,6 +422,10 @@ async def generate_composite_source(
         char_b_image=ref_b_name,
         output_prefix=prefix,
     )
+
+    if is_comfyui_queue_busy():
+        logger.warning(f"ComfyUI queue busy — skipping composite for {char_a} + {char_b}")
+        return None
 
     logger.info(f"Submitting composite workflow: {char_a} + {char_b}")
     prompt_id = submit_workflow(workflow)
@@ -710,6 +736,10 @@ async def generate_simple_keyframe(
             workflow["3"]["inputs"]["positive"] = ["42", 0]
             workflow["3"]["inputs"]["negative"] = ["42", 1]
             logger.info(f"Keyframe ControlNet: {controlnet_type} @ {controlnet_strength}")
+
+    if is_comfyui_queue_busy():
+        logger.warning(f"ComfyUI queue busy — skipping keyframe for {characters[:2]}")
+        return None
 
     logger.info(f"Submitting simple keyframe workflow for {characters[:2]}")
     prompt_id = submit_workflow(workflow)

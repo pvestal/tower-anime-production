@@ -181,7 +181,14 @@
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
             <div>
               <label class="field-label">Content Rating</label>
-              <input v-model="editProject.content_rating" type="text" placeholder="e.g. PG, PG-13, R" class="field-input" />
+              <select v-model="editProject.content_rating" class="field-input" style="width: 100%;">
+                <option value="G">G</option>
+                <option value="PG">PG</option>
+                <option value="PG-13">PG-13</option>
+                <option value="R">R</option>
+                <option value="NC-17">NC-17</option>
+                <option value="XXX">XXX</option>
+              </select>
             </div>
           </div>
           <button

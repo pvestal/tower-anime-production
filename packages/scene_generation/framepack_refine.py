@@ -298,6 +298,13 @@ async def refine_wan_video(
         logger.warning(f"V2V refine: source video not found: {wan_video_path}")
         return None
 
+    # Dedup: skip if this video is already being processed in ComfyUI
+    from .scene_comfyui import is_source_already_queued
+    existing_pid = is_source_already_queued(wan_video_path)
+    if existing_pid:
+        logger.warning(f"V2V refine: source {Path(wan_video_path).name} already queued (prompt={existing_pid}), skipping duplicate")
+        return None
+
     workflow, sampler_node, prefix = build_framepack_v2v_workflow(
         video_path=wan_video_path,
         prompt_text=prompt_text,

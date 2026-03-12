@@ -148,7 +148,7 @@ async def get_project_detail(project_id: int, allowed_projects: list[int] = Depe
 
 
 @router.post("/projects")
-async def create_project(body: ProjectCreate):
+async def create_project(body: ProjectCreate, request: Request):
     """Create a new project with an auto-generated generation style."""
     style_name = re.sub(r'[^a-z0-9_]', '', body.name.lower().replace(' ', '_')) + "_style"
     try:
@@ -160,10 +160,20 @@ async def create_project(body: ProjectCreate):
              positive_prompt_template,negative_prompt_template) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)""",
             style_name, body.checkpoint_model, body.cfg_scale, body.steps, body.sampler,
             body.width, body.height, body.positive_prompt_template, body.negative_prompt_template)
-        pid = await conn.fetchval("""INSERT INTO projects (name,description,genre,status,default_style)
-            VALUES($1,$2,$3,'active',$4) RETURNING id""", body.name, body.description, body.genre, style_name)
+        content_rating = body.content_rating or "PG-13"
+        pid = await conn.fetchval("""INSERT INTO projects (name,description,genre,status,default_style,content_rating)
+            VALUES($1,$2,$3,'active',$4,$5) RETURNING id""", body.name, body.description, body.genre, style_name, content_rating)
+
+        # Grant the creating user access to the new project
+        user = getattr(request.state, "user", None)
+        studio_user_id = user.get("studio_user_id") if user else None
+        if studio_user_id:
+            await conn.execute(
+                "INSERT INTO user_project_access (user_id, project_id, access_level) VALUES ($1, $2, 'admin') ON CONFLICT DO NOTHING",
+                studio_user_id, pid)
+
         await conn.close()
-        logger.info(f"Created project '{body.name}' (id={pid}) with style '{style_name}'")
+        logger.info(f"Created project '{body.name}' (id={pid}) with style '{style_name}', rating={content_rating}")
         return {"project_id": pid, "style_name": style_name, "message": f"Project '{body.name}' created"}
     except HTTPException:
         raise

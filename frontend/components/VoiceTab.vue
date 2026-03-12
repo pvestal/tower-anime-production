@@ -21,8 +21,8 @@
       </div>
     </div>
 
-    <!-- Sub-view navigation -->
-    <div v-if="selectedProjectId" style="display: flex; gap: 0; border-bottom: 1px solid var(--border-primary); margin-bottom: 24px;">
+    <!-- Sub-view navigation (always visible) -->
+    <div style="display: flex; gap: 0; border-bottom: 1px solid var(--border-primary); margin-bottom: 24px;">
       <button
         v-for="view in subViews"
         :key="view.id"
@@ -32,47 +32,51 @@
           background: 'transparent',
           border: 'none',
           borderBottom: currentView === view.id ? '2px solid var(--accent-primary)' : '2px solid transparent',
-          color: currentView === view.id ? 'var(--accent-primary)' : 'var(--text-secondary)',
-          cursor: 'pointer',
+          color: currentView === view.id ? 'var(--accent-primary)' : ((!selectedProjectId && !view.global) ? 'var(--text-muted)' : 'var(--text-secondary)'),
+          cursor: (!selectedProjectId && !view.global) ? 'default' : 'pointer',
           fontSize: '13px',
           fontWeight: currentView === view.id ? '500' : '400',
+          opacity: (!selectedProjectId && !view.global) ? 0.5 : 1,
         }"
+        :disabled="!selectedProjectId && !view.global"
       >
         {{ view.label }}
       </button>
     </div>
 
     <!-- Sub-views -->
-    <div v-if="selectedProjectId">
-      <VoiceIngestView
-        v-if="currentView === 'ingest'"
-        :project-name="selectedProjectName"
-        @diarized="onDiarized"
-      />
-      <SpeakerClusterView
-        v-if="currentView === 'speakers'"
-        :project-name="selectedProjectName"
-        :characters="projectCharacters"
-        @assigned="onSpeakerAssigned"
-      />
-      <VoiceReviewView
-        v-if="currentView === 'review'"
-        :project-name="selectedProjectName"
-        :characters="projectCharacters"
-      />
-      <VoiceTrainView
-        v-if="currentView === 'train'"
-        :project-name="selectedProjectName"
-        :characters="projectCharacters"
-      />
-      <VoiceSynthesizeView
-        v-if="currentView === 'synthesize'"
-        :project-name="selectedProjectName"
-        :characters="projectCharacters"
-      />
-    </div>
+    <VoiceIngestView
+      v-if="currentView === 'ingest' && selectedProjectId"
+      :project-name="selectedProjectName"
+      :characters="projectCharacters"
+      @diarized="onDiarized"
+    />
+    <SpeakerClusterView
+      v-if="currentView === 'speakers' && selectedProjectId"
+      :project-name="selectedProjectName"
+      :characters="projectCharacters"
+      @assigned="onSpeakerAssigned"
+    />
+    <VoiceReviewView
+      v-if="currentView === 'review' && selectedProjectId"
+      :project-name="selectedProjectName"
+      :characters="projectCharacters"
+    />
+    <VoiceTrainView
+      v-if="currentView === 'train' && selectedProjectId"
+      :project-name="selectedProjectName"
+      :characters="projectCharacters"
+    />
+    <VoiceSynthesizeView
+      v-if="currentView === 'synthesize' && selectedProjectId"
+      :project-name="selectedProjectName"
+      :characters="projectCharacters"
+    />
+    <SfxLibraryView
+      v-if="currentView === 'sfx'"
+    />
 
-    <div v-else style="text-align: center; padding: 60px 0; color: var(--text-muted);">
+    <div v-if="!selectedProjectId && currentView !== 'sfx'" style="text-align: center; padding: 60px 0; color: var(--text-muted);">
       Select a project to manage character voices.
     </div>
   </div>
@@ -87,6 +91,7 @@ import SpeakerClusterView from '@/components/voice/SpeakerClusterView.vue'
 import VoiceReviewView from '@/components/voice/VoiceReviewView.vue'
 import VoiceTrainView from '@/components/voice/VoiceTrainView.vue'
 import VoiceSynthesizeView from '@/components/voice/VoiceSynthesizeView.vue'
+import SfxLibraryView from '@/components/voice/SfxLibraryView.vue'
 
 interface ProjectInfo {
   id: number
@@ -95,15 +100,16 @@ interface ProjectInfo {
 
 const charactersStore = useCharactersStore()
 const selectedProjectId = ref(0)
-const currentView = ref<'ingest' | 'speakers' | 'review' | 'train' | 'synthesize'>('ingest')
+const currentView = ref<'ingest' | 'speakers' | 'review' | 'train' | 'synthesize' | 'sfx'>('ingest')
 const projects = ref<ProjectInfo[]>([])
 
 const subViews = [
-  { id: 'ingest' as const, label: 'Ingest' },
-  { id: 'speakers' as const, label: 'Speakers' },
-  { id: 'review' as const, label: 'Review' },
-  { id: 'train' as const, label: 'Train' },
-  { id: 'synthesize' as const, label: 'Synthesize' },
+  { id: 'ingest' as const, label: 'Ingest', global: false },
+  { id: 'speakers' as const, label: 'Speakers', global: false },
+  { id: 'review' as const, label: 'Review', global: false },
+  { id: 'train' as const, label: 'Train', global: false },
+  { id: 'synthesize' as const, label: 'Synthesize', global: false },
+  { id: 'sfx' as const, label: 'SFX Library', global: true },
 ]
 
 const selectedProjectName = computed(() => {
