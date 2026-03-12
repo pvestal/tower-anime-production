@@ -1428,9 +1428,13 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                     _14b_motion_lora = engine_sel.motion_loras[0] if engine_sel.motion_loras else None
                     _14b_motion_str = 0.8
                     # Resolve content LoRA HIGH/LOW pair from shot or project
+                    # Skip project fallback for trailer intros/interactions —
+                    # they test character fidelity, not content LoRAs
                     _shot_lora = shot_dict.get("lora_name")
+                    _trailer_role = shot_dict.get("trailer_role") or ""
+                    _skip_project_lora = _trailer_role in ("character_intro", "interaction")
                     _14b_clh, _14b_cll, _14b_cl_str = _resolve_content_lora_pair(
-                        _shot_lora, project_video_lora
+                        _shot_lora, None if _skip_project_lora else project_video_lora
                     )
                     if _14b_clh or _14b_cll:
                         logger.info(
@@ -1445,6 +1449,32 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                     _14b_split = _motion_params.split_steps
                     _14b_cfg = _motion_params.cfg
                     _14b_cl_str = _motion_params.content_lora_strength
+                    # Override with learned effectiveness data if available
+                    if _14b_clh:
+                        _eff_lora_key = _14b_clh.split("/")[-1].replace(".safetensors", "")
+                        import re as _re
+                        _eff_lora_key = _re.sub(r"_(HIGH|LOW)$", "", _eff_lora_key, flags=_re.IGNORECASE)
+                        try:
+                            from .lora_effectiveness import recommended_params as _eff_params
+                            _eff = await _eff_params(_eff_lora_key, character_slug)
+                            if _eff and _eff.get("sample_count", 0) >= 2:
+                                if _eff.get("best_lora_strength"):
+                                    _14b_cl_str = _eff["best_lora_strength"]
+                                if _eff.get("best_motion_tier") and not shot_dict.get("motion_tier"):
+                                    _motion_tier = _eff["best_motion_tier"]
+                                    _motion_params = get_motion_params(_motion_tier)
+                                    _14b_use_lightx2v = _motion_params.use_lightx2v
+                                    _14b_steps = _motion_params.total_steps
+                                    _14b_split = _motion_params.split_steps
+                                    _14b_cfg = _motion_params.cfg
+                                logger.info(
+                                    f"Shot {shot_id}: LoRA effectiveness override — "
+                                    f"key={_eff_lora_key} str={_14b_cl_str} "
+                                    f"tier={_motion_tier} avg_q={_eff.get('avg_quality', '?')} "
+                                    f"samples={_eff['sample_count']}"
+                                )
+                        except Exception as _eff_err:
+                            logger.debug(f"Shot {shot_id}: LoRA effectiveness lookup failed: {_eff_err}")
                     # Inject counter-motion cues into prompt if available
                     _counter_motion = get_counter_motion(_shot_lora)
                     if _counter_motion and _counter_motion not in current_prompt:

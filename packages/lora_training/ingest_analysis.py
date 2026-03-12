@@ -63,9 +63,11 @@ def _count_dataset_images(slug: str) -> dict:
         return {"total": 0, "approved": 0, "rejected": 0, "pending": 0}
     try:
         statuses = json.loads(approval_file.read_text())
-        approved = sum(1 for v in statuses.values() if v == "approved")
-        rejected = sum(1 for v in statuses.values() if v == "rejected")
-        pending = sum(1 for v in statuses.values() if v == "pending")
+        def _status(v):
+            return v.get("status") if isinstance(v, dict) else v
+        approved = sum(1 for v in statuses.values() if _status(v) == "approved")
+        rejected = sum(1 for v in statuses.values() if _status(v) == "rejected")
+        pending = sum(1 for v in statuses.values() if _status(v) == "pending")
         return {"total": len(statuses), "approved": approved, "rejected": rejected, "pending": pending}
     except (json.JSONDecodeError, IOError):
         return {"total": 0, "approved": 0, "rejected": 0, "pending": 0}

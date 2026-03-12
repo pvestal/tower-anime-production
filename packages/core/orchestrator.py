@@ -451,6 +451,7 @@ async def tick():
 
         evaluated = 0
         gpu_project_id = None  # only one project gets GPU work per tick
+        deferred_gpu_entries = []  # GPU entries from lower-priority projects
 
         for entry in entries:
             entry_dict = dict(entry)
@@ -458,13 +459,36 @@ async def tick():
 
             if phase in _GPU_PHASES:
                 if gpu_project_id is None:
+                    # Tentatively claim GPU for highest-priority project
                     gpu_project_id = entry_dict["project_id"]
                 elif entry_dict["project_id"] != gpu_project_id:
-                    # Different project wants GPU — skip, highest priority already claimed it
+                    # Different project wants GPU — defer until we know if
+                    # the claiming project actually has actionable work
+                    deferred_gpu_entries.append(entry_dict)
                     continue
 
             await _evaluate_entry(conn, entry_dict)
             evaluated += 1
+
+        # If the GPU-claiming project's gate didn't dispatch work (e.g.
+        # all remaining shots are failed, not pending), give the GPU to
+        # the next project that has actionable work.
+        if deferred_gpu_entries:
+            claiming_key = f"project:{gpu_project_id}"
+            gpu_actually_working = any(
+                k.startswith(claiming_key) and not t.done()
+                for k, t in _active_work.items()
+                if "video_generation" in k or "shot_preparation" in k
+            )
+            if not gpu_actually_working:
+                gpu_project_id = None
+                for entry_dict in deferred_gpu_entries:
+                    if gpu_project_id is None:
+                        gpu_project_id = entry_dict["project_id"]
+                    elif entry_dict["project_id"] != gpu_project_id:
+                        continue
+                    await _evaluate_entry(conn, entry_dict)
+                    evaluated += 1
 
     return {"evaluated": evaluated, "gpu_project": gpu_project_id, "timestamp": datetime.utcnow().isoformat()}
 
@@ -472,6 +496,7 @@ async def tick():
 # ── Background Tick Loop ───────────────────────────────────────────────
 
 _adaptive_refresh_counter = 0
+_lora_eff_refresh_counter = 0
 
 async def _tick_loop():
     """Background loop that runs tick() every _tick_interval seconds.
@@ -479,7 +504,7 @@ async def _tick_loop():
     Includes throughput watchdog: warns after 30min of no successful generation,
     and recovers stuck 'generating' shots after 60min.
     """
-    global _adaptive_refresh_counter
+    global _adaptive_refresh_counter, _lora_eff_refresh_counter
     while True:
         try:
             if _enabled:
@@ -495,6 +520,15 @@ async def _tick_loop():
                         await load_adaptive_cache()
                     except Exception as _ac_err:
                         logger.debug(f"Adaptive cache refresh failed: {_ac_err}")
+                # Refresh LoRA effectiveness aggregates every 60 ticks (~60 min)
+                _lora_eff_refresh_counter += 1
+                if _lora_eff_refresh_counter >= 60:
+                    _lora_eff_refresh_counter = 0
+                    try:
+                        from packages.scene_generation.lora_effectiveness import refresh_effectiveness
+                        await refresh_effectiveness()
+                    except Exception as _le_err:
+                        logger.debug(f"LoRA effectiveness refresh failed: {_le_err}")
         except Exception as e:
             logger.error(f"Orchestrator tick error: {e}")
         await asyncio.sleep(_tick_interval)
@@ -511,6 +545,28 @@ async def _check_throughput_watchdog():
     global _last_successful_generation, _stall_alert_sent, _enabled
     if _last_successful_generation is None:
         return
+
+    # If there are no pending/generating shots across ALL projects, the
+    # pipeline is legitimately idle — reset the watchdog so it doesn't
+    # escalate into a false-positive auto-pause.
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            actionable = await conn.fetchval("""
+                SELECT COUNT(*) FROM shots s
+                JOIN scenes sc ON s.scene_id = sc.id
+                JOIN production_pipeline pp ON pp.project_id = sc.project_id
+                WHERE s.status IN ('pending', 'generating')
+                  AND pp.phase = 'video_generation'
+                  AND pp.status NOT IN ('completed', 'skipped')
+            """)
+        if actionable == 0:
+            # Nothing to generate — pipeline is idle, not stalled
+            _last_successful_generation = datetime.utcnow()
+            _stall_alert_sent = False
+            return
+    except Exception:
+        pass  # on DB error, fall through to normal watchdog logic
 
     elapsed = (datetime.utcnow() - _last_successful_generation).total_seconds()
     minutes = elapsed / 60

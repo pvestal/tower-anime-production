@@ -26,85 +26,91 @@ LORA_CATALOG_PATH = Path("/opt/anime-studio/config/lora_catalog.yaml")
 # Shot template: each entry defines a role and how to build it
 # Every shot features characters — no empty establishing shots.
 # The whole point is testing character LoRAs and motion LoRAs.
-TRAILER_TEMPLATE = [
-    {
-        "role": "character_intro",
-        "shot_type": "medium",
-        "camera_angle": "eye-level",
-        "duration": 5.0,
-        "needs_characters": True,
-        "char_index": 0,
-        "description": "Lead character introduction — medium portrait",
-    },
-    {
-        "role": "character_intro",
-        "shot_type": "close-up",
-        "camera_angle": "eye-level",
-        "duration": 5.0,
-        "needs_characters": True,
-        "char_index": 0,
-        "description": "Lead character close-up — detail quality test",
-    },
-    {
-        "role": "character_intro",
-        "shot_type": "medium",
-        "camera_angle": "low-angle",
-        "duration": 5.0,
-        "needs_characters": True,
-        "char_index": 1,
-        "description": "Second character introduction",
-    },
-    {
-        "role": "interaction",
-        "shot_type": "medium",
-        "camera_angle": "eye-level",
-        "duration": 5.0,
-        "needs_characters": True,
-        "char_count": 2,
-        "description": "Two characters together — multi-char coherence",
-    },
-    {
-        "role": "action",
-        "shot_type": "action",
-        "camera_angle": "eye-level",
-        "duration": 5.0,
-        "needs_characters": True,
-        "use_motion_lora": True,
-        "motion_lora_index": 0,
-        "description": "Action — first video motion LoRA",
-    },
-    {
-        "role": "action",
-        "shot_type": "action",
-        "camera_angle": "low-angle",
-        "duration": 5.0,
-        "needs_characters": True,
-        "use_motion_lora": True,
-        "motion_lora_index": 1,
-        "description": "Action — second video motion LoRA",
-    },
-    {
-        "role": "action",
-        "shot_type": "action",
-        "camera_angle": "eye-level",
-        "duration": 5.0,
-        "needs_characters": True,
-        "use_motion_lora": True,
-        "motion_lora_index": 2,
-        "description": "Action — third video motion LoRA",
-    },
-    {
+MOTION_TIERS = ["low", "medium", "high", "extreme"]
+CAMERA_ANGLES = ["eye-level", "low-angle", "high-angle", "dutch-angle"]
+
+
+def _build_trailer_template(num_characters: int, num_loras: int) -> list[dict]:
+    """Dynamically build trailer template that tests the full matrix:
+    character × LoRA × motion tier × camera angle.
+
+    Structure:
+    1. One intro per character (different camera angles)
+    2. One interaction shot (2 chars together)
+    3. Cross-product: each character × each LoRA (the actual test matrix)
+    4. Climax shot with best combo
+
+    This ensures every character is tested against every LoRA.
+    """
+    template = []
+    shot = 0
+
+    # --- Character intros: one per character, varied framing ---
+    shot_types = ["medium", "close-up", "medium"]
+    for ci in range(min(num_characters, 3)):
+        template.append({
+            "role": "character_intro",
+            "shot_type": shot_types[ci % len(shot_types)],
+            "camera_angle": CAMERA_ANGLES[ci % len(CAMERA_ANGLES)],
+            "duration": 4.0,
+            "needs_characters": True,
+            "char_index": ci,
+            "description": f"Character {ci + 1} introduction",
+        })
+        shot += 1
+
+    # --- Interaction: 2 characters together ---
+    if num_characters >= 2:
+        template.append({
+            "role": "interaction",
+            "shot_type": "medium",
+            "camera_angle": "eye-level",
+            "duration": 5.0,
+            "needs_characters": True,
+            "char_count": 2,
+            "description": "Two characters together — multi-char coherence",
+        })
+        shot += 1
+
+    # --- Test matrix: each character × each LoRA ---
+    # This is the core of the trailer — validates every combination
+    tier_idx = 0
+    cam_idx = 0
+    for lora_i in range(min(num_loras, 4)):
+        for ci in range(min(num_characters, 3)):
+            motion_tier = MOTION_TIERS[tier_idx % len(MOTION_TIERS)]
+            camera = CAMERA_ANGLES[cam_idx % len(CAMERA_ANGLES)]
+            template.append({
+                "role": "action",
+                "shot_type": "action",
+                "camera_angle": camera,
+                "duration": 5.0,
+                "needs_characters": True,
+                "char_index": ci,
+                "use_motion_lora": True,
+                "motion_lora_index": lora_i,
+                "motion_tier": motion_tier,
+                "description": f"Char {ci + 1} × LoRA {lora_i + 1} — {motion_tier} motion, {camera}",
+            })
+            tier_idx += 1
+            cam_idx += 1
+            shot += 1
+
+    # --- Climax: lead character + first LoRA, extreme motion ---
+    template.append({
         "role": "climax",
         "shot_type": "close-up",
-        "camera_angle": "eye-level",
+        "camera_angle": "low-angle",
         "duration": 5.0,
         "needs_characters": True,
         "char_index": 0,
         "use_motion_lora": True,
         "motion_lora_index": 0,
-        "description": "Climax — best character + best motion LoRA",
-    },
-]
+        "motion_tier": "extreme",
+        "description": "Climax — lead character + best LoRA, extreme motion",
+    })
+
+    return template
 
 
 def _load_lora_catalog() -> dict:
@@ -298,8 +304,25 @@ def _build_prompt(
             lora_idx = template_entry.get("motion_lora_index", 0)
             lora = motion_loras[lora_idx % len(motion_loras)]
             video_lora = lora.get("key", "")
-            tags = ", ".join(lora.get("tags", []))
-            prompt = f"{style_preamble}, {char_desc}, {tags}".strip(", ")
+            # Build explicit scene composition from catalog data
+            scene_desc = lora.get("scene_description", "")
+            if not scene_desc:
+                # Dynamically build from catalog fields
+                parts = []
+                tags = lora.get("tags", [])
+                actor_motion = lora.get("actor_motion", "")
+                layout = lora.get("layout", "")
+                if actor_motion:
+                    parts.append(actor_motion)
+                if layout:
+                    parts.append(f"{layout} layout")
+                if tags:
+                    parts.extend(tags)
+                tier = lora.get("tier", "")
+                if tier in ("explicit", "furry_explicit"):
+                    parts.append("nude, explicit")
+                scene_desc = ", ".join(parts) if parts else ", ".join(tags)
+            prompt = f"{style_preamble}, {char_desc}, {scene_desc}".strip(", ")
         else:
             prompt = f"{style_preamble}, {char_desc}, action, dynamic movement".strip(", ")
 
@@ -318,7 +341,7 @@ async def create_trailer(project_id: int, title: str | None = None) -> dict:
     Creates:
     1. A trailers record
     2. A virtual scene linked to the project
-    3. 8 shots based on the trailer template
+    3. Shots from dynamic template: character × LoRA × motion tier matrix
 
     Returns trailer details including all shot IDs.
     """
@@ -344,6 +367,12 @@ async def create_trailer(project_id: int, title: str | None = None) -> dict:
         content_rating = project.get("content_rating", "R")
         motion_loras = _pick_motion_loras(content_rating, catalog, count=3)
 
+        # Build dynamic template based on actual character/LoRA counts
+        trailer_template = _build_trailer_template(
+            num_characters=len(characters),
+            num_loras=len(motion_loras),
+        )
+
         # Create the virtual scene
         scene_id = uuid.uuid4()
         await conn.execute("""
@@ -365,9 +394,9 @@ async def create_trailer(project_id: int, title: str | None = None) -> dict:
             _json_dumps([{"name": c["name"], "lora": c.get("lora_path")} for c in characters]),
         )
 
-        # Build and insert shots
+        # Build and insert shots from dynamic template
         shots = []
-        for i, tmpl in enumerate(TRAILER_TEMPLATE):
+        for i, tmpl in enumerate(trailer_template):
             # Skip character shots if no characters available
             if tmpl.get("needs_characters") and not characters:
                 continue
@@ -376,16 +405,17 @@ async def create_trailer(project_id: int, title: str | None = None) -> dict:
                 tmpl, project, world, characters, motion_loras
             )
 
+            motion_tier = tmpl.get("motion_tier")
             shot_id = uuid.uuid4()
             await conn.execute("""
                 INSERT INTO shots (id, scene_id, shot_number, shot_type, camera_angle,
                                    duration_seconds, generation_prompt, generation_negative,
                                    characters_present, lora_name, image_lora, trailer_role,
-                                   video_engine, status)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'wan22_14b', 'pending')
+                                   video_engine, motion_tier, status)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'wan22_14b', $13, 'pending')
             """, shot_id, scene_id, i + 1, tmpl["shot_type"], tmpl["camera_angle"],
                 tmpl["duration"], prompt, negative, chars_present or [],
-                video_lora, image_lora, tmpl["role"])
+                video_lora, image_lora, tmpl["role"], motion_tier)
 
             shots.append({
                 "shot_id": str(shot_id),
@@ -395,12 +425,15 @@ async def create_trailer(project_id: int, title: str | None = None) -> dict:
                 "video_lora": video_lora,
                 "image_lora": image_lora,
                 "characters": chars_present,
+                "motion_tier": motion_tier,
+                "description": tmpl.get("description", ""),
                 "prompt": prompt,
             })
 
         logger.info(
             f"Trailer created: {trailer_title} ({len(shots)} shots, "
-            f"{len(characters)} chars, {len(motion_loras)} motion LoRAs)"
+            f"{len(characters)} chars × {len(motion_loras)} LoRAs = "
+            f"{len(characters) * len(motion_loras)} matrix cells)"
         )
 
         return {

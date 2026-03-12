@@ -331,6 +331,128 @@ async def refresh_scorecard_endpoint(trailer_id: str):
         raise HTTPException(status_code=404, detail=str(e))
 
 
+@router.get("/{trailer_id}/matrix")
+async def get_test_matrix_endpoint(trailer_id: str):
+    """Get the character × LoRA test matrix with per-cell status.
+
+    Returns a grid showing every character/LoRA combination tested,
+    its generation status, quality scores, and motion tier results.
+    This is the core view for evaluating trailer validation.
+    """
+    conn = await connect_direct()
+    try:
+        trailer = await conn.fetchrow(
+            "SELECT * FROM trailers WHERE id = $1", uuid.UUID(trailer_id)
+        )
+        if not trailer:
+            raise HTTPException(status_code=404, detail="Trailer not found")
+
+        shots = await conn.fetch("""
+            SELECT id, shot_number, shot_type, camera_angle, trailer_role,
+                   characters_present, lora_name, image_lora, motion_tier,
+                   status, quality_score, qc_category_averages,
+                   output_video_path IS NOT NULL as has_video,
+                   first_frame_path IS NOT NULL as has_keyframe,
+                   source_image_path IS NOT NULL as has_source_image,
+                   error_message
+            FROM shots
+            WHERE scene_id = $1
+            ORDER BY shot_number
+        """, trailer["scene_id"])
+
+        # Build matrix: rows = characters, cols = LoRAs
+        characters = set()
+        loras = set()
+        cells = {}
+        intro_shots = []
+        interaction_shots = []
+
+        for s in shots:
+            role = s["trailer_role"] or ""
+            chars = s["characters_present"] or []
+            lora = s["lora_name"] or ""
+            char_key = ", ".join(chars) if chars else "unknown"
+
+            if role in ("action", "climax"):
+                characters.add(char_key)
+                if lora:
+                    loras.add(lora)
+                cell_key = f"{char_key}|{lora}"
+                cells[cell_key] = {
+                    "shot_id": str(s["id"]),
+                    "shot_number": s["shot_number"],
+                    "character": char_key,
+                    "lora": lora,
+                    "motion_tier": s["motion_tier"],
+                    "camera_angle": s["camera_angle"],
+                    "status": s["status"],
+                    "quality_score": s["quality_score"],
+                    "has_video": s["has_video"],
+                    "has_keyframe": s["has_keyframe"] or s["has_source_image"],
+                    "error": s["error_message"],
+                }
+            elif role == "character_intro":
+                intro_shots.append({
+                    "shot_id": str(s["id"]),
+                    "shot_number": s["shot_number"],
+                    "character": char_key,
+                    "image_lora": s["image_lora"],
+                    "status": s["status"],
+                    "quality_score": s["quality_score"],
+                    "has_video": s["has_video"],
+                })
+            elif role == "interaction":
+                interaction_shots.append({
+                    "shot_id": str(s["id"]),
+                    "shot_number": s["shot_number"],
+                    "characters": chars,
+                    "status": s["status"],
+                    "quality_score": s["quality_score"],
+                    "has_video": s["has_video"],
+                })
+
+        # Build grid
+        char_list = sorted(characters)
+        lora_list = sorted(loras)
+        grid = []
+        for char in char_list:
+            row = {"character": char, "cells": []}
+            for lora in lora_list:
+                cell = cells.get(f"{char}|{lora}")
+                if cell:
+                    row["cells"].append(cell)
+                else:
+                    row["cells"].append({"character": char, "lora": lora, "status": "not_tested"})
+            grid.append(row)
+
+        # Summary
+        total_cells = len(cells)
+        completed = sum(1 for c in cells.values() if c["status"] == "completed")
+        generating = sum(1 for c in cells.values() if c["status"] == "generating")
+        pending = sum(1 for c in cells.values() if c["status"] == "pending")
+        failed = sum(1 for c in cells.values() if c["status"] == "failed")
+
+        return {
+            "trailer_id": trailer_id,
+            "project_id": trailer["project_id"],
+            "characters": char_list,
+            "loras": lora_list,
+            "grid": grid,
+            "intro_shots": intro_shots,
+            "interaction_shots": interaction_shots,
+            "summary": {
+                "total_cells": total_cells,
+                "completed": completed,
+                "generating": generating,
+                "pending": pending,
+                "failed": failed,
+                "completion_pct": round(completed / total_cells * 100, 1) if total_cells else 0,
+            },
+        }
+    finally:
+        await conn.close()
+
+
 # ── Shot Actions ───────────────────────────────────────────────────────
 
 @router.post("/{trailer_id}/shots/{shot_id}/action")

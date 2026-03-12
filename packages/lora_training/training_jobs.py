@@ -63,7 +63,10 @@ async def start_training(training: TrainingRequest):
         if approval_file.exists():
             with open(approval_file) as f:
                 statuses = json.load(f)
-                approved_count = sum(1 for s in statuses.values() if s == "approved")
+                approved_count = sum(
+                    1 for s in statuses.values()
+                    if s == "approved" or (isinstance(s, dict) and s.get("status") == "approved")
+                )
 
         MIN_TRAINING_IMAGES = 100
         if approved_count < MIN_TRAINING_IMAGES:

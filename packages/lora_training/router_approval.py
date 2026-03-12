@@ -12,6 +12,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from packages.core.config import BASE_PATH
 from packages.core.db import get_char_project_map, invalidate_char_cache, connect_direct
 from packages.core.auth import get_user_projects
+from packages.core.audit import log_approval, log_rejection
+from packages.core.events import event_bus, IMAGE_APPROVED, IMAGE_REJECTED
 from packages.core.models import (
     ApprovalRequest,
     ReassignRequest,
@@ -189,6 +191,58 @@ async def approve_image(approval: ApprovalRequest):
 
     with open(approval_file, "w") as f:
         json.dump(approval_status, f, indent=2)
+
+    # Resolve project info for DB + event tracking
+    char_map = await get_char_project_map()
+    db_info = char_map.get(safe_name, {})
+    project_name = db_info.get("project_name", "")
+    checkpoint = db_info.get("checkpoint_model", "")
+
+    # Read quality score from meta if available
+    meta_path = dataset_path / "images" / (Path(approval.image_name).stem + ".meta.json")
+    quality_score = 0.8  # default for manual approval
+    vision_review = None
+    if meta_path.exists():
+        try:
+            meta = json.loads(meta_path.read_text())
+            quality_score = meta.get("quality_score", 0.8)
+            vision_review = meta.get("vision_review") or meta.get("llava_review")
+        except (json.JSONDecodeError, IOError):
+            pass
+
+    # Write to DB + emit event so learning/graph/replenishment loops see it
+    if approval.approved:
+        await log_approval(
+            character_slug=safe_name, image_name=approval.image_name,
+            quality_score=quality_score, auto_approved=False,
+            vision_review=vision_review, project_name=project_name,
+            checkpoint_model=checkpoint,
+        )
+        await event_bus.emit(IMAGE_APPROVED, {
+            "character_slug": safe_name, "image_name": approval.image_name,
+            "quality_score": quality_score, "project_name": project_name,
+            "checkpoint_model": checkpoint, "source": "manual",
+        })
+    else:
+        categories = []
+        if approval.feedback:
+            parts = approval.feedback.split("|")
+            from .feedback import REJECTION_NEGATIVE_MAP
+            categories = [p.strip() for p in parts if p.strip() in REJECTION_NEGATIVE_MAP]
+        if not categories:
+            categories = ["wrong_appearance"]
+        await log_rejection(
+            character_slug=safe_name, image_name=approval.image_name,
+            categories=categories, feedback_text=approval.feedback,
+            project_name=project_name, source="manual",
+            checkpoint_model=checkpoint,
+        )
+        await event_bus.emit(IMAGE_REJECTED, {
+            "character_slug": safe_name, "image_name": approval.image_name,
+            "quality_score": quality_score, "categories": categories,
+            "project_name": project_name, "checkpoint_model": checkpoint,
+            "source": "manual",
+        })
 
     # If user provided an edited prompt, update BOTH the .txt sidecar AND the DB design_prompt (SSOT)
     prompt_updated = False

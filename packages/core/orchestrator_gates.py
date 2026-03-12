@@ -20,7 +20,10 @@ def _count_approved_from_file(slug: str) -> int:
         return 0
     try:
         statuses = json.loads(approval_file.read_text())
-        return sum(1 for v in statuses.values() if v == "approved")
+        return sum(
+            1 for v in statuses.values()
+            if v == "approved" or (isinstance(v, dict) and v.get("status") == "approved")
+        )
     except (json.JSONDecodeError, IOError):
         return 0
 
@@ -157,7 +160,12 @@ async def _gate_trailer_validation(conn, project_id: int) -> dict:
 
 
 async def _gate_video_generation(conn, project_id: int) -> dict:
-    """Check if all shots have completed video generation."""
+    """Check if all shots have completed video generation.
+
+    A shot is "resolved" if completed, accepted_best, or failed (nothing
+    actionable remains).  action_needed is only true when there are still
+    pending/generating shots AND ComfyUI is online.
+    """
     total = await conn.fetchval("""
         SELECT COUNT(*) FROM shots s
         JOIN scenes sc ON s.scene_id = sc.id
@@ -169,15 +177,22 @@ async def _gate_video_generation(conn, project_id: int) -> dict:
         WHERE sc.project_id = $1
           AND s.status IN ('completed', 'accepted_best')
     """, project_id)
+    pending = await conn.fetchval("""
+        SELECT COUNT(*) FROM shots s
+        JOIN scenes sc ON s.scene_id = sc.id
+        WHERE sc.project_id = $1
+          AND s.status IN ('pending', 'generating')
+    """, project_id)
     comfyui_online = _check_comfyui_health()
     return {
-        "passed": total > 0 and completed >= total,
-        "action_needed": completed < total and comfyui_online,
-        "blocked": not comfyui_online and completed < total,
+        "passed": total > 0 and pending == 0 and completed > 0,
+        "action_needed": pending > 0 and comfyui_online,
+        "blocked": not comfyui_online and pending > 0,
         "blocked_reason": "ComfyUI offline" if not comfyui_online else None,
         "comfyui_online": comfyui_online,
         "total_shots": total,
         "completed_shots": completed,
+        "pending_shots": pending,
     }
 
 

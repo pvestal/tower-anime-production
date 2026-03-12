@@ -155,7 +155,9 @@ async def _get_learned_negatives(conn, character_slug: str) -> str:
     """, character_slug)
 
     if not rows:
-        return ""
+        # Fallback: read from feedback.json if DB has no rejection data yet
+        from packages.lora_training.feedback import get_feedback_negatives
+        return get_feedback_negatives(character_slug)
 
     neg_terms = []
     for row in rows:

@@ -87,7 +87,8 @@ async def pick_best_reference(conn, character_slug: str, project_id: int) -> Pat
     with open(status_file) as f:
         statuses = json.load(f)
 
-    approved = [k for k, v in statuses.items() if v == "approved"]
+    approved = [k for k, v in statuses.items()
+                if v == "approved" or (isinstance(v, dict) and v.get("status") == "approved")]
     if not approved:
         logger.warning(f"No approved images for {character_slug}")
         return None
@@ -434,7 +435,7 @@ async def generate_composite_source(
         return None
 
     logger.info(f"Composite workflow submitted: {prompt_id}, polling...")
-    result = poll_completion(prompt_id, timeout=120)
+    result = poll_completion(prompt_id, timeout=300)
 
     if result and result.exists():
         logger.info(f"Composite image generated: {result}")
@@ -477,19 +478,37 @@ async def generate_simple_keyframe(
     is_environment = not characters
 
     # Build character descriptions — use design_prompt when no LoRA exists
+    # Look up in scene's project first, then fall back to character's home project
     char_names = []
     char_design_prompts = []
     primary_lora = None
+    char_home_project_id = None  # track if character comes from a different project
     if not is_environment:
         for slug in characters[:2]:
             row = await conn.fetchrow(
-                "SELECT name, design_prompt, lora_path FROM characters "
+                "SELECT name, design_prompt, lora_path, project_id FROM characters "
                 "WHERE project_id = $2 AND ("
                 "  REGEXP_REPLACE(LOWER(REPLACE(name, ' ', '_')), '[^a-z0-9_-]', '', 'g') = $1 "
                 "  OR REGEXP_REPLACE(LOWER(REPLACE(name, ' ', '_')), '[^a-z0-9_-]', '', 'g') LIKE $1 || '_%'"
                 ")",
                 slug, project_id,
             )
+            if not row:
+                # Character not in this project — search all projects (cross-project ref)
+                row = await conn.fetchrow(
+                    "SELECT name, design_prompt, lora_path, project_id FROM characters "
+                    "WHERE archived = false AND ("
+                    "  REGEXP_REPLACE(LOWER(REPLACE(name, ' ', '_')), '[^a-z0-9_-]', '', 'g') = $1 "
+                    "  OR REGEXP_REPLACE(LOWER(REPLACE(name, ' ', '_')), '[^a-z0-9_-]', '', 'g') LIKE $1 || '_%'"
+                    ") ORDER BY project_id LIMIT 1",
+                    slug,
+                )
+                if row and row["project_id"] != project_id:
+                    char_home_project_id = row["project_id"]
+                    logger.info(
+                        f"generate_simple_keyframe: {slug} is cross-project "
+                        f"(scene project={project_id}, home project={char_home_project_id})"
+                    )
             if row:
                 char_names.append(row["name"])
                 if row["design_prompt"]:
@@ -553,14 +572,27 @@ async def generate_simple_keyframe(
         else:
             parts.append(char_names[0])
     # Fetch project generation style (resolution + prompt templates)
+    # Use character's home project style when cross-project, so a human character
+    # in a furry project scene still gets human-appropriate prompts/checkpoint.
+    style_project_id = char_home_project_id or project_id
     style_row = None
-    if project_id:
+    if style_project_id:
         try:
             style_row = await conn.fetchrow(
-                """SELECT gs.width, gs.height, gs.positive_prompt_template, gs.negative_prompt_template
+                """SELECT gs.width, gs.height, gs.positive_prompt_template, gs.negative_prompt_template,
+                          gs.checkpoint_model
                    FROM projects p
                    JOIN generation_styles gs ON p.default_style = gs.style_name
-                   WHERE p.id = $1""", project_id)
+                   WHERE p.id = $1""", style_project_id)
+            if char_home_project_id and style_row and style_row["checkpoint_model"]:
+                ckpt = style_row["checkpoint_model"]
+                if not ckpt.endswith(".safetensors"):
+                    ckpt += ".safetensors"
+                checkpoint_model = ckpt
+                logger.info(
+                    f"generate_simple_keyframe: using home project checkpoint {ckpt} "
+                    f"for cross-project character"
+                )
         except Exception:
             pass
 
@@ -747,7 +779,7 @@ async def generate_simple_keyframe(
         logger.error("Failed to submit keyframe workflow")
         return None
 
-    result = poll_completion(prompt_id, timeout=120)
+    result = poll_completion(prompt_id, timeout=300)
     if result and result.exists():
         logger.info(f"Simple keyframe generated: {result}")
         return result

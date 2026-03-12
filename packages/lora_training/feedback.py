@@ -247,7 +247,10 @@ def queue_regeneration(character_slug: str):
     if approval_file.exists():
         try:
             statuses = json.loads(approval_file.read_text())
-            approved_count = sum(1 for v in statuses.values() if v == "approved")
+            approved_count = sum(
+                1 for v in statuses.values()
+                if v == "approved" or (isinstance(v, dict) and v.get("status") == "approved")
+            )
             if approved_count >= 10:
                 logger.info(f"Skipping regeneration for {character_slug}: already has {approved_count} approved")
                 return

@@ -52,6 +52,7 @@ video_lora_pairs:
     high: wan22_nsfw/wan22_cowgirl_HIGH.safetensors
     low: wan22_nsfw/wan22_cowgirl_LOW.safetensors
     tags: [cowgirl, riding, position]
+    scene_description: "straddling on top, cowgirl position, legs apart, hands on chest, leaning forward, riding pose, nude, explicit"
     counter_motion: "reactive hip thrusts from below, body compression, mutual rhythmic motion"
     layout: top_bottom
     roles: {actor: top, reactor: bottom}
@@ -195,6 +196,7 @@ video_lora_pairs:
     high: wan22_nsfw/wan22_titjob_HIGH.safetensors
     low: wan22_nsfw/wan22_titjob_LOW.safetensors
     tags: [titjob, paizuri]
+    scene_description: "paizuri, breasts wrapped around shaft, hands pressing breasts together, looking up, kneeling, titjob, nude, explicit, close-up"
     counter_motion: "reactive hip motion, hands squeezing breasts together, rhythmic body sway"
     layout: top_bottom
     roles: {actor: bottom, reactor: top}
@@ -641,6 +643,7 @@ video_lora_pairs:
     high: wan22_nsfw/wan_furry_nsfw_14b_i2v.safetensors
     low: null
     tags: [furry, anthro, nsfw, general]
+    scene_description: "anthro furry, nude, explicit pose, presenting, seductive expression, tail raised, bedroom eyes, nsfw"
 
   furry_transformation:
     label: "Anthro Furry Transformation"
@@ -663,6 +666,7 @@ video_lora_pairs:
     high: wan22_nsfw/WAN-2.2-I2V-POV-Cowgirl-HIGH-v1.0-fixed.safetensors
     low: null
     tags: [pov, cowgirl, riding, first_person]
+    scene_description: "pov shot from below, cowgirl riding position, straddling viewer, bouncing, nude, looking down at viewer, first person perspective, explicit"
 
   pov_fellatio:
     label: "POV Fellatio (Taker)"

@@ -3,7 +3,7 @@
 Uses the same ffmpeg xfade pipeline as episode_assembly but with:
   - Faster transitions (0.15s dissolve for quick-cut feel)
   - Optional title card fade-in
-  - Outputs to /opt/anime-studio/output/trailers/
+  - Outputs to /opt/ComfyUI/output/trailers/
 """
 
 import asyncio
@@ -15,7 +15,7 @@ from packages.core.db import connect_direct
 
 logger = logging.getLogger(__name__)
 
-TRAILER_OUTPUT_DIR = Path("/opt/anime-studio/output/trailers")
+TRAILER_OUTPUT_DIR = Path("/opt/ComfyUI/output/trailers")
 TRAILER_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # Quick-cut transitions for trailer energy

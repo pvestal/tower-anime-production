@@ -99,7 +99,10 @@ def _count_approved(character_slug: str) -> int:
         return 0
     try:
         statuses = json.loads(approval_file.read_text())
-        return sum(1 for v in statuses.values() if v == "approved")
+        return sum(
+            1 for v in statuses.values()
+            if v == "approved" or (isinstance(v, dict) and v.get("status") == "approved")
+        )
     except (json.JSONDecodeError, IOError):
         return 0
 
@@ -151,7 +154,8 @@ def _sync_reference_images(character_slug: str, max_refs: int = 5) -> int:
     except (json.JSONDecodeError, IOError):
         return 0
 
-    approved = [k for k, v in approvals.items() if v == "approved"]
+    approved = [k for k, v in approvals.items()
+                if v == "approved" or (isinstance(v, dict) and v.get("status") == "approved")]
     if not approved:
         return 0
 
