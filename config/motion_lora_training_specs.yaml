@@ -1,0 +1,357 @@
+# SFW Motion LoRA Training Specs for WAN 2.2 I2V 14B
+# These LoRAs don't exist anywhere — must be custom trained
+# Target: everyday motion primitives for G/PG/PG-13 anime projects
+#
+# Shared hyperparams:
+#   model: WAN 2.2 I2V 14B
+#   rank: 16-32, alpha = rank
+#   lr: 7e-5 to 1e-4
+#   steps: 2000-3500
+#   checkpoint_every: 300-400 steps
+#   branches: high_noise + low_noise (emphasize high_noise for motion)
+#   clip_format: MP4, 3-8s each, 720p+, 24fps, single subject
+#   output: HIGH and LOW noise variants per LoRA
+
+training_jobs:
+
+  # --- LOCOMOTION PACK ---
+  walk_cycle:
+    label: "Human Walking"
+    priority: 1
+    description: "Smooth natural walk — forward, away, side. Male/female, casual outfits."
+    dataset:
+      clip_count: 15-30
+      clip_length_s: 3-6
+      framing: "mid-shot or full-body, front/side/back views"
+      environments:
+        - sidewalk
+        - hallway
+        - empty studio
+        - green screen
+      avoid:
+        - busy crowds
+        - dramatic camera moves (slow dolly OK)
+      sources:
+        - "green screen walk cycle (stock)"
+        - "catwalk walk (stock)"
+        - "treadmill workouts (cropped)"
+        - "smartphone capture: friend walking past blank wall"
+    captions:
+      template: "full body {gender} walking {direction} on a {surface}, neutral expression"
+      examples:
+        - "full body person walking forward on a sidewalk, neutral expression"
+        - "woman walking from left to right, indoor hallway"
+    training:
+      rank: 24
+      lr: 8e-5
+      steps: 2500
+      notes: "Trim so walking starts within 0.5s. Cut fade-ins/outs. Emphasize high_noise timestep bias."
+    output_files:
+      high: wan22_walk_cycle_HIGH.safetensors
+      low: wan22_walk_cycle_LOW.safetensors
+    tags: [walk, locomotion, forward, casual, sfw]
+
+  run_cycle:
+    label: "Human Running / Jogging"
+    priority: 1
+    description: "Steady jogging/running for chase and fitness scenes."
+    dataset:
+      clip_count: 15-25
+      clip_length_s: 3-6
+      framing: "mid-shot or full-body, front/side views"
+      environments:
+        - running track
+        - sidewalk
+        - treadmill (side view)
+        - park path
+      avoid:
+        - sprint starts/stops (focus on steady gait)
+        - group running
+      sources:
+        - "jogging POV from front (stock)"
+        - "running on track (stock)"
+        - "treadmill side view"
+    captions:
+      template: "{gender} {speed} on a {surface}"
+      examples:
+        - "person jogging steadily on a track"
+        - "woman running on a park path, steady pace"
+    training:
+      rank: 24
+      lr: 8e-5
+      steps: 2500
+      notes: "Mix slow jog and faster run so LoRA learns 'forward motion' not just one speed."
+    output_files:
+      high: wan22_run_cycle_HIGH.safetensors
+      low: wan22_run_cycle_LOW.safetensors
+    tags: [run, jog, locomotion, chase, fitness, sfw]
+
+  jump_action:
+    label: "Jump / Hop"
+    priority: 2
+    description: "Simple jumps — up-and-down hops, small leaps, jump rope."
+    dataset:
+      clip_count: 10-20
+      clip_length_s: 2-5
+      framing: "full-body, stable camera"
+      environments:
+        - gym
+        - studio
+        - outdoor flat ground
+      avoid:
+        - parkour / acrobatics
+        - trampoline flips
+      sources:
+        - "jump rope workout (stock)"
+        - "vertical jump fitness test"
+        - "basketball jump shot (cropped)"
+    captions:
+      template: "{gender} jumping {style}, feet leaving ground"
+      examples:
+        - "person jumping in place, both feet leaving the ground"
+        - "woman doing a small leap forward"
+    training:
+      rank: 24
+      lr: 8e-5
+      steps: 3000
+      notes: "Dynamic motion — needs slightly more steps. Ensure feet-off-ground visible in majority of frames."
+    output_files:
+      high: wan22_jump_action_HIGH.safetensors
+      low: wan22_jump_action_LOW.safetensors
+    tags: [jump, hop, leap, vertical, sfw]
+
+  # --- WATER ---
+  swim_cycle:
+    label: "Swimming"
+    priority: 3
+    description: "SFW swimming: freestyle, breaststroke, underwater glides."
+    dataset:
+      clip_count: 15-25
+      clip_length_s: 4-8
+      framing: "side underwater, above-water tracking, straight-on lane shots"
+      environments:
+        - pool (lane swimming)
+        - ocean (calm)
+        - underwater (clear water)
+      avoid:
+        - multi-person splashing
+        - surfing
+        - walking on pool deck
+      sources:
+        - "pool swimming side view (stock)"
+        - "underwater freestyle 4K"
+        - "olympic swimming b-roll"
+    captions:
+      template: "{gender} swimming {stroke} in a {water_body}, {view}"
+      examples:
+        - "person swimming freestyle in a pool, side view underwater"
+        - "woman doing breaststroke, above-water camera tracking"
+    training:
+      rank: 24
+      lr: 7e-5
+      steps: 2500
+      notes: "Water noise is tricky — keep resolution close to WAN defaults (720p). Ensure arm strokes occupy most of clip."
+    output_files:
+      high: wan22_swim_cycle_HIGH.safetensors
+      low: wan22_swim_cycle_LOW.safetensors
+    tags: [swim, water, pool, ocean, sfw]
+
+  # --- INTERACTIONS ---
+  hug_interaction:
+    label: "Hug (SFW)"
+    priority: 1
+    description: "Two characters hugging — front hugs, side hugs, slow embrace. SFW only."
+    dataset:
+      clip_count: 15-30
+      clip_length_s: 3-6
+      framing: "medium shot, both torsos visible, waist-up"
+      environments:
+        - home
+        - street
+        - office
+        - park
+      avoid:
+        - heavy kissing or groping
+        - chest-focused framing
+        - romantic bed scenes
+      sources:
+        - "friends hugging goodbye (stock)"
+        - "family reunion hug"
+        - "couple embracing warmly (SFW)"
+    captions:
+      template: "two people hugging {style}, {setting}"
+      examples:
+        - "two people hugging warmly, standing in a park"
+        - "friends sharing a hug, indoor setting"
+    training:
+      rank: 24
+      lr: 8e-5
+      steps: 2500
+      notes: "Keep environments diverse so motion generalizes. Focus on arm wrapping + gentle sway."
+    output_files:
+      high: wan22_hug_sfw_HIGH.safetensors
+      low: wan22_hug_sfw_LOW.safetensors
+    tags: [hug, embrace, interaction, two_person, sfw]
+
+  kiss_sfw:
+    label: "Kiss (PG)"
+    priority: 2
+    description: "Light PG-rated kissing — peck on lips/cheek, no explicit content."
+    dataset:
+      clip_count: 15-25
+      clip_length_s: 2-5
+      framing: "medium close-up, waist-up, faces visible"
+      environments:
+        - outdoor (park, street, garden)
+        - indoor (living room, doorway)
+      avoid:
+        - heavy makeout
+        - hands going to explicit areas
+        - chest-focused shots
+        - NSFW keywords in captions
+      sources:
+        - "couple quick kiss goodbye (stock)"
+        - "peck on cheek (stock)"
+        - "wedding kiss (brief)"
+    captions:
+      template: "{gender_pair} sharing a {kiss_type}, {setting}"
+      examples:
+        - "couple sharing a gentle kiss, standing outdoors"
+        - "woman giving a light peck on the cheek"
+    training:
+      rank: 16
+      lr: 7e-5
+      steps: 2000
+      notes: "Caption as 'gentle kiss', 'light kiss' — avoid NSFW keywords to prevent bleed into XXX usage."
+    output_files:
+      high: wan22_kiss_sfw_HIGH.safetensors
+      low: wan22_kiss_sfw_LOW.safetensors
+    tags: [kiss, peck, romance, interaction, two_person, sfw]
+
+  # --- EVERYDAY ACTIVITIES ---
+  cook_action:
+    label: "Cooking"
+    priority: 2
+    description: "Person cooking — stirring, chopping, flipping food. Loops nicely."
+    dataset:
+      clip_count: 20-30
+      clip_length_s: 3-6
+      framing: "mid-shot from counter height, focus on hand/arm motion"
+      environments:
+        - indoor kitchen only
+      avoid:
+        - BBQ / outdoor grilling
+        - party cooking scenes
+        - eating (separate concern)
+      sources:
+        - "cooking b-roll 4K (stock)"
+        - "chef stirring pot (stock)"
+        - "chopping vegetables overhead"
+    captions:
+      template: "person cooking in a kitchen, {action}"
+      examples:
+        - "person cooking in a kitchen, stirring a pot"
+        - "woman chopping vegetables on a cutting board"
+        - "chef flipping food in a pan"
+    training:
+      rank: 24
+      lr: 8e-5
+      steps: 2500
+      notes: "Consider sub-action variety in captions (stirring vs chopping) but still one LoRA."
+    output_files:
+      high: wan22_cook_action_HIGH.safetensors
+      low: wan22_cook_action_LOW.safetensors
+    tags: [cook, kitchen, slice_of_life, everyday, sfw]
+
+  talk_gesture:
+    label: "Talking / Hand Gestures"
+    priority: 1
+    description: "Natural talking gestures — head nods, hand movements while speaking."
+    dataset:
+      clip_count: 20-30
+      clip_length_s: 3-6
+      framing: "medium shot, upper body visible, hands in frame"
+      environments:
+        - office
+        - studio
+        - living room
+        - outdoor cafe
+      avoid:
+        - dead air (no visible motion)
+        - group conversations (single or 2-shot only)
+      sources:
+        - "person talking to camera (stock)"
+        - "interview side view"
+        - "podcast recording (single person)"
+        - "presentation gestures"
+    captions:
+      template: "{gender} talking while {gesture}, {setting}"
+      examples:
+        - "person talking while gesturing with hands"
+        - "woman talking to camera, expressive hand movements"
+    training:
+      rank: 24
+      lr: 8e-5
+      steps: 2500
+      notes: "Diverse genders/ages to avoid identity bias. Ensure visible hand motion in majority of frames. Trim dead air."
+    output_files:
+      high: wan22_talk_gesture_HIGH.safetensors
+      low: wan22_talk_gesture_LOW.safetensors
+    tags: [talk, gesture, conversation, speaking, sfw]
+
+# --- TRAINING PLATFORMS ---
+platforms:
+  runcomfy:
+    url: "https://www.runcomfy.com/trainer/ai-toolkit/wan-2-2-i2v-14b-lora-training"
+    mode: "Action/Motion LoRA"
+    notes: "Upload per-LoRA zip of curated MP4s. Configure motion LoRA mode."
+
+  wavespeed:
+    url: "https://wavespeed.ai/models/wavespeed-ai/wan-2.2-image-lora-trainer"
+    mode: "Action Training or Motion Training preset"
+    notes: "More automated — analyzes motion patterns, handles frame sampling."
+
+  diy:
+    notes: |
+      Use open WAN 2.2 LoRA training scripts from HuggingFace.
+      Extract frames at 8-12 fps, caption with templates,
+      feed as I2V sequences into trainer.
+
+# --- FOOTAGE SOURCES ---
+footage_sources:
+  stock_platforms:
+    - "Pexels (CC0, free)"
+    - "Pixabay (CC0, free)"
+    - "Coverr (free b-roll)"
+    - "Mixkit (free stock video)"
+  paid_stock:
+    - "Shutterstock"
+    - "iStock"
+    - "Artgrid"
+  diy_capture:
+    notes: |
+      For walk/run/jump/talk/cook/hug — smartphone + friend in front
+      of blank wall is sufficient. WAN learns motion pattern not identity
+      if outfits vary and faces are somewhat varied.
+      Cost: free. Time: 1-2 hours per LoRA.
+
+# --- CATALOG INTEGRATION ---
+# Once trained, add to lora_catalog.yaml under video_loras section:
+#
+#   walk_cycle:
+#     label: "Walk Cycle"
+#     tier: universal
+#     motion_tier: medium
+#     high: wan22_walk_cycle_HIGH.safetensors
+#     low: wan22_walk_cycle_LOW.safetensors
+#     tags: [walk, locomotion, forward, casual, sfw]
+#
+# And add presets under action_presets section:
+#
+#   walking:
+#     label: "Walking"
+#     tier: wholesome
+#     image_lora: null
+#     video_lora: walk_cycle
+#     video_lora_strength: 0.7
+#     video_engine: wan22_14b
