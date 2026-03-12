@@ -113,6 +113,11 @@ const routes = [
         name: 'ReviewLibrary',
         component: () => import('@/components/LibraryTab.vue'),
       },
+      {
+        path: 'trailers',
+        name: 'ReviewTrailers',
+        component: () => import('@/components/trailer/TrailerReviewView.vue'),
+      },
     ],
   },
   {

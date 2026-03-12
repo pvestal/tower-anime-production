@@ -22,6 +22,7 @@ from packages.core.db import connect_direct
 
 from .generator import create_trailer, get_trailer, list_trailers, update_trailer_shot, approve_trailer
 from .assembler import assemble_trailer
+from .trailer_scorecard import score_trailer, get_cached_scorecard
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +44,11 @@ class ShotUpdateRequest(BaseModel):
 
 class ApproveRequest(BaseModel):
     notes: str = ""
+
+
+class ShotActionRequest(BaseModel):
+    action: str  # bump_tier, swap_lora, regenerate, new_seed
+    value: str | None = None  # e.g. new lora name, tier name
 
 
 class GenerateVideosRequest(BaseModel):
@@ -229,6 +235,13 @@ async def _run_video_generation(scene_id: str, trailer_id: str):
         finally:
             await conn.close()
 
+        # Auto-score the trailer so scorecard is ready for review
+        try:
+            await score_trailer(trailer_id)
+            logger.info(f"Trailer {trailer_id} auto-scored after video generation")
+        except Exception as score_err:
+            logger.warning(f"Trailer {trailer_id} auto-score failed: {score_err}")
+
     except Exception as e:
         logger.error(f"Trailer {trailer_id} video generation failed: {e}")
 
@@ -285,3 +298,121 @@ async def approve_trailer_endpoint(trailer_id: str, body: ApproveRequest = Appro
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Scorecard ──────────────────────────────────────────────────────────
+
+@router.get("/{trailer_id}/scorecard")
+async def get_scorecard_endpoint(trailer_id: str, refresh: bool = False):
+    """Get trailer scorecard. Computes on first call, returns cached after.
+
+    Pass ?refresh=true to force recomputation.
+    """
+    if not refresh:
+        cached = await get_cached_scorecard(trailer_id)
+        if cached:
+            return cached
+
+    try:
+        return await score_trailer(trailer_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Scorecard computation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{trailer_id}/scorecard/refresh")
+async def refresh_scorecard_endpoint(trailer_id: str):
+    """Force recompute the trailer scorecard."""
+    try:
+        return await score_trailer(trailer_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+# ── Shot Actions ───────────────────────────────────────────────────────
+
+@router.post("/{trailer_id}/shots/{shot_id}/action")
+async def shot_action_endpoint(trailer_id: str, shot_id: str, body: ShotActionRequest):
+    """Execute a scorecard recommendation action on a trailer shot.
+
+    Actions: bump_tier, drop_tier, swap_lora, new_seed, regenerate
+    """
+    conn = await connect_direct()
+    try:
+        # Verify shot belongs to trailer
+        trailer = await conn.fetchrow(
+            "SELECT scene_id FROM trailers WHERE id = $1", uuid.UUID(trailer_id)
+        )
+        if not trailer:
+            raise HTTPException(status_code=404, detail="Trailer not found")
+
+        shot = await conn.fetchrow(
+            "SELECT * FROM shots WHERE id = $1 AND scene_id = $2",
+            uuid.UUID(shot_id), trailer["scene_id"]
+        )
+        if not shot:
+            raise HTTPException(status_code=404, detail="Shot not in trailer")
+
+        action = body.action
+        changes = {}
+
+        if action == "bump_tier":
+            tiers = ["low", "medium", "high", "extreme"]
+            current = shot.get("motion_tier") or "medium"
+            idx = tiers.index(current) if current in tiers else 1
+            new_tier = tiers[min(idx + 1, len(tiers) - 1)]
+            changes["motion_tier"] = new_tier
+
+        elif action == "drop_tier":
+            tiers = ["low", "medium", "high", "extreme"]
+            current = shot.get("motion_tier") or "medium"
+            idx = tiers.index(current) if current in tiers else 1
+            new_tier = tiers[max(idx - 1, 0)]
+            changes["motion_tier"] = new_tier
+
+        elif action == "swap_lora":
+            if not body.value:
+                raise HTTPException(status_code=400, detail="Provide lora name in 'value'")
+            changes["lora_name"] = body.value
+
+        elif action == "new_seed":
+            changes["seed"] = None
+
+        elif action == "regenerate":
+            pass  # just reset below
+
+        else:
+            raise HTTPException(status_code=400, detail=f"Unknown action: {action}")
+
+        # Build SET clause
+        set_parts = [
+            "status = 'pending'",
+            "output_video_path = NULL",
+            "quality_score = NULL",
+            "qc_category_averages = NULL",
+            "qc_issues = NULL",
+            "comfyui_prompt_id = NULL",
+            "error_message = NULL",
+        ]
+        params = [uuid.UUID(shot_id)]
+        idx = 2
+        for col, val in changes.items():
+            set_parts.append(f"{col} = ${idx}")
+            params.append(val)
+            idx += 1
+
+        await conn.execute(
+            f"UPDATE shots SET {', '.join(set_parts)} WHERE id = $1",
+            *params
+        )
+
+        return {
+            "shot_id": shot_id,
+            "action": action,
+            "changes": changes,
+            "status": "pending",
+        }
+    finally:
+        await conn.close()

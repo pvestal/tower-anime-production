@@ -10,6 +10,9 @@
         Pending Videos
         <span v-if="videoCount > 0" class="review-badge review-badge-video">{{ videoCount }}</span>
       </RouterLink>
+      <RouterLink to="/review/trailers" class="review-subtab" active-class="" exact-active-class="active">
+        Trailers
+      </RouterLink>
       <RouterLink to="/review/library" class="review-subtab" active-class="" exact-active-class="active">
         Library
       </RouterLink>
