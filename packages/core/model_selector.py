@@ -83,7 +83,7 @@ async def recommend_params(character_slug: str, project_name: str = None,
 
             if not param_row or param_row["sample_count"] < MIN_CONFIDENCE_SAMPLES:
                 # Not enough data — return learned negatives only
-                negatives = await _get_learned_negatives(conn, character_slug)
+                negatives = await _get_learned_negatives(conn, character_slug, checkpoint_model)
                 return {
                     "confidence": "none",
                     "sample_count": param_row["sample_count"] if param_row else 0,
@@ -118,7 +118,7 @@ async def recommend_params(character_slug: str, project_name: str = None,
                         checkpoint_rec["note"] = f"Current model ({checkpoint_model}) differs from best ({ckpt_row['checkpoint_model']})"
 
             # 3. Learned negative prompt additions from rejection patterns
-            negatives = await _get_learned_negatives(conn, character_slug)
+            negatives = await _get_learned_negatives(conn, character_slug, checkpoint_model)
 
             return {
                 "confidence": confidence,
@@ -137,22 +137,33 @@ async def recommend_params(character_slug: str, project_name: str = None,
         return {"confidence": "error", "learned_negatives": ""}
 
 
-async def _get_learned_negatives(conn, character_slug: str) -> str:
+async def _get_learned_negatives(conn, character_slug: str, checkpoint_model: str = None) -> str:
     """Build negative prompt additions from DB rejection categories.
 
     Queries the rejections table for this character's top rejection categories
     and maps them to negative prompt terms via REJECTION_NEGATIVE_MAP.
+    Filters by checkpoint_model when provided to prevent cross-model contamination.
     """
     from packages.lora_training.feedback import REJECTION_NEGATIVE_MAP
 
-    rows = await conn.fetch("""
-        SELECT unnest(categories) as category, COUNT(*) as freq
-        FROM rejections
-        WHERE character_slug = $1
-        GROUP BY category
-        ORDER BY freq DESC
-        LIMIT 10
-    """, character_slug)
+    if checkpoint_model:
+        rows = await conn.fetch("""
+            SELECT unnest(categories) as category, COUNT(*) as freq
+            FROM rejections
+            WHERE character_slug = $1 AND checkpoint_model = $2
+            GROUP BY category
+            ORDER BY freq DESC
+            LIMIT 10
+        """, character_slug, checkpoint_model)
+    else:
+        rows = await conn.fetch("""
+            SELECT unnest(categories) as category, COUNT(*) as freq
+            FROM rejections
+            WHERE character_slug = $1
+            GROUP BY category
+            ORDER BY freq DESC
+            LIMIT 10
+        """, character_slug)
 
     if not rows:
         # Fallback: read from feedback.json if DB has no rejection data yet

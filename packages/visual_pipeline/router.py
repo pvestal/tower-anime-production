@@ -104,6 +104,8 @@ async def generate_for_character(character_slug: str, body: GenerateRequest, all
         generation_type=body.generation_type,
         seed=body.seed,
         character_slug=character_slug,
+        db_lora_path=db_info.get("lora_path"),
+        lora_trigger=db_info.get("lora_trigger"),
     )
 
     try:

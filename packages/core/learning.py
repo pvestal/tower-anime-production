@@ -27,18 +27,23 @@ MIN_SAMPLES = 5
 SUCCESS_THRESHOLD = 0.7
 
 
-async def suggest_params(character_slug: str) -> dict[str, Any]:
+async def suggest_params(character_slug: str, checkpoint_model: str = None) -> dict[str, Any]:
     """Suggest optimal generation parameters based on historical quality data.
 
     Queries generation_history for this character's successful generations
     and returns median values for cfg_scale, steps, plus best sampler.
+    Filters by checkpoint_model when provided to prevent cross-model contamination.
     Returns empty dict if insufficient data.
     """
     try:
         pool = await get_pool()
         async with pool.acquire() as conn:
             # Get median params from successful generations
-            row = await conn.fetchrow("""
+            _ckpt_filter = " AND checkpoint_model = $3" if checkpoint_model else ""
+            _params = [character_slug, SUCCESS_THRESHOLD]
+            if checkpoint_model:
+                _params.append(checkpoint_model)
+            row = await conn.fetchrow(f"""
                 SELECT
                     COUNT(*) as sample_count,
                     PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY cfg_scale) as median_cfg,
@@ -51,24 +56,26 @@ async def suggest_params(character_slug: str) -> dict[str, Any]:
                   AND quality_score >= $2
                   AND quality_score IS NOT NULL
                   AND cfg_scale IS NOT NULL
-            """, character_slug, SUCCESS_THRESHOLD)
+                  {_ckpt_filter}
+            """, *_params)
 
             if not row or row["sample_count"] < MIN_SAMPLES:
                 return {}
 
             # Best sampler (by avg quality)
-            sampler_row = await conn.fetchrow("""
+            sampler_row = await conn.fetchrow(f"""
                 SELECT sampler, AVG(quality_score) as avg_q, COUNT(*) as n
                 FROM generation_history
                 WHERE character_slug = $1
                   AND quality_score >= $2
                   AND quality_score IS NOT NULL
                   AND sampler IS NOT NULL
+                  {_ckpt_filter}
                 GROUP BY sampler
                 HAVING COUNT(*) >= 3
                 ORDER BY avg_q DESC
                 LIMIT 1
-            """, character_slug, SUCCESS_THRESHOLD)
+            """, *_params)
 
             suggestions = {
                 "sample_count": row["sample_count"],

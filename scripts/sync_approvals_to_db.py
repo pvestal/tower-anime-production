@@ -9,6 +9,7 @@ Also emits IMAGE_APPROVED events so learning patterns get updated.
 import asyncio
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -21,7 +22,10 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 logger = logging.getLogger(__name__)
 
 DATASETS_DIR = Path("/opt/anime-studio/datasets")
-DB_DSN = "postgresql://patrick:RP78eIrW7cI2jYvL5akt1yurE@localhost/anime_production"
+DB_DSN = os.environ.get(
+    "DATABASE_URL",
+    f"postgresql://patrick:{os.environ.get('PGPASSWORD', '')}@localhost/anime_production",
+)
 
 
 async def get_char_project_map(conn) -> dict:

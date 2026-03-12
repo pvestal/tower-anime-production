@@ -116,6 +116,7 @@ async def get_char_project_map() -> dict:
                    REGEXP_REPLACE(LOWER(REPLACE(c.name, ' ', '_')), '[^a-z0-9_-]', '', 'g') as slug,
                    c.design_prompt, c.appearance_data, p.name as project_name,
                    p.default_style, p.content_rating,
+                   c.lora_path, c.lora_trigger,
                    gs.checkpoint_model, gs.cfg_scale, gs.steps,
                    gs.width, gs.height, gs.sampler, gs.scheduler,
                    gs.positive_prompt_template, gs.negative_prompt_template,
@@ -157,6 +158,8 @@ async def get_char_project_map() -> dict:
                     "style_preamble": row["style_preamble"],
                     "model_architecture": row["model_architecture"],
                     "prompt_format": row["prompt_format"],
+                    "lora_path": row["lora_path"],
+                    "lora_trigger": row["lora_trigger"],
                 }
         _char_project_cache = mapping
         _cache_time = _time.time()

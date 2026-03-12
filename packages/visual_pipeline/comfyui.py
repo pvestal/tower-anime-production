@@ -10,20 +10,42 @@ from packages.core.model_profiles import get_model_profile
 logger = logging.getLogger(__name__)
 
 
-def _find_lora(character_slug: str, checkpoint_model: str) -> Path | None:
+def _find_lora(character_slug: str, checkpoint_model: str, db_lora_path: str | None = None) -> Path | None:
     """Find the architecture-matched LoRA for a character.
 
-    SDXL checkpoints use *_xl_lora.safetensors, SD1.5 uses *_lora.safetensors.
-    Returns None if no matching LoRA exists (never cross-architecture).
+    Priority:
+    1. Explicit lora_path from DB characters table (trusted — admin sets this).
+    2. Naming convention: SDXL uses *_xl_lora.safetensors, SD1.5 uses *_lora.safetensors.
+    3. Glob fallback: {slug}*_ill_lora*.safetensors or {slug}*_lora*.safetensors.
+    Returns None if no matching LoRA exists.
     """
     lora_dir = Path("/opt/ComfyUI/models/loras")
+
+    # 1. Explicit DB path — check both root and subdirectories
+    if db_lora_path:
+        for candidate in [lora_dir / db_lora_path, Path(db_lora_path)]:
+            if candidate.exists():
+                return candidate
+        logger.warning(f"DB lora_path '{db_lora_path}' for {character_slug} not found on disk")
+
+    # 2. Naming convention
     profile = get_model_profile(checkpoint_model)
     if profile["architecture"] == "sdxl":
         xl_path = lora_dir / f"{character_slug}_xl_lora.safetensors"
-        return xl_path if xl_path.exists() else None
+        if xl_path.exists():
+            return xl_path
+        # 3. Glob fallback for illustrious-style names
+        matches = list(lora_dir.glob(f"{character_slug}*_ill_lora*.safetensors"))
+        if not matches:
+            matches = list(lora_dir.glob(f"{character_slug}*_lora*.safetensors"))
+        if matches:
+            return matches[0]
     else:
         sd_path = lora_dir / f"{character_slug}_lora.safetensors"
-        return sd_path if sd_path.exists() else None
+        if sd_path.exists():
+            return sd_path
+
+    return None
 
 
 def build_comfyui_workflow(
@@ -45,6 +67,9 @@ def build_comfyui_workflow(
     controlnet_image: str | None = None,
     controlnet_strength: float = 0.7,
     controlnet_type: str = "openpose",
+    db_lora_path: str | None = None,
+    lora_trigger: str | None = None,
+    extra_loras: list[tuple[str, float]] | None = None,
 ) -> dict:
     """Build a ComfyUI workflow dict for image or video generation.
 
@@ -113,8 +138,11 @@ def build_comfyui_workflow(
     prefix = f"{proj}_{character_slug}_{action}_{ts}"
 
     # Inject LoraLoader if an architecture-matched LoRA exists for this character
-    lora_path = _find_lora(character_slug, checkpoint_model)
+    lora_path = _find_lora(character_slug, checkpoint_model, db_lora_path)
     if lora_path is not None:
+        # Prepend LoRA trigger words to the prompt if configured
+        if lora_trigger and lora_trigger not in workflow["6"]["inputs"]["text"]:
+            workflow["6"]["inputs"]["text"] = f"{lora_trigger}, {workflow['6']['inputs']['text']}"
         workflow["10"] = {
             "inputs": {
                 "lora_name": lora_path.name,

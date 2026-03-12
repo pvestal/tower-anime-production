@@ -387,6 +387,8 @@ async def generate_batch(
             character_slug=character_slug,
             project_name=project_name,
             pose=pose,
+            db_lora_path=db_info.get("lora_path"),
+            lora_trigger=db_info.get("lora_trigger"),
         )
 
         # Acquire semaphore slot before submitting — limits ComfyUI queue depth
@@ -556,6 +558,19 @@ async def generate_scene_shot_image(
     quality_prefix = profile.get("quality_prefix", "masterpiece, best quality")
     full_prompt = f"{quality_prefix}, {shot_prompt}"
 
+    # Resolve character LoRA from DB for the primary character
+    _kf_lora_path = None
+    _kf_lora_trigger = None
+    if characters_present and not is_multi:
+        try:
+            from packages.core.db import get_char_project_map
+            _kf_map = await get_char_project_map()
+            _kf_char_info = _kf_map.get(characters_present[0], {})
+            _kf_lora_path = _kf_char_info.get("lora_path")
+            _kf_lora_trigger = _kf_char_info.get("lora_trigger")
+        except Exception:
+            pass
+
     # Build workflow — multi_character flag skips IP-Adapter
     workflow = build_comfyui_workflow(
         design_prompt=full_prompt,
@@ -572,6 +587,8 @@ async def generate_scene_shot_image(
         character_slug=characters_present[0] if characters_present else "scene",
         pose=None,
         multi_character=is_multi,
+        db_lora_path=_kf_lora_path,
+        lora_trigger=_kf_lora_trigger,
     )
 
     # Override filename prefix
