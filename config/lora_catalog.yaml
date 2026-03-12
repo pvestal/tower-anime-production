@@ -48,93 +48,171 @@ video_lora_pairs:
   cowgirl:
     label: "Cowgirl"
     tier: explicit
+    motion_tier: high
     high: wan22_nsfw/wan22_cowgirl_HIGH.safetensors
     low: wan22_nsfw/wan22_cowgirl_LOW.safetensors
     tags: [cowgirl, riding, position]
+    counter_motion: "reactive hip thrusts from below, body compression, mutual rhythmic motion"
+    layout: top_bottom
+    roles: {actor: top, reactor: bottom}
+    actor_motion: "bouncing, riding, hip rolling, hands on chest"
+    reactor_motion: "reactive hip thrusts from below, body compression"
 
   assertive_cowgirl:
     label: "Assertive Cowgirl"
     tier: explicit
+    motion_tier: high
     high: wan22_nsfw/wan22_assertive_cowgirl_HIGH.safetensors
     low: wan22_nsfw/wan22_assertive_cowgirl_LOW.safetensors
     tags: [cowgirl, assertive, dominant, riding, position]
+    counter_motion: "pinned down, reactive thrusts upward, gripping hips, body rocking"
+    layout: top_bottom
+    roles: {actor: top, reactor: bottom}
+    actor_motion: "assertive bouncing, pinning down, dominant riding"
+    reactor_motion: "pinned down, reactive thrusts upward, gripping hips"
 
   reverse_cowgirl:
     label: "Reverse Cowgirl"
     tier: explicit
+    motion_tier: high
     high: wan22_nsfw/wan22_reverse_cowgirl_HIGH.safetensors
     low: wan22_nsfw/wan22_reverse_cowgirl_LOW.safetensors
     tags: [cowgirl, reverse, riding, position]
+    counter_motion: "thrusting upward, hands gripping waist, reactive hip motion"
+    layout: top_bottom
+    roles: {actor: top, reactor: bottom}
+    actor_motion: "riding, bouncing, facing away"
+    reactor_motion: "thrusting upward, hands gripping waist"
 
   missionary:
     label: "Missionary"
     tier: explicit
+    motion_tier: high
     high: wan22_nsfw/wan22_missionary_HIGH.safetensors
     low: wan22_nsfw/wan22_missionary_LOW.safetensors
     tags: [missionary, position]
+    counter_motion: "legs wrapping around, body rocking, arching back, receiving thrusts"
+    layout: top_bottom
+    roles: {actor: top, reactor: bottom}
+    actor_motion: "thrusting, weight on arms, rhythmic pressing"
+    reactor_motion: "legs wrapping around, arching back, receiving thrusts"
 
   prone_bone:
     label: "Prone Bone"
     tier: explicit
+    motion_tier: high
     high: wan22_nsfw/wan22_prone_bone_HIGH.safetensors
     low: wan22_nsfw/wan22_prone_bone_LOW.safetensors
     tags: [prone, position]
+    counter_motion: "body pressing into surface, subtle rocking, gripping sheets"
+    layout: top_bottom
+    roles: {actor: top, reactor: bottom}
+    actor_motion: "pressing down, thrusting"
+    reactor_motion: "body pressing into surface, subtle rocking, gripping sheets"
 
   doggy_front:
     label: "Doggy (Front View)"
     tier: explicit
+    motion_tier: high
     high: wan22_nsfw/wan22_doggy_front_HIGH.safetensors
     low: wan22_nsfw/wan22_doggy_front_LOW.safetensors
     tags: [doggy, front, position]
+    counter_motion: "body rocking forward from thrusts, breasts swaying, hair swinging"
+    layout: halves
+    roles: {actor: right, reactor: left}
+    actor_motion: "thrusting from behind, gripping hips"
+    reactor_motion: "body rocking forward, breasts swaying, hair swinging"
 
   doggy_back:
     label: "Doggy (Back View)"
     tier: explicit
+    motion_tier: high
     high: wan22_nsfw/wan22_doggy_back_HIGH.safetensors
     low: wan22_nsfw/wan22_doggy_back_LOW.safetensors
     tags: [doggy, back, position]
+    counter_motion: "ass jiggling from impact, body rocking forward, back arching"
+    layout: halves
+    roles: {actor: right, reactor: left}
+    actor_motion: "thrusting from behind, holding hips"
+    reactor_motion: "ass jiggling from impact, body rocking forward, back arching"
 
   from_behind:
     label: "Sex From Behind"
     tier: explicit
+    motion_tier: high
     high: wan22_nsfw/wan22_from_behind_HIGH.safetensors
     low: wan22_nsfw/wan22_from_behind_LOW.safetensors
     tags: [behind, standing, position]
+    counter_motion: "body pushed forward, hands bracing against surface, reactive sway"
+    layout: halves
+    roles: {actor: right, reactor: left}
+    actor_motion: "thrusting, holding partner"
+    reactor_motion: "body pushed forward, hands bracing, reactive sway"
 
   spooning:
     label: "Spooning"
     tier: explicit
+    motion_tier: high
     high: wan22_nsfw/wan22_spooning_HIGH.safetensors
     low: wan22_nsfw/wan22_spooning_LOW.safetensors
     tags: [spooning, side, intimate, position]
+    counter_motion: "body pressing back into partner, subtle mutual rocking, intimate motion"
+    layout: halves
+    roles: {actor: right, reactor: left}
+    actor_motion: "spooning motion, arm around partner"
+    reactor_motion: "body pressing back, subtle mutual rocking"
 
   combo_hj_bj:
     label: "HJ/BJ Combo"
     tier: explicit
+    motion_tier: high
     high: wan22_nsfw/wan22_combo_hj_bj_HIGH.safetensors
     low: wan22_nsfw/wan22_combo_hj_bj_LOW.safetensors
     tags: [blowjob, handjob, oral]
+    counter_motion: "hip shifting forward, hand resting on head, reactive body tension"
+    layout: top_bottom
+    roles: {actor: bottom, reactor: top}
+    actor_motion: "head bobbing, hand stroking"
+    reactor_motion: "hip shifting forward, hand on head, body tension"
 
   sensual_bj:
     label: "Sensual BJ"
     tier: explicit
+    motion_tier: high
     high: wan22_nsfw/wan22_sensual_bj_HIGH.safetensors
     low: wan22_nsfw/wan22_sensual_bj_LOW.safetensors
     tags: [blowjob, sensual, teasing, oral]
+    counter_motion: "subtle hip tension, hand guiding head, reactive pleasure expression"
+    layout: top_bottom
+    roles: {actor: bottom, reactor: top}
+    actor_motion: "sensual head motion, teasing licks"
+    reactor_motion: "subtle hip tension, hand guiding head"
 
   titjob:
     label: "Titjob / Paizuri"
     tier: explicit
+    motion_tier: high
     high: wan22_nsfw/wan22_titjob_HIGH.safetensors
     low: wan22_nsfw/wan22_titjob_LOW.safetensors
     tags: [titjob, paizuri]
+    counter_motion: "reactive hip motion, hands squeezing breasts together, rhythmic body sway"
+    layout: top_bottom
+    roles: {actor: bottom, reactor: top}
+    actor_motion: "breast pressing, rhythmic squeezing"
+    reactor_motion: "reactive hip motion, body sway"
 
   facial:
     label: "Facial"
     tier: explicit
+    motion_tier: high
     high: wan22_nsfw/wan22_facial_HIGH.safetensors
     low: wan22_nsfw/wan22_facial_LOW.safetensors
     tags: [facial, cumshot, finish]
+    counter_motion: "flinching, eyes closing, reactive head movement, mouth opening"
+    layout: top_bottom
+    roles: {actor: top, reactor: bottom}
+    actor_motion: "release motion, body tensing"
+    reactor_motion: "flinching, eyes closing, reactive head movement"
 
   nsfw_group_girls:
     label: "Group (Girls)"
@@ -155,69 +233,104 @@ video_lora_pairs:
   squatting_cowgirl:
     label: "Squatting Cowgirl"
     tier: explicit
+    motion_tier: high
     high: wan22_nsfw/Blink_Squatting_Cowgirl_Position_I2V_HIGH.safetensors
     low: wan22_nsfw/Blink_Squatting_Cowgirl_Position_I2V_LOW.safetensors
     tags: [cowgirl, squatting, riding, position]
+    counter_motion: "reactive upward thrusts, gripping thighs, mutual bouncing rhythm"
+    layout: top_bottom
+    roles: {actor: top, reactor: bottom}
+    actor_motion: "squatting bounce, riding"
+    reactor_motion: "reactive upward thrusts, gripping thighs"
 
   double_blowjob:
     label: "Double Blowjob"
     tier: explicit
+    motion_tier: high
     high: wan22_nsfw/WAN-2.2-I2V-Double-Blowjob-HIGH-v1.safetensors
     low: wan22_nsfw/WAN-2.2-I2V-Double-Blowjob-LOW-v1.safetensors
     tags: [blowjob, double, oral, group]
+    counter_motion: "hip shifting, hands guiding heads, reactive body tension"
 
   lips_bj:
     label: "Lips BJ (Close-up)"
     tier: explicit
+    motion_tier: high
     high: wan22_nsfw/lips-bj_high_noise.safetensors
     low: wan22_nsfw/lips-bj_low_noise.safetensors
     tags: [blowjob, closeup, lips, oral]
+    counter_motion: "subtle hip motion, hand on back of head"
 
   mouthful:
     label: "Mouthful"
     tier: explicit
+    motion_tier: high
     high: wan22_nsfw/wan22-mouthfull-140epoc-high-k3nk.safetensors
     low: wan22_nsfw/wan22-mouthfull-152epoc-low-k3nk.safetensors
     tags: [oral, mouthful, finish]
+    counter_motion: "body tensing, release motion, reactive shudder"
 
   bukkake:
     label: "Bukkake"
     tier: explicit
+    motion_tier: high
     high: "wan22_nsfw/Pornmaster_wan 2.2_14b_I2V_bukkake_v1.4_high_noise.safetensors"
     low: "wan22_nsfw/Pornmaster_wan 2.2_14b_I2V_bukkake_v1.4_low_noise.safetensors"
     tags: [bukkake, group, finish]
+    counter_motion: "flinching, eyes closing, reactive head movement, body tensing"
 
   casting_doggy:
     label: "Casting Doggy (Diagonal Behind)"
     tier: explicit
+    motion_tier: high
     high: wan22_nsfw/mql_casting_sex_doggy_kneel_diagonally_behind_vagina_wan22_i2v_v1_high_noise.safetensors
     low: wan22_nsfw/mql_casting_sex_doggy_kneel_diagonally_behind_vagina_wan22_i2v_v1_low_noise.safetensors
     tags: [doggy, casting, diagonal, position]
+    counter_motion: "body rocking forward from impact, ass jiggling, reactive sway"
+    layout: halves
+    roles: {actor: right, reactor: left}
+    actor_motion: "thrusting from diagonal behind"
+    reactor_motion: "body rocking forward, ass jiggling, reactive sway"
 
   massage_tits:
     label: "Massage / Tit Play"
     tier: explicit
+    motion_tier: medium
     high: wan22_nsfw/mql_massage_tits_wan22_i2v_v1_high_noise.safetensors
     low: wan22_nsfw/mql_massage_tits_wan22_i2v_v1_low_noise.safetensors
     tags: [massage, tits, foreplay]
+    counter_motion: "pleasure expression, body arching into touch, subtle breathing"
+    layout: halves
+    roles: {actor: right, reactor: left}
+    actor_motion: "hands massaging, kneading"
+    reactor_motion: "pleasure expression, body arching into touch"
 
   panties_aside:
     label: "Panties Aside"
     tier: explicit
+    motion_tier: medium
     high: wan22_nsfw/mql_panties_aside_wan22_i2v_v1_high_noise.safetensors
     low: wan22_nsfw/mql_panties_aside_wan22_i2v_v1_low_noise.safetensors
     tags: [panties, teasing, position]
+    counter_motion: "anticipation, body shifting, reactive hip tilt"
 
   sex_from_behind_v2:
     label: "Sex From Behind v2"
     tier: explicit
+    motion_tier: high
     high: wan22_nsfw/sfbehind_v2.1_high_noise.safetensors
     low: wan22_nsfw/sfbehind_v2.1_low_noise.safetensors
     tags: [behind, standing, position]
+    counter_motion: "body pushed forward, hands bracing, reactive sway from thrusts"
+    layout: halves
+    roles: {actor: right, reactor: left}
+    actor_motion: "thrusting from behind"
+    reactor_motion: "body pushed forward, hands bracing, reactive sway"
 
   penis_enhancer:
     label: "Penis Enhancer"
     tier: explicit
+    motion_tier: low
     high: wan22_nsfw/PENISLORA_22_i2v_HIGH_e320.safetensors
     low: wan22_nsfw/PENISLORA_22_i2v_LOW_e496.safetensors
     tags: [anatomy, male, enhancer]
@@ -225,6 +338,7 @@ video_lora_pairs:
   pussy_asshole_closeup:
     label: "Pussy/Asshole Close-up"
     tier: explicit
+    motion_tier: low
     high: wan22_nsfw/wan2.2_i2v_high_ulitmate_pussy_asshole.safetensors
     low: wan22_nsfw/wan2.2_i2v_low_ulitmate_pussy_asshole.safetensors
     tags: [closeup, anatomy, female]
@@ -232,6 +346,7 @@ video_lora_pairs:
   softcore_photoshoot:
     label: "Softcore Photoshoot"
     tier: explicit
+    motion_tier: low
     high: wan22_nsfw/W22_Multiscene_Photoshoot_Softcore_i2v_HN.safetensors
     low: wan22_nsfw/W22_Multiscene_Photoshoot_Softcore_i2v_LN.safetensors
     tags: [softcore, photoshoot, teasing, glamour]
@@ -239,14 +354,21 @@ video_lora_pairs:
   side_transition:
     label: "Side Legs Transition"
     tier: explicit
+    motion_tier: high
     high: wan22_nsfw/sid3l3g_transition_v2.0_H.safetensors
     low: wan22_nsfw/sid3l3g_transition_v2.0_L.safetensors
     tags: [transition, side, position_change]
+    counter_motion: "body adjusting to new position, mutual repositioning"
+    layout: halves
+    roles: {actor: right, reactor: left}
+    actor_motion: "initiating position change"
+    reactor_motion: "body adjusting to new position, mutual repositioning"
 
   # General NSFW quality enhancer — stacks with position LoRAs
   general_nsfw:
     label: "WAN General NSFW Enhancer"
     tier: explicit
+    motion_tier: low
     high: wan22_nsfw/wan22_general_nsfw_HIGH.safetensors
     low: wan22_nsfw/wan22_general_nsfw_LOW.safetensors
     tags: [nsfw, quality, enhancer, general]
@@ -255,6 +377,7 @@ video_lora_pairs:
   camera_push_in:
     label: "Camera Push In / Dolly"
     tier: universal
+    motion_tier: medium
     high: wan22_camera/camera_push_in.safetensors
     low: null
     tags: [camera, push_in, dolly, zoom]
@@ -354,23 +477,29 @@ video_lora_pairs:
   fight:
     label: "Fight / Combat"
     tier: mature
+    motion_tier: extreme
     high: wan22_action/wan_fight.safetensors
     low: null
     tags: [fight, combat, punch, kick, action]
+    counter_motion: "recoil, dodge, block, stagger from impact, body knockback"
 
   explosion:
     label: "Explosion"
     tier: mature
+    motion_tier: extreme
     high: wan22_action/explosion_HIGH.safetensors
     low: wan22_action/explosion_LOW.safetensors
     tags: [explosion, blast, vfx, destruction]
+    counter_motion: "thrown back by blast wave, ducking, shielding face, debris impact"
 
   atomic_explosion:
     label: "Atomic Explosion"
     tier: mature
+    motion_tier: extreme
     high: wan22_action/atomic_explosion_HIGH.safetensors
     low: wan22_action/atomic_explosion_LOW.safetensors
     tags: [explosion, atomic, mushroom_cloud, vfx]
+    counter_motion: "massive shockwave knockback, disintegration, environmental destruction"
 
   pixel_walk:
     label: "Pixel Walk"
@@ -392,6 +521,48 @@ video_lora_pairs:
     high: wan22_action/tiktok_hip_dance_HIGH.safetensors
     low: null
     tags: [dance, hip, tiktok, movement]
+
+  hip_sway_i2v:
+    label: "Hip Sway (I2V)"
+    tier: universal
+    motion_tier: medium
+    high: wan22_hip_sway_i2v_HIGH.safetensors
+    low: wan22_hip_sway_i2v_LOW.safetensors
+    tags: [dance, sway, idle, hip, subtle_motion]
+
+  forward_flight:
+    label: "Cinematic Forward Flight / Chase"
+    tier: universal
+    motion_tier: medium
+    high: wan22_forward_flight_HIGH.safetensors
+    low: null
+    tags: [camera, forward, chase, fpv, flight, drone]
+
+  seductive_turns:
+    label: "Seductive Turn & Walk Away"
+    tier: explicit
+    motion_tier: medium
+    high: wan22_seductive_turns_HIGH.safetensors
+    low: wan22_seductive_turns_LOW.safetensors
+    tags: [turn, walk_away, pose, seductive, spin]
+    counter_motion: "character turns 180 degrees and walks away from camera"
+
+  jumpscare:
+    label: "Jumpscare / Rush Toward Camera"
+    tier: universal
+    motion_tier: extreme
+    high: wan22_jumpscare_HIGH.safetensors
+    low: wan22_jumpscare_LOW.safetensors
+    tags: [jumpscare, rush, toward_camera, horror, fast_motion, impact]
+
+  face_to_feet:
+    label: "Face-to-Feet Camera Sweep"
+    tier: universal
+    motion_tier: medium
+    high: wan22_face_to_feet_HIGH.safetensors
+    low: wan22_face_to_feet_LOW.safetensors
+    tags: [camera, vertical_sweep, face, feet, full_body, reveal, pov]
+    tags: [camera, forward, chase, fpv, flight, drone]
 
   retro_90s_anime:
     label: "Retro 90s Anime Style"
@@ -552,10 +723,6 @@ image_lora_categories:
   choking:
     tier: explicit
     loras:
-      - filename: Choking__Neck_Grab_-_SDXL.safetensors
-        label: "Choking / Neck Grab"
-        tags: [choking, neck, rough, bdsm]
-        trigger: "neckchoke, 1girl, 1boy, hand on neck"
       - filename: POVThroatGrab_Ill_v1.safetensors
         label: "POV Throat Grab"
         tags: [choking, throat, pov, rough]
@@ -639,6 +806,16 @@ image_lora_categories:
         label: "Horse Anthro"
         tags: [furry, horse, anthro]
 
+  # Facesitting / POV
+  facesitting:
+    tier: explicit
+    loras:
+      - filename: imminentfacesitill.safetensors
+        label: "Facesitting POV (Illustrious)"
+        tags: [facesitting, pov, from_below, dominant]
+        trigger: "facesitpovILL, from below, imminent facesit, facesitting pov, looking down at viewer, foreshortening"
+        strength: 0.7
+
   # Monster / Interspecies / Unrealistic concepts
   monster:
     tier: explicit
@@ -672,6 +849,54 @@ image_lora_categories:
       - filename: scifi_sex_machine_rider_ill.safetensors
         label: "Sci-fi Sex Machine Rider"
         tags: [machine, robot, riding, scifi, mechanical]
+      - filename: male_android_ill-10.safetensors
+        label: "Male Android (Illustrious)"
+        tags: [android, robot, scifi, male, mechanical, gangbang]
+        trigger: "male_android_ill"
+        strength: 0.8
+      - filename: MusRob_Robot_Illustrious.safetensors
+        label: "Robot (Illustrious)"
+        tags: [robot, mechanical, scifi]
+
+  # Mario / Nintendo characters (for Mario project)
+  mario:
+    tier: wholesome
+    loras:
+      - filename: rosalina_super_mario_ill.safetensors
+        label: "Princess Rosalina (Super Mario Galaxy)"
+        tags: [mario, nintendo, rosalina, princess, galaxy]
+        trigger: "rosalina, super mario galaxy, princess, blue dress, crown"
+        strength: 0.75
+      - filename: princess_peach_mario_ill.safetensors
+        label: "Princess Peach (Mario)"
+        tags: [mario, nintendo, peach, princess]
+        trigger: "princess peach, super mario, pink dress, crown, blonde hair"
+        strength: 0.75
+      - filename: yoshi_super_mario_ill.safetensors
+        label: "Yoshi (Super Mario Bros)"
+        tags: [mario, nintendo, yoshi, dinosaur]
+        trigger: "yoshi, super mario, green dinosaur, red saddle"
+        strength: 0.75
+      - filename: chun_li_default_ill.safetensors
+        label: "Chun-Li Default (Street Fighter)"
+        tags: [street_fighter, chun_li, fighter, capcom]
+        trigger: "chun-li, street fighter, chinese dress, hair buns, spiked bracelet"
+        strength: 0.75
+      - filename: chun_li_sf6_ill.safetensors
+        label: "Chun-Li SF6 (Street Fighter 6)"
+        tags: [street_fighter, chun_li, sf6, fighter, capcom]
+        trigger: "chun-li, street fighter 6, blue outfit, hair buns"
+        strength: 0.75
+      - filename: wheelbarrow_pose_ill.safetensors
+        label: "Wheelbarrow Pose"
+        tags: [position, wheelbarrow, standing, couple]
+        trigger: "wheelbarrow position, 1boy, 1girl, standing"
+        strength: 0.5
+      - filename: walk_in_ntr_ill.safetensors
+        label: "Walk-In / Caught Scene"
+        tags: [walk_in, caught, ntr, voyeur, surprise]
+        trigger: "walk-in, caught, surprised expression, doorway"
+        strength: 0.6
 
   # Style (universal / mature)
   style:
@@ -1098,6 +1323,172 @@ action_presets:
     image_lora_strength: 0.7
     video_lora: assertive_cowgirl
     video_lora_strength: 0.85
+    video_engine: wan22_14b
+
+  # --- NEW: Facesitting & Android presets ---
+  facesitting:
+    label: "Facesitting POV"
+    tier: explicit
+    image_lora: imminentfacesitill.safetensors
+    image_lora_strength: 0.7
+    video_lora: assertive_cowgirl
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+
+  android_sex:
+    label: "Male Android"
+    tier: explicit
+    image_lora: male_android_ill-10.safetensors
+    image_lora_strength: 0.8
+    video_lora: from_behind
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+
+  android_gangbang:
+    label: "Android Gangbang"
+    tier: explicit
+    image_lora: male_android_ill-10.safetensors
+    image_lora_strength: 0.8
+    video_lora: dr34ml4y
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+
+  robot_rider:
+    label: "Robot Rider"
+    tier: explicit
+    image_lora: scifi_sex_machine_rider_ill.safetensors
+    image_lora_strength: 0.7
+    video_lora: assertive_cowgirl
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+
+  # --- MARIO PRESETS ---
+  # --- WHOLESOME / SFW PRESETS ---
+  gentle_walk:
+    label: "Gentle Walk"
+    tier: wholesome
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: pixel_walk
+    video_lora_strength: 0.7
+    video_engine: wan22_14b
+
+  dance_groove:
+    label: "Dance / Hip Sway"
+    tier: wholesome
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: hip_swing
+    video_lora_strength: 0.7
+    video_engine: wan22_14b
+
+  tiktok_dance:
+    label: "TikTok Dance"
+    tier: wholesome
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: tiktok_dance
+    video_lora_strength: 0.7
+    video_engine: wan22_14b
+
+  dramatic_close:
+    label: "Dramatic Close-up"
+    tier: wholesome
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: eyes_in
+    video_lora_strength: 0.8
+    video_engine: wan22_14b
+
+  aerial_reveal:
+    label: "Aerial / Drone Reveal"
+    tier: wholesome
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: drone_shot
+    video_lora_strength: 0.8
+    video_engine: wan22_14b
+
+  hip_sway:
+    label: "Hip Sway / Idle Dance"
+    tier: wholesome
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: hip_sway_i2v
+    video_lora_strength: 0.7
+    video_engine: wan22_14b
+
+  chase_flight:
+    label: "Chase / Forward Flight"
+    tier: wholesome
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: forward_flight
+    video_lora_strength: 0.8
+    video_engine: wan22_14b
+
+  seductive_turn:
+    label: "Seductive Turn & Walk Away"
+    tier: explicit
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: seductive_turns
+    video_lora_strength: 0.8
+    video_engine: wan22_14b
+
+  jumpscare_rush:
+    label: "Jumpscare / Rush Camera"
+    tier: universal
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: jumpscare
+    video_lora_strength: 0.9
+    video_engine: wan22_14b
+
+  walk_in_scene:
+    label: "Walk-In / Caught Scene"
+    tier: explicit
+    image_lora: walk_in_ntr_ill.safetensors
+    image_lora_strength: 0.6
+    video_lora: seductive_turns
+    video_lora_strength: 0.6
+    video_engine: wan22_14b
+
+  chun_li_fight:
+    label: "Chun-Li Fight"
+    tier: mature
+    image_lora: chun_li_default_ill.safetensors
+    image_lora_strength: 0.75
+    video_lora: wan_fight
+    video_lora_strength: 0.8
+    video_engine: wan22_14b
+
+  # --- MARIO PRESETS ---
+  mario_rosalina:
+    label: "Rosalina (Galaxy)"
+    tier: wholesome
+    image_lora: rosalina_super_mario_ill.safetensors
+    image_lora_strength: 0.75
+    video_lora: orbit_v2
+    video_lora_strength: 0.7
+    video_engine: wan22_14b
+
+  mario_peach:
+    label: "Princess Peach"
+    tier: wholesome
+    image_lora: princess_peach_mario_ill.safetensors
+    image_lora_strength: 0.75
+    video_lora: catwalk
+    video_lora_strength: 0.7
+    video_engine: wan22_14b
+
+  mario_yoshi:
+    label: "Yoshi"
+    tier: wholesome
+    image_lora: yoshi_super_mario_ill.safetensors
+    image_lora_strength: 0.75
+    video_lora: pixel_walk
+    video_lora_strength: 0.7
     video_engine: wan22_14b
 
   # --- SFW / ACTION PRESETS (for trailers) ---

@@ -18,6 +18,8 @@ KNOWN_ISSUES = [
     "artifact_flicker", "blurry", "wrong_character", "bad_anatomy",
     "frozen_motion", "wrong_action", "poor_lighting", "text_watermark",
     "color_shift",
+    # Action-reaction issues (added by action_reaction_qc.py)
+    "reaction_absent", "frozen_interaction", "weak_reaction",
 ]
 
 
@@ -106,12 +108,13 @@ async def _vision_review_single_frame(
             f"- character_match: does the generated frame preserve the character's identity, face, hair, clothing from the source? (1=completely different person, 10=perfect match)\n"
             f"- style_match: does the art style, color palette, line quality match the source? (1=totally different style, 10=seamless)\n"
             f"- motion_execution: does the frame show the described action naturally? (1=frozen/wrong action, 10=perfect motion)\n"
-            f"- technical_quality: sharpness, no artifacts, no glitches, good anatomy (1=broken, 10=flawless)\n\n"
+            f"- technical_quality: sharpness, no artifacts, no glitches, good anatomy (1=broken, 10=flawless)\n"
+            f"- composition: framing, camera angle, character placement, visual balance (1=terrible framing, 10=well composed)\n\n"
             f"Be STRICT — a score of 7+ means genuinely good. 5 means mediocre. 3 means bad.\n\n"
             f"Also list any issues from this set: [{issue_list}]\n\n"
             f"Reply in EXACTLY this JSON format, nothing else:\n"
             f'{{"character_match": N, "style_match": N, "motion_execution": N, '
-            f'"technical_quality": N, "issues": ["issue1", "issue2"]}}'
+            f'"technical_quality": N, "composition": N, "issues": ["issue1", "issue2"]}}'
         )
     else:
         # Fallback: single-image review (Wan T2V or missing source)
@@ -121,11 +124,12 @@ async def _vision_review_single_frame(
             f"- character_match: character appears on-model and correct (if no reference, score anatomy/consistency)\n"
             f"- style_match: art style is consistent and appealing\n"
             f"- motion_execution: does the frame match the described motion/action\n"
-            f"- technical_quality: sharpness, no artifacts, no glitches\n\n"
+            f"- technical_quality: sharpness, no artifacts, no glitches\n"
+            f"- composition: framing, camera angle, character placement, visual balance\n\n"
             f"Also list any issues from this set: [{issue_list}]\n\n"
             f"Reply in EXACTLY this JSON format, nothing else:\n"
             f'{{"character_match": N, "style_match": N, "motion_execution": N, '
-            f'"technical_quality": N, "issues": ["issue1", "issue2"]}}'
+            f'"technical_quality": N, "composition": N, "issues": ["issue1", "issue2"]}}'
         )
 
     payload = json.dumps({
@@ -158,7 +162,7 @@ async def _vision_review_single_frame(
 
         # Validate and clamp scores
         scores = {}
-        for key in ("character_match", "style_match", "motion_execution", "technical_quality"):
+        for key in ("character_match", "style_match", "motion_execution", "technical_quality", "composition"):
             val = parsed.get(key, 5)
             scores[key] = max(1, min(10, int(val)))
 
@@ -212,17 +216,19 @@ async def review_video_frames(
     # character_match + style_match weighted higher when comparing against source
     if source_image_path and Path(source_image_path).exists():
         weights = {
-            "character_match": 0.30,
-            "style_match": 0.20,
+            "character_match": 0.25,
+            "style_match": 0.15,
             "motion_execution": 0.25,
-            "technical_quality": 0.25,
+            "technical_quality": 0.20,
+            "composition": 0.15,
         }
     else:
         weights = {
             "character_match": 0.20,
-            "style_match": 0.15,
-            "motion_execution": 0.30,
-            "technical_quality": 0.35,
+            "style_match": 0.10,
+            "motion_execution": 0.25,
+            "technical_quality": 0.30,
+            "composition": 0.15,
         }
 
     category_avgs = {}

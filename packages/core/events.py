@@ -38,6 +38,8 @@ REGENERATION_QUEUED = "regeneration.queued"
 ECHO_BRAIN_CONSULTED = "echo_brain.consulted"
 SHOT_GENERATED = "shot.generated"
 SHOT_REJECTED = "shot.rejected"
+FEEDBACK_SUBMITTED = "feedback.submitted"
+FEEDBACK_ACTION_EXECUTED = "feedback.action_executed"
 
 # Production orchestrator events
 TRAINING_STARTED = "training.started"
@@ -261,10 +263,14 @@ def register_sfx_handlers():
                     return
 
                 if output:
-                    await conn.execute(
-                        "UPDATE shots SET sfx_audio_path = $2 WHERE id = $1",
-                        shot_id, output,
-                    )
+                    # Store mixed audio path + individual voice path
+                    update_sql = "UPDATE shots SET sfx_audio_path = $2"
+                    params = [shot_id, output]
+                    if voice_wav:
+                        update_sql += ", voice_audio_path = $3"
+                        params.append(voice_wav)
+                    update_sql += " WHERE id = $1"
+                    await conn.execute(update_sql, *params)
                     parts = []
                     if sfx_clips:
                         parts.append(f"{len(sfx_clips)} foley")

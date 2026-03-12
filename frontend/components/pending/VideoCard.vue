@@ -77,6 +77,26 @@
         <span v-if="video.lora_strength" class="lora-strength">{{ video.lora_strength }}</span>
       </div>
 
+      <!-- Dialogue line -->
+      <div v-if="video.dialogue_text" class="dialogue-row">
+        <span class="dialogue-char">{{ video.dialogue_character || '?' }}:</span>
+        <span class="dialogue-text">{{ video.dialogue_text }}</span>
+      </div>
+
+      <!-- Audio controls -->
+      <div v-if="video.sfx_audio_path" class="audio-row">
+        <button class="btn btn-audio" @click.stop="toggleAudio" :title="isPlayingAudio ? 'Stop audio' : 'Play with voice + foley'">
+          {{ isPlayingAudio ? 'Stop' : 'Play Audio' }}
+        </button>
+        <span class="audio-label">voice + foley</span>
+      </div>
+      <div v-else-if="video.dialogue_text && !video.sfx_audio_path" class="audio-row audio-missing">
+        <span class="audio-label">needs voice + foley</span>
+        <button class="btn btn-synth" @click.stop="$emit('synthesize', video)" title="Synthesize voice for this shot">
+          Synthesize
+        </button>
+      </div>
+
       <!-- Motion prompt (truncated) -->
       <div v-if="video.motion_prompt" class="motion-prompt" :title="video.motion_prompt">
         {{ video.motion_prompt }}
@@ -105,6 +125,13 @@
           Edit
         </button>
         <button
+          class="btn btn-feedback"
+          @click.stop="showFeedback = !showFeedback"
+          title="Guided feedback — diagnose issues and fix"
+        >
+          Feedback
+        </button>
+        <button
           class="btn btn-danger-outline"
           @click.stop="$emit('reject-engine', video)"
           :title="`Reject & blacklist ${engineLabel} for ${video.characters_present[0] || 'character'}`"
@@ -112,6 +139,14 @@
           Ban
         </button>
       </div>
+
+      <!-- Feedback panel (toggled) -->
+      <FeedbackPanel
+        v-if="showFeedback"
+        :shot-id="video.id"
+        @close="showFeedback = false"
+        @regenerated="$emit('regenerated', video)"
+      />
     </div>
   </div>
 </template>
@@ -120,6 +155,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import type { PendingVideo } from '@/types'
 import { scenesApi } from '@/api/scenes'
+import FeedbackPanel from './FeedbackPanel.vue'
 
 const props = defineProps<{
   video: PendingVideo
@@ -128,7 +164,10 @@ const props = defineProps<{
 
 const cardRef = ref<HTMLElement | null>(null)
 const isVisible = ref(false)
+const isPlayingAudio = ref(false)
+const showFeedback = ref(false)
 let observer: IntersectionObserver | null = null
+let audioElement: HTMLAudioElement | null = null
 
 onMounted(() => {
   const el = cardRef.value
@@ -145,7 +184,11 @@ onMounted(() => {
   observer.observe(el)
 })
 
-onUnmounted(() => observer?.disconnect())
+onUnmounted(() => {
+  observer?.disconnect()
+  audioElement?.pause()
+  audioElement = null
+})
 
 defineEmits<{
   (e: 'toggle-selection', id: string): void
@@ -153,6 +196,8 @@ defineEmits<{
   (e: 'reject', video: PendingVideo): void
   (e: 'reject-engine', video: PendingVideo): void
   (e: 'edit-shot', video: PendingVideo): void
+  (e: 'synthesize', video: PendingVideo): void
+  (e: 'regenerated', video: PendingVideo): void
 }>()
 
 const ENGINE_LABELS: Record<string, string> = {
@@ -183,6 +228,11 @@ const loraLabel = computed(() => {
 
 const videoUrl = computed(() => {
   return scenesApi.shotVideoUrl(props.video.scene_id, props.video.id)
+})
+
+const audioUrl = computed(() => {
+  if (!props.video.sfx_audio_path) return null
+  return scenesApi.shotAudioUrl(props.video.scene_id, props.video.id)
 })
 
 const qualityColor = computed(() => {
@@ -216,6 +266,34 @@ function handleMouseLeave(e: Event) {
   const vid = e.target as HTMLVideoElement
   vid.pause()
   vid.currentTime = 0
+}
+
+function toggleAudio() {
+  if (isPlayingAudio.value) {
+    audioElement?.pause()
+    isPlayingAudio.value = false
+    return
+  }
+  if (!audioUrl.value) return
+
+  // Play the mixed audio version (has video+voice+foley)
+  // Mute the preview video and sync with audio track
+  const videoEl = cardRef.value?.querySelector('video') as HTMLVideoElement | null
+
+  if (!audioElement) {
+    audioElement = new Audio(audioUrl.value)
+    audioElement.addEventListener('ended', () => { isPlayingAudio.value = false })
+  }
+
+  // Sync: mute original video, play audio version alongside
+  if (videoEl) {
+    videoEl.currentTime = 0
+    videoEl.muted = true
+    videoEl.play()
+  }
+  audioElement.currentTime = 0
+  audioElement.play()
+  isPlayingAudio.value = true
 }
 </script>
 
@@ -426,6 +504,14 @@ function handleMouseLeave(e: Event) {
 .btn-outline:hover {
   background: rgba(122, 162, 247, 0.15);
 }
+.btn-feedback {
+  background: rgba(245, 166, 35, 0.15);
+  color: #f5a623;
+  border: 1px solid #f5a623;
+}
+.btn-feedback:hover {
+  background: rgba(245, 166, 35, 0.3);
+}
 .btn-danger-outline {
   background: transparent;
   color: var(--status-error);
@@ -457,6 +543,66 @@ function handleMouseLeave(e: Event) {
   font-size: 9px;
   color: var(--text-muted);
   font-family: monospace;
+}
+
+.dialogue-row {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 4px;
+  font-size: 10px;
+  line-height: 1.3;
+}
+.dialogue-char {
+  color: var(--accent-primary);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.dialogue-text {
+  color: var(--text-secondary);
+  font-style: italic;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.audio-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.btn-audio {
+  background: rgba(80, 180, 120, 0.15);
+  color: var(--status-success);
+  border: 1px solid var(--status-success);
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.btn-audio:hover {
+  background: rgba(80, 180, 120, 0.3);
+}
+.audio-label {
+  font-size: 9px;
+  color: var(--text-muted);
+}
+.audio-missing .audio-label {
+  color: var(--status-warning, #e6a23c);
+}
+.btn-synth {
+  background: rgba(230, 162, 60, 0.15);
+  color: var(--status-warning, #e6a23c);
+  border: 1px solid var(--status-warning, #e6a23c);
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.btn-synth:hover {
+  background: rgba(230, 162, 60, 0.3);
 }
 
 .motion-prompt {

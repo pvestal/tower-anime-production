@@ -111,10 +111,12 @@ async def run_migrations():
                 END $$
             """)
 
-        # Shot dialogue columns
+        # Shot audio columns (voice + foley SFX)
         for col, coltype in [
             ("dialogue_text", "TEXT"),
             ("dialogue_character_slug", "VARCHAR(255)"),
+            ("sfx_audio_path", "TEXT"),
+            ("voice_audio_path", "TEXT"),
         ]:
             await conn.execute(f"""
                 DO $$ BEGIN
@@ -881,6 +883,40 @@ async def run_migrations():
             WHERE content_rating IS NULL OR content_rating = ''
         """)
 
+        # --- Trailers (style validation) ---
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS trailers (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                title VARCHAR(255) NOT NULL DEFAULT 'Style Test',
+                version INTEGER NOT NULL DEFAULT 1,
+                status VARCHAR(30) NOT NULL DEFAULT 'draft',
+                scene_id UUID REFERENCES scenes(id),
+                target_duration_seconds INTEGER DEFAULT 45,
+                actual_duration_seconds DOUBLE PRECISION,
+                final_video_path TEXT,
+                thumbnail_path TEXT,
+                checkpoint_model VARCHAR(255),
+                video_loras_tested JSONB DEFAULT '[]'::jsonb,
+                character_loras_tested JSONB DEFAULT '[]'::jsonb,
+                audio_tested BOOLEAN DEFAULT false,
+                review_notes TEXT,
+                approved_at TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_trailers_project ON trailers(project_id)")
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_trailers_status ON trailers(status)")
+
+        # trailer_role on shots
+        await conn.execute("""
+            DO $$ BEGIN
+                ALTER TABLE shots ADD COLUMN trailer_role VARCHAR(50);
+            EXCEPTION WHEN duplicate_column THEN NULL;
+            END $$
+        """)
+
         # --- Quality Loop: Shot Spec Enrichment ---
         for col, coltype in [
             ("pose_type", "VARCHAR(50)"),
@@ -902,7 +938,85 @@ async def run_migrations():
             END $$
         """)
 
+        # --- Motion Intensity Tracking (Phase 1) ---
+        for col, coltype in [
+            ("motion_tier", "VARCHAR(50)"),
+            ("gen_split_steps", "INTEGER"),
+            ("gen_lightx2v", "BOOLEAN"),
+            ("content_lora_high", "TEXT"),
+            ("content_lora_low", "TEXT"),
+        ]:
+            await conn.execute(f"""
+                DO $$ BEGIN
+                    ALTER TABLE shots ADD COLUMN {col} {coltype};
+                EXCEPTION WHEN duplicate_column THEN NULL;
+                END $$
+            """)
+
+        # --- LoRA Effectiveness Tracking (cross-project) ---
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS lora_effectiveness (
+                id SERIAL PRIMARY KEY,
+                lora_key VARCHAR(255) NOT NULL,
+                lora_name TEXT NOT NULL,
+                character_slug VARCHAR(255),
+                project_id INTEGER REFERENCES projects(id),
+                project_name VARCHAR(255),
+                content_rating VARCHAR(10),
+                sample_count INTEGER DEFAULT 0,
+                avg_quality FLOAT,
+                avg_motion_execution FLOAT,
+                avg_character_match FLOAT,
+                avg_reaction_score FLOAT,
+                avg_state_delta FLOAT,
+                avg_flow_magnitude FLOAT,
+                approval_rate FLOAT,
+                best_motion_tier VARCHAR(50),
+                best_lora_strength FLOAT,
+                best_cfg FLOAT,
+                best_steps INTEGER,
+                layout VARCHAR(20),
+                issues_histogram JSONB DEFAULT '{}',
+                last_updated TIMESTAMPTZ DEFAULT NOW()
+            )
+        """)
+        await conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_lora_eff_unique "
+            "ON lora_effectiveness(lora_key, COALESCE(character_slug, ''), COALESCE(project_id, 0))"
+        )
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_lora_eff_char ON lora_effectiveness(character_slug)"
+        )
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_lora_eff_project ON lora_effectiveness(project_id)"
+        )
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_lora_eff_quality ON lora_effectiveness(avg_quality DESC NULLS LAST)"
+        )
+
+        # --- Shot Feedback (Interactive Feedback Loop) ---
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS shot_feedback (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                shot_id UUID REFERENCES shots(id) ON DELETE CASCADE,
+                rating INT CHECK (rating BETWEEN 1 AND 5),
+                feedback_text TEXT,
+                feedback_categories TEXT[],
+                questions JSONB DEFAULT '[]',
+                answers JSONB DEFAULT '[]',
+                actions_taken JSONB DEFAULT '[]',
+                echo_context TEXT,
+                previous_params JSONB,
+                new_params JSONB,
+                feedback_round INT DEFAULT 1,
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """)
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_shot_feedback_shot_id ON shot_feedback(shot_id)"
+        )
+
         await conn.close()
-        logger.info("Schema migrations completed successfully (incl. Phase 1 autonomy + NSM + multi-user + quality loop tables)")
+        logger.info("Schema migrations completed successfully (incl. Phase 1 autonomy + NSM + multi-user + quality loop + feedback tables)")
     except Exception as e:
         logger.warning(f"Schema migration failed (non-fatal): {e}")

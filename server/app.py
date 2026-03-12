@@ -54,6 +54,8 @@ from packages.core.admin_routes import router as admin_router
 from packages.core.share_routes import router as share_router
 from packages.narrative_state import narrative_router
 from packages.interactive import interactive_router
+from packages.trailer.router import router as trailer_router
+from packages.scene_generation.feedback_router import router as feedback_router
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -96,6 +98,12 @@ app.include_router(narrative_router, prefix="/api/narrative", tags=["narrative"]
 # Interactive Visual Novel:
 app.include_router(interactive_router, prefix="/api/interactive", tags=["interactive"])  # /api/interactive/*
 
+# Trailer-first style validation:
+app.include_router(trailer_router, prefix="/api", tags=["trailers"])  # /api/trailers/*
+
+# Interactive feedback loop (video review):
+app.include_router(feedback_router, prefix="/api", tags=["feedback"])  # /api/feedback/*
+
 # Prompt testing harness:
 app.include_router(testing_router, prefix="/api/testing", tags=["testing"])  # /api/testing/*
 
@@ -134,6 +142,10 @@ async def startup():
     # Recover any shots stuck in 'generating' from before this restart
     from packages.scene_generation.builder import recover_interrupted_generations
     await recover_interrupted_generations()
+
+    # Load adaptive motion tier cache from QC history
+    from packages.scene_generation.motion_intensity import load_adaptive_cache
+    await load_adaptive_cache()
 
     # Start interactive session cleanup loop
     from packages.interactive.session_store import store as interactive_store
