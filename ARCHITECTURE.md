@@ -1,11 +1,11 @@
-# Anime Studio v0.4.1 Architecture
+# Anime Studio v0.5.0 Architecture
 
 ## System Overview
 
 ```mermaid
 graph TB
     subgraph Browser
-        UI[Vue 3 Frontend<br/>6 tabs + Echo Brain panel]
+        UI[Vue 3 Frontend<br/>6 tabs + Echo Brain panel<br/>+ Feedback Panel]
     end
 
     subgraph "Anime Studio (port 8401)"
@@ -15,7 +15,7 @@ graph TB
             CORE[core/<br/>DB, auth, config, GPU,<br/>model profiles]
             STORY[story/<br/>15 routes]
             VIS[visual_pipeline/<br/>5 routes]
-            SCENE[scene_generation/<br/>23 routes]
+            SCENE[scene_generation/<br/>31 routes<br/>+ feedback + effectiveness]
             EPISODE[episode_assembly/<br/>10 routes]
             TRAIN[lora_training/<br/>32 routes]
             AUDIO[audio_composition/<br/>8 routes]
@@ -30,6 +30,14 @@ graph TB
         APP --> TRAIN
         APP --> AUDIO
         APP --> ECHO_PKG
+
+        subgraph "packages/ (continued)"
+            VOICE[voice_pipeline/<br/>F5-TTS + edge-tts<br/>SFX mapping]
+            TRAILER[trailer/<br/>test matrix trailers]
+        end
+
+        APP --> VOICE
+        APP --> TRAILER
     end
 
     subgraph "External Services"
@@ -93,12 +101,19 @@ packages/
     vision.py         # Image quality assessment, species verification, perceptual hash
     comfyui.py        # Workflow building, submission, progress tracking
 
-  scene_generation/   # 23 routes
+  scene_generation/   # 31 routes
     router.py         # Scene/shot CRUD, generate, assemble, video serve, motion presets, story-to-scenes, music, Wan endpoints
+    feedback_router.py # 8 routes: feedback review/answer/history + effectiveness refresh/character/top/lora/params
+    feedback_loop.py  # Interactive feedback: question generator, action executor, Echo Brain integration, LoRA alternatives
+    lora_effectiveness.py # Cross-project LoRA effectiveness: aggregation from QC data, query functions, recommended params
+    action_reaction_qc.py # Dual-character action-reaction scoring: optical flow + gemma3:12b frame-pair vision comparison
+    scene_vision_qc.py # Vision QC orchestrator: frame extraction, scoring, action-reaction integration, issue detection
+    motion_intensity.py # Dynamic motion tiers (low/med/high/extreme), adaptive tuning, counter-motion lookup
+    video_config.py   # Video generation configuration helpers
     builder.py        # Progressive-gate generation, crossfade assembly, intra-scene + cross-scene continuity chaining, audio ducking, frame interpolation, video upscaling
     framepack.py      # FramePack workflow building, I2V pipeline, motion presets
     ltx_video.py      # LTX-Video 2B workflow building, native LoRA support
-    wan_video.py      # Wan 2.1 T2V workflow, GGUF support, environment/establishing shots
+    wan_video.py      # Wan 2.2 14B I2V + Wan 2.1 T2V workflow, GGUF support, environment/establishing shots
     framepack_refine.py # FramePack vid2vid refinement for Wan output (V2V: Wan 480p → FramePack 544x704, optional HunyuanVideo LoRA)
     engine_selector.py # Auto engine selection: shot type + LoRA availability + blacklist → wan/ltx/framepack
     shot_spec.py      # AI shot enrichment: pose/camera/emotion via Ollama gemma3:12b
@@ -107,10 +122,11 @@ packages/
     scene_review.py   # Shot review + engine blacklist management
     scene_audio.py    # Dialogue synthesis, music mixing, audio ducking
     scene_video_utils.py # Crossfade concat, frame interpolation, upscaling
+    scene_source_assign.py # Source image assignment for shots
     composite_image.py # Simple keyframe generation (txt2img + LoRA) + composite source (IP-Adapter regional)
     scene_comparison.py # Multi-engine video comparison
     video_qc.py       # QC loop with vision review, prompt refinement, progressive gates
-    video_vision.py   # Video frame quality assessment via Ollama
+    video_vision.py   # Video frame quality assessment via Ollama (5 categories: motion, character, style, technical, composition)
     story_to_scenes.py # AI scene breakdown from storyline (Ollama gemma3:12b), episode-scoped prompts
     image_recommender.py # Approved image scoring for auto source-image assignment
 
@@ -128,8 +144,21 @@ packages/
   audio_composition/  # 8 routes
     router.py         # Voice ingestion, transcription, ACE-Step music generation, music cache
 
+  voice_pipeline/     # 12 routes
+    router.py         # Voice synthesis, SFX, F5-TTS cloning, scene rehearsal, dialogue management
+    synthesis.py      # TTS engine selection: F5-TTS (cloned) > edge-tts (38+ voices)
+    sfx_mapper.py     # SFX auto-assignment from LoRA + scene context (config/sfx_mapping.yaml)
+
+  trailer/            # 8 routes
+    router.py         # Trailer CRUD, keyframe/video generation, assembly, approval
+    generator.py      # Trailer shot generation from LoRA catalog
+    assembler.py      # ffmpeg trailer assembly with transitions
+
   echo_integration/   # 4 routes
     router.py         # Echo Brain chat, prompt enhancement
+
+  jobs/
+    assign_loras_and_prompts.py  # LoRA + motion prompt assignment (keyword rules + effectiveness-based fallback)
 ```
 
 ## Database Schema (Key Tables)
@@ -221,13 +250,60 @@ erDiagram
         bool use_f1
         float generation_time_seconds
         float quality_score
+        string review_status "pending_review|approved|rejected"
+        jsonb qc_category_averages "motion_execution, character_match, style_match, technical_quality, composition"
+        text_arr qc_issues "frozen_motion, wrong_character, reaction_absent, etc."
+        jsonb qc_per_frame "per-frame scores + action-reaction data"
         text dialogue_text
         string dialogue_character_slug
         string transition_type
         float transition_duration
-        string video_engine "framepack|framepack_f1|ltx|wan"
-        string lora_name "auto-set by engine selector"
+        string video_engine "wan22_14b|framepack|ltx|wan"
+        string lora_name "auto-set by engine selector or effectiveness"
         float lora_strength "default 0.8"
+        string content_lora_high "HIGH variant path"
+        string content_lora_low "LOW variant path"
+        string motion_tier "low|medium|high|extreme"
+        int gen_split_steps "motion tier steps"
+        bool gen_lightx2v "motion tier lightx2v flag"
+    }
+
+    shots ||--o{ shot_feedback : "has feedback"
+
+    shot_feedback {
+        uuid id PK
+        uuid shot_id FK
+        int rating "1-5"
+        text feedback_text
+        text_arr feedback_categories "motion, character, composition, lighting, interaction"
+        jsonb questions "diagnostic questions with action-mapped options"
+        jsonb answers "user selections"
+        jsonb actions_taken "executed corrective actions"
+        string echo_context "Echo Brain context at time of feedback"
+        jsonb previous_params "snapshot before action"
+        jsonb new_params "snapshot after action"
+        int feedback_round "iteration count"
+        timestamp created_at
+    }
+
+    lora_effectiveness {
+        int id PK
+        string lora_key "extracted from filename"
+        text lora_name "full path"
+        string character_slug "NULL for global"
+        int project_id FK "NULL for cross-project"
+        string project_name
+        string content_rating
+        int sample_count "min 2 for recommendations"
+        float avg_quality "0-1 scale"
+        float avg_motion_execution "0-10"
+        float avg_character_match "0-10"
+        float avg_reaction_score "0-10"
+        float avg_state_delta "0-10"
+        float approval_rate "0-1"
+        string best_motion_tier "from highest-scoring shot"
+        float best_lora_strength
+        jsonb issues_histogram "issue counts"
     }
 
     episodes {
@@ -555,7 +631,7 @@ graph TD
     SCRIPT --> SCRIPT_SUB[3-column layout:<br/>SceneSidebar 260px<br/>StoryboardGrid flex<br/>ShotInspectorPanel 360px]
     PRODUCE --> PRODUCE_SUB[3 sub-tabs:<br/>Status — ProductionStatusTab<br/>Training — TrainingTab<br/>Analytics — AnalyticsTab]
     PRODUCE_SUB --> STATUS[ProductionStatusTab<br/>GPU status, active jobs,<br/>per-project pipeline cards,<br/>model lineage warnings]
-    REVIEW --> PEND_SUB[pending/<br/>ImageApprovalModal<br/>ImageCard, PendingFilters<br/>ProjectCharacterGrid]
+    REVIEW --> PEND_SUB[pending/<br/>ImageApprovalModal<br/>ImageCard, PendingFilters<br/>ProjectCharacterGrid<br/>VideoCard + FeedbackPanel]
     PUBLISH --> PUB_SUB[2 sub-tabs:<br/>Episodes — EpisodeView<br/>Library — PublishedLibrary]
 
     REVIEW --> IDP[ImageDetailPanel]
@@ -565,17 +641,21 @@ graph TD
 
 | Package | Prefix | Routes | Key Files |
 |---------|--------|--------|-----------|
-| story | `/projects`, `/storyline`, `/world-settings`, `/generation-styles` | 15 | router.py |
+| story | `/projects`, `/storyline`, `/world-settings`, `/generation-styles` | 18 | router.py, story_characters.py |
 | visual_pipeline | `/approval/vision-review` | 5 | router.py, classification.py, vision.py, comfyui.py |
-| scene_generation | `/scenes`, `/scenes/motion-presets`, `/scenes/generate-from-story`, `/scenes/{id}/generate-music`, `/scenes/{id}/attach-music`, `/generate/wan`, `/generate/wan/models`, `/continuity-frames` | 25 | router.py, builder.py, framepack.py, ltx_video.py, wan_video.py, story_to_scenes.py, scene_crud.py |
+| scene_generation | `/scenes`, `/scenes/motion-presets`, `/scenes/generate-from-story`, `/generate/wan` | 25 | router.py, builder.py, framepack.py, wan_video.py, scene_crud.py |
+| scene_generation (feedback) | `/feedback/review`, `/feedback/answer`, `/feedback/history/{id}`, `/feedback/effectiveness/*` | 8 | feedback_router.py, feedback_loop.py, lora_effectiveness.py |
+| scene_generation (QC) | (internal — called during generation) | — | scene_vision_qc.py, action_reaction_qc.py, video_vision.py, video_qc.py |
 | episode_assembly | `/episodes`, `/episodes/{id}/scenes`, `/episodes/{id}/assemble`, `/episodes/{id}/publish` | 10 | router.py, builder.py, publish.py |
 | lora_training | `/dataset`, `/approval`, `/training`, `/gallery`, `/ingest`, `/feedback` | 32 | router.py, training_router.py, ingest_router.py, feedback.py |
-| audio_composition | `/audio`, `/audio/ingest/voice`, `/audio/voice/*`, `/audio/generate-music`, `/audio/music/*` | 8 | router.py |
+| voice_pipeline | `/voice/synthesize`, `/voice/sfx`, `/voice/rehearsal`, `/voice/dialogue` | 12 | router.py, synthesis.py, sfx_mapper.py |
+| audio_composition | `/audio`, `/audio/ingest/voice`, `/audio/generate-music`, `/audio/music/*` | 8 | router.py |
+| trailer | `/trailers/create`, `/trailers/generate-keyframes`, `/trailers/generate-videos`, `/trailers/assemble`, `/trailers/approve` | 8 | router.py, generator.py, assembler.py |
 | echo_integration | `/echo` | 4 | router.py |
-| core (orchestrator) | `/orchestrator/status`, `/orchestrator/toggle`, `/orchestrator/initialize`, `/orchestrator/pipeline/{id}`, `/orchestrator/summary/{id}`, `/orchestrator/tick`, `/orchestrator/override`, `/orchestrator/training-target` | 8 | orchestrator.py, orchestrator_router.py |
-| core (graph) | `/graph/sync`, `/graph/stats`, `/graph/lineage/*`, `/graph/co-occurrence/*`, `/graph/drift/*`, `/graph/ranking/*`, `/graph/health`, `/graph/feedback/*`, `/graph/cross-project/*` | 11 | graph_sync.py, graph_queries.py, graph_router.py |
-| app.py | `/health`, `/gpu/status`, `/events/stats`, `/learning/*`, `/recommend/*`, `/drift`, `/quality/*`, `/correction/*`, `/replenishment/*` | 14 | — |
-| **Total** | | **150+** | |
+| core (orchestrator) | `/orchestrator/status`, `/orchestrator/toggle`, `/orchestrator/tick`, `/orchestrator/override` | 8 | orchestrator.py, orchestrator_router.py |
+| core (graph) | `/graph/sync`, `/graph/stats`, `/graph/lineage/*`, `/graph/co-occurrence/*` | 11 | graph_sync.py, graph_queries.py, graph_router.py |
+| app.py | `/health`, `/gpu/status`, `/events/stats`, `/learning/*`, `/recommend/*` | 14 | — |
+| **Total** | | **170+** | |
 
 ## Hardware
 
@@ -874,6 +954,64 @@ sequenceDiagram
 
 Pose vocabulary per shot type (close-up, medium, wide, establishing, action, extreme_close) with anti-repetition filtering. Emotion-camera mapping (tension→dutch-angle, vulnerability→high-angle, etc.). Ollama gemma3:12b generates enriched prompts in ~3s on AMD RX 9070 XT (Vulkan).
 
+## Video QC + Interactive Feedback Loop
+
+```mermaid
+graph TD
+    subgraph "Vision QC (scene_vision_qc.py)"
+        VID[Completed Video] --> FRAMES[Extract 3 frames]
+        FRAMES --> VISION[review_video_frames<br/>Gemma3:12b on AMD GPU<br/>5 categories × 1-10 score]
+        VISION --> SCORES[motion_execution<br/>character_match<br/>style_match<br/>technical_quality<br/>composition]
+    end
+
+    subgraph "Action-Reaction QC (action_reaction_qc.py)"
+        VID --> LORA_CHECK{LoRA has<br/>counter_motion?}
+        LORA_CHECK -->|Yes| FLOW[Optical Flow Analysis<br/>cv2.calcOpticalFlowFarneback<br/>CPU only, layout-aware]
+        LORA_CHECK -->|No| SKIP[Skip AR scoring]
+        FLOW --> REGIONS[Split by layout<br/>top/bottom or left/right<br/>actor vs reactor regions]
+        REGIONS --> FLOW_SCORES[flow_magnitude per region<br/>both_active boolean]
+
+        VID --> PAIR_VISION[Frame-Pair Vision<br/>early + late frames<br/>Gemma3:12b comparison]
+        PAIR_VISION --> AR_SCORES[action_initiation<br/>reaction_presence<br/>state_delta<br/>temporal_coherence]
+
+        FLOW_SCORES --> COMPOSITE[Composite Score<br/>hard gate: if flow frozen<br/>cap state_delta at 3]
+        AR_SCORES --> COMPOSITE
+    end
+
+    subgraph "Score Integration"
+        SCORES --> MERGE[Merge into<br/>qc_category_averages]
+        COMPOSITE --> MERGE
+        MERGE --> ISSUES[Issue Detection<br/>frozen_motion, wrong_character<br/>reaction_absent, weak_reaction<br/>frozen_interaction]
+        ISSUES --> PENALTY[Quality Score Penalties<br/>reaction_absent: -30%<br/>weak_reaction: -15%]
+        PENALTY --> DB_STORE[(shots table<br/>quality_score<br/>review_status<br/>qc_category_averages<br/>qc_issues)]
+    end
+
+    subgraph "Interactive Feedback (feedback_loop.py)"
+        DB_STORE --> REVIEW_UI[User reviews video<br/>FeedbackPanel.vue]
+        REVIEW_UI --> RATE[Rate 1-5 stars<br/>+ category chips<br/>+ free text]
+        RATE --> SUBMIT[POST /api/feedback/review]
+        SUBMIT --> ECHO[Query Echo Brain<br/>+ learned_patterns<br/>for context]
+        ECHO --> QUESTIONS[Generate diagnostic questions<br/>rule-based decision tree<br/>action-mapped options]
+        QUESTIONS --> ANSWER[User picks option]
+        ANSWER --> EXECUTE[Execute action:<br/>bump_tier, swap_lora,<br/>adjust_cfg, new_seed,<br/>edit_prompt, etc.]
+        EXECUTE --> RESET[Reset shot to pending<br/>→ orchestrator regenerates]
+        EXECUTE --> STORE_FB[Store in shot_feedback<br/>+ Echo Brain memory<br/>+ learned_patterns]
+    end
+
+    subgraph "LoRA Effectiveness (lora_effectiveness.py)"
+        DB_STORE --> AGGREGATE[refresh_effectiveness<br/>aggregate QC scores<br/>grouped by LoRA × char × project]
+        AGGREGATE --> EFF_TABLE[(lora_effectiveness table<br/>avg_quality, approval_rate<br/>best_motion_tier, best_strength<br/>issues_histogram)]
+        EFF_TABLE --> REC[Recommendations:<br/>best LoRA for character<br/>recommended params<br/>cross-project rankings]
+        REC --> QUESTIONS
+        REC --> ASSIGN[assign_loras_and_prompts.py<br/>effectiveness-based fallback]
+    end
+
+    style VISION fill:#69f,stroke:#36c
+    style FLOW fill:#f96,stroke:#c60
+    style EXECUTE fill:#6c6,stroke:#393
+    style EFF_TABLE fill:#c9f,stroke:#93c
+```
+
 ## Quality Loop (CLIP Scoring)
 
 Post-generation quality assessment via Echo Brain CLIP endpoint:
@@ -920,4 +1058,12 @@ Post-generation quality assessment via Echo Brain CLIP endpoint:
 - **Motion presets**: Curated per shot type, served via API so frontend stays in sync without hardcoding
 - **Model lineage tracking**: dataset-stats API returns `model_breakdown` per character (which checkpoint generated each approved image), `dominant_model`, and `is_mixed_models` flag. LoRA listing includes `checkpoint`, `final_loss`, `trained_epochs`. Frontend surfaces mixed-model warnings and LoRA/image model mismatches
 - **Character archiving**: `archived` boolean column on characters table, filtered from `get_char_project_map()` core query. Archive/unarchive via API without deleting data
+- **Interactive feedback loop**: Rate shots → system generates diagnostic questions based on QC scores + Echo Brain context → user picks corrective action (bump tier, swap LoRA, adjust cfg, new seed, etc.) → shot resets to pending for regeneration → feedback stored for future learning
+- **Cross-project LoRA effectiveness**: `lora_effectiveness` table aggregates QC scores from shots grouped by LoRA key × character × project. `refresh_effectiveness()` computes avg quality, approval rate, best params. Used by feedback loop for alternative suggestions and by `assign_loras_and_prompts.py` as a fallback before keyword matching
+- **Action-reaction QC**: Dual-character shots scored via optical flow (CPU, cv2.calcOpticalFlowFarneback) + frame-pair vision comparison (gemma3:12b). Layout-aware: LoRA catalog defines `layout` (top_bottom|halves) and `roles` (actor/reactor regions). Hard gate: if flow says both regions frozen, cap vision state_delta at 3
+- **Dynamic motion tiers**: low/medium/high/extreme with per-tier steps, cfg, strength, lightx2v settings. Adaptive tuning: QC scores < 3.0 → auto-bump tier, > 7.0 → auto-drop tier. `motion_intensity.py` manages tier params + counter-motion lookup
+- **Video QC 5 categories**: motion_execution, character_match, style_match, technical_quality, composition — each scored 1-10 by gemma3:12b. Issues detected: frozen_motion, wrong_character, reaction_absent, weak_reaction, frozen_interaction
+- **Trailer-first validation**: Generate 30-60s trailers before full production to validate style/LoRAs. Orchestrator blocks until an approved trailer exists for the project
+- **Voice pipeline**: F5-TTS for cloned voices (Patrick, 6 samples), edge-tts for 38+ character voices. Per-shot SHOT_GENERATED event triggers SFX + voice synthesis. SFX auto-mapped from LoRA name via `config/sfx_mapping.yaml`
+- **Orchestrator watchdog**: ComfyUI queue pre-check skips keyframes if busy. Escalation: 30min warn, 60min reset+Telegram notification, 120min auto-pause project
 - **FastAPI route ordering**: Static paths (`/scenes/motion-presets`, `/scenes/generate-from-story`) must be registered BEFORE dynamic `{scene_id}` routes

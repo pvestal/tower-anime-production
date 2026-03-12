@@ -2,7 +2,7 @@
 
 ## Master Data Flow
 
-Three content streams flow through the system: **Text** (story/dialogue), **Image** (character art), and **Video** (animated clips). Each stream has its own generation pipeline, but they converge at the **Shot** level — the atomic unit of production.
+Five content streams flow through the system: **Text** (story/dialogue), **Image** (character art), **Video** (animated clips), **Voice** (TTS dialogue + SFX), and **Audio** (music). Each stream has its own generation pipeline, but they converge at the **Shot** level — the atomic unit of production. A **QC + Feedback** loop scores generated videos and enables interactive corrective action.
 
 ```mermaid
 graph TB
@@ -109,6 +109,25 @@ graph TB
         EPISODES --> TIMELINE["Timeline States<br/>character_timeline_states<br/>personality_shifts,<br/>trauma_events, skills"]
     end
 
+    subgraph "QC + FEEDBACK LOOP"
+        SHOT_VIDEO --> VIS_QC["Vision QC<br/>scene_vision_qc.py<br/>3 frames → gemma3:12b<br/>5 categories × 1-10"]
+        VIS_QC --> AR_QC{"Has counter_motion?"}
+        AR_QC -->|Yes| AR_SCORE["Action-Reaction QC<br/>optical flow + frame-pair<br/>actor/reactor regions"]
+        AR_QC -->|No| QC_STORE
+        AR_SCORE --> QC_STORE["Store QC Data<br/>qc_category_averages<br/>qc_issues, quality_score"]
+
+        QC_STORE --> FB_PANEL["FeedbackPanel.vue<br/>rate 1-5 + categories"]
+        FB_PANEL --> FB_SUBMIT["POST /api/feedback/review<br/>+ Echo Brain context<br/>+ learned patterns"]
+        FB_SUBMIT --> FB_Q["Diagnostic Questions<br/>action-mapped options"]
+        FB_Q --> FB_ANSWER["User picks action"]
+        FB_ANSWER --> FB_EXEC["Execute: bump_tier,<br/>swap_lora, adjust_cfg,<br/>new_seed, edit_prompt"]
+        FB_EXEC -->|"reset to pending"| ENGINE
+
+        QC_STORE --> EFF_AGG["Effectiveness Aggregation<br/>lora_effectiveness table<br/>avg quality per LoRA×char×project"]
+        EFF_AGG -->|"best LoRA for char"| FB_Q
+        EFF_AGG -->|"recommended params"| ENGINE
+    end
+
     style SHOTS_TEXT fill:#ff9,stroke:#c90
     style SHOT_IMG fill:#9cf,stroke:#369
     style SHOT_VIDEO fill:#9f9,stroke:#393
@@ -116,6 +135,9 @@ graph TB
     style EPISODE_VIDEO fill:#c9f,stroke:#93c
     style APPROVED fill:#6f6,stroke:#393
     style REJECTED fill:#f66,stroke:#c33
+    style VIS_QC fill:#69f,stroke:#36c
+    style FB_EXEC fill:#f96,stroke:#c60
+    style EFF_AGG fill:#c9f,stroke:#93c
 ```
 
 ## Pipeline Stage Detail
@@ -200,7 +222,7 @@ graph TB
 
 ---
 
-## Current State (2026-02-28)
+## Current State (2026-03-12)
 
 ### What's Connected and Working
 
@@ -208,12 +230,16 @@ graph TB
 graph LR
     subgraph "WORKING ✅"
         A[Story → Scenes → Shots] --> B[Engine Selection]
-        B --> C[Wan T2V Generation]
-        B --> D[FramePack I2V Generation]
+        B --> C[Wan 2.2 14B I2V]
+        B --> D[FramePack I2V]
         C --> E[V2V Refinement]
         E --> F[Post-Processing]
         D --> F
         F --> G[Shot Videos]
+
+        G --> QC[Vision QC<br/>5 categories + AR scoring]
+        QC --> FB[Interactive Feedback Loop<br/>questions → actions → regen]
+        QC --> EFF[LoRA Effectiveness<br/>cross-project tracking]
 
         H[Image Generation] --> I[Vision Review]
         I --> J[Auto-Approve/Reject]
@@ -223,10 +249,19 @@ graph LR
         L[Dialogue Generation] --> M[Screenplay View]
         M --> N[Inline Editing]
 
-        O[Voice Synthesis] --> P[edge-tts fallback]
+        O[Voice Synthesis] --> P[F5-TTS + edge-tts<br/>per-shot auto-trigger]
+        P --> SFX[SFX Auto-Assignment<br/>from LoRA context]
 
         Q[Episode Assembly] --> R[Crossfade Transitions]
         R --> S[Jellyfin Publish]
+
+        T[Trailer System] --> U[Test Matrix Validation]
+        U --> V[Style/LoRA Approval]
+
+        W[Orchestrator] --> X[Watchdog + Auto-Pause]
+        W --> Y[Dynamic Motion Tiers]
+
+        Z[LoRA Assignment] --> EFF
     end
 ```
 
@@ -235,17 +270,11 @@ graph LR
 ```mermaid
 graph LR
     subgraph "DISCONNECTED ⚠️"
-        A["Scene Audio Mixing<br/>(scene_audio.py)"] -.->|"not called<br/>during generation"| B["Shot Videos"]
-
-        C["Continuity Frames<br/>(character_continuity_frames)"] -.->|"stored but<br/>not queried"| D["Source Image Selection"]
-
         E["Character Scene State<br/>(clothing, injuries)"] -.->|"tracked but<br/>not injected<br/>into prompts"| F["Video Prompt"]
 
-        G["ACE-Step Music<br/>(port 8440)"] -.->|"endpoint exists<br/>but not auto-called<br/>during assembly"| H["Episode Assembly"]
-
-        I["RVC/SoVITS Voice<br/>(trained models)"] -.->|"training works<br/>but synthesis<br/>not auto-triggered"| J["Shot Dialogue Audio"]
-
         K["Timeline States<br/>(personality_shifts)"] -.->|"schema exists<br/>but never<br/>populated"| L["Scene Generation Prompt"]
+
+        M["Apple Music<br/>integration"] -.->|"UI built<br/>auth incomplete"| N["Music Selection"]
     end
 ```
 
@@ -254,14 +283,40 @@ graph LR
 ```mermaid
 graph LR
     subgraph "MISSING ❌"
-        A["Auto-dialogue<br/>regeneration endpoint<br/>(only at scene creation)"]
-        B["Shot → Voice → Video<br/>auto-pipeline<br/>(manual steps required)"]
         C["Apple Music auth<br/>(UI built, backend incomplete)"]
         D["Quality gate before<br/>episode assembly<br/>(no min quality check)"]
-        E["Cross-character<br/>spatial positioning<br/>(left/center/right)"]
-        F["Auto-music selection<br/>based on scene mood<br/>(ACE-Step not auto-triggered)"]
+        G["Per-project catalog overrides<br/>(LoRA layout expectations<br/>vary by content type)"]
+        H["Unified catalog cache<br/>(4 independent YAML loaders)"]
     end
 ```
+
+### Stage 7: Video QC + Feedback (QC)
+
+| Step | Endpoint / Function | File | Input | Output |
+|------|---------------------|------|-------|--------|
+| Vision QC | `_run_vision_qc()` (internal) | scene_vision_qc.py | 3 extracted frames + motion prompt | 5 category scores (1-10) + issues list |
+| Action-Reaction QC | `score_action_reaction()` (internal) | action_reaction_qc.py | video + LoRA metadata (layout, counter_motion) | flow magnitude, both_active, reaction/state_delta scores |
+| Submit feedback | `POST /api/feedback/review` | feedback_router.py | shot_id, rating 1-5, categories, text | diagnostic questions with action-mapped options |
+| Answer question | `POST /api/feedback/answer` | feedback_router.py | feedback_id, question_id, selected_option | action executed, shot reset to pending |
+| Refresh effectiveness | `POST /api/feedback/effectiveness/refresh` | feedback_router.py | optional project_id | aggregated lora_effectiveness rows |
+| Best LoRAs for char | `GET /api/feedback/effectiveness/character/{slug}` | feedback_router.py | character slug, optional rating/project | ranked LoRAs with avg quality, approval rate |
+| Top LoRAs overall | `GET /api/feedback/effectiveness/top` | feedback_router.py | min_samples, content_rating | cross-project LoRA rankings |
+| LoRA summary | `GET /api/feedback/effectiveness/lora/{key}` | feedback_router.py | lora_key | per-project/character breakdown |
+| Recommended params | `GET /api/feedback/effectiveness/params/{key}` | feedback_router.py | lora_key, optional character | best motion_tier, strength, cfg, steps |
+
+**QC Categories:** motion_execution, character_match, style_match, technical_quality, composition
+**Issues Detected:** frozen_motion, wrong_character, wrong_action, blurry, color_shift, text_watermark, reaction_absent, frozen_interaction, weak_reaction
+**Action-Reaction Layout:** LoRA catalog `layout` field (top_bottom or halves) determines actor/reactor optical flow regions
+
+**Feedback Action Types:**
+- `bump_tier` / `drop_tier` — change motion tier (adjusts steps, cfg, lightx2v)
+- `swap_lora` — replace LoRA with alternative (effectiveness-ranked)
+- `adjust_strength` — increase/decrease LoRA strength
+- `adjust_cfg` — change guidance scale
+- `new_seed` — retry with random seed
+- `edit_prompt` / `edit_motion` — modify generation/motion prompt
+- `change_camera` — switch camera angle
+- `blacklist_engine` — ban engine for this character, switch to alternative
 
 ---
 
@@ -341,21 +396,18 @@ POST /api/projects/{id}/produce-episode?episode_number=1
 
 ---
 
-## Database Statistics (2026-02-28)
+## Database Statistics (2026-03-12)
 
 | Entity | Count | Notes |
 |--------|-------|-------|
-| Projects | 5 | TDD, Mario, GS, Echo Chamber, Fury |
-| Episodes | 35 | 6 without scenes |
-| Scenes | 127 | 24 without shots |
-| Shots | 353 | 175 with dialogue (49.6%) |
-| Characters | 36 | across all projects |
-| Approved Images | 1,289 | auto + manual approval |
-| Voice Samples | 77 | all approved |
-| Voice Synthesis Jobs | 63 | 55 completed, 8 stale |
-| Continuity Frames | 3 | TDD only |
-| Generation History | 3,150+ | all image attempts |
-| DB Tables | 105 | includes Apache AGE graph |
+| Projects | 10 | TDD, Mario, CGS, Echo Chamber, Fury, Small Wonders, Rosa, Mira, Scramble City, LSR |
+| Episodes | 44 | |
+| Scenes | 240 | |
+| Shots | 1,265 | 659 with dialogue (52%) |
+| Characters | 66 | across all projects |
+| LoRA Effectiveness | 71 | cross-project aggregated rows |
+| Shot Feedback | 4 | interactive feedback rounds |
+| DB Tables | 107 | includes Apache AGE graph |
 
 ## File Reference
 
@@ -366,13 +418,22 @@ POST /api/projects/{id}/produce-episode?episode_number=1
 | Engine selection | `packages/scene_generation/engine_selector.py` |
 | FramePack I2V | `packages/scene_generation/framepack.py` |
 | FramePack V2V | `packages/scene_generation/framepack_refine.py` |
-| Wan T2V | `packages/scene_generation/wan_video.py` |
+| Wan 2.2 14B I2V | `packages/scene_generation/wan_video.py` |
 | LTX-Video | `packages/scene_generation/ltx_video.py` |
 | Post-processing | `packages/scene_generation/video_postprocess.py` |
-| Voice synthesis | `packages/voice_pipeline/synthesis.py`, `cloning.py` |
+| Vision QC | `packages/scene_generation/scene_vision_qc.py`, `video_vision.py`, `video_qc.py` |
+| Action-Reaction QC | `packages/scene_generation/action_reaction_qc.py` |
+| Feedback loop | `packages/scene_generation/feedback_loop.py`, `feedback_router.py` |
+| LoRA effectiveness | `packages/scene_generation/lora_effectiveness.py` |
+| Motion tiers | `packages/scene_generation/motion_intensity.py` |
+| LoRA assignment | `jobs/assign_loras_and_prompts.py` |
+| LoRA catalog | `config/lora_catalog.yaml` (64+ video pairs, layout/roles/counter_motion) |
+| Voice synthesis | `packages/voice_pipeline/synthesis.py`, `router.py` |
+| SFX mapping | `config/sfx_mapping.yaml`, `packages/voice_pipeline/sfx_mapper.py` |
 | Audio composition | `packages/audio_composition/router.py`, `scene_generation/scene_audio.py` |
+| Trailer system | `packages/trailer/generator.py`, `assembler.py`, `router.py` |
 | Episode assembly | `packages/episode_assembly/builder.py`, `publish.py` |
-| Orchestrator | `packages/core/orchestrator.py`, `orchestrator_router.py` |
+| Orchestrator | `packages/core/orchestrator.py`, `orchestrator_router.py`, `orchestrator_gates.py`, `orchestrator_work.py` |
 | Model profiles | `packages/core/model_profiles.py` |
 | Continuity | `builder.py` (character_continuity_frames), narrative_state package |
-| Frontend | `frontend/src/components/` — 6 tabs: Story, Cast, Script, Produce, Review, Publish |
+| Frontend | `frontend/components/` — 6 tabs + FeedbackPanel, feedback store |
