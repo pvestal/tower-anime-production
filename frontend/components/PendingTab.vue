@@ -259,6 +259,7 @@
       @open-detail="detailImage = $event"
       @approve="openApprovalEditor($event, 'approve')"
       @reject="openApprovalEditor($event, 'reject')"
+      @quick-reject="quickReject"
       @reassign="openReassign"
       @copy-seed="copySeed"
       @toggle-char-expand="toggleCharacterExpand"
@@ -300,12 +301,14 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { storeToRefs } from 'pinia'
 import { useApprovalStore } from '@/stores/approval'
 import { useCharactersStore } from '@/stores/characters'
 import { useAuthStore } from '@/stores/auth'
+import { usePendingUIStore } from '@/stores/pendingUI'
 import { api } from '@/api/client'
 import { learningApi } from '@/api/learning'
-import type { PendingImage, ReplenishmentStatus, ReadinessResponse } from '@/types'
+import type { PendingImage } from '@/types'
 import ImageDetailPanel from '@/components/ImageDetailPanel.vue'
 import ImageApprovalModal from '@/components/pending/ImageApprovalModal.vue'
 import ImageReassignModal from '@/components/pending/ImageReassignModal.vue'
@@ -319,35 +322,19 @@ const RECENT_THRESHOLD_MS = 60 * 60 * 1000 // 1 hour
 const approvalStore = useApprovalStore()
 const charactersStore = useCharactersStore()
 const authStore = useAuthStore()
-const filterModel = ref('')
-const filterSource = ref('')
-const sortBy = ref('newest')
+const pendingUI = usePendingUIStore()
 const lastRefreshed = ref<Date | null>(null)
 const lastRefreshedAgo = ref('')
-const selectedImages = ref<Set<string>>(new Set())
 
-// --- Replenishment Loop State ---
+// Expose store refs locally for template brevity
+const { selectedImages, expandedCharacters, filterSource, filterModel, sortBy, replenishStatus, readinessData, activeGenCount } = storeToRefs(pendingUI)
+
+// --- Replenishment Loop State (transient/local only) ---
 const replenishVisible = ref(true)
 const replenishExpanded = ref(false)
-const replenishStatus = ref<ReplenishmentStatus | null>(null)
-const readinessData = ref<ReadinessResponse | null>(null)
-
-const activeGenCount = computed(() => {
-  if (!replenishStatus.value) return 0
-  return Object.values(replenishStatus.value.active_generations).filter(Boolean).length
-})
 
 async function fetchReplenishData() {
-  try {
-    const [status, readiness] = await Promise.all([
-      learningApi.getReplenishmentStatus(),
-      learningApi.getCharacterReadiness(approvalStore.filterProject || undefined),
-    ])
-    replenishStatus.value = status
-    readinessData.value = readiness
-  } catch (e) {
-    console.warn('Failed to fetch replenishment data:', e)
-  }
+  await pendingUI.refreshReplenishStatus(approvalStore.filterProject || undefined)
 }
 
 async function toggleReplenish() {
@@ -530,8 +517,7 @@ const modelFilteredImages = computed(() => {
   return sorted
 })
 
-// Per-character expansion state (show all images)
-const expandedCharacters = ref<Set<string>>(new Set())
+// Per-character expansion state (show all images) — expandedCharacters lives in pendingUI store
 const IMAGES_PER_CHAR = 24
 
 // Hierarchical grouping: Project -> Character -> Images (with pagination)
@@ -574,12 +560,7 @@ const fullCharacterCounts = computed(() => {
 })
 
 function toggleCharacterExpand(charName: string) {
-  if (expandedCharacters.value.has(charName)) {
-    expandedCharacters.value.delete(charName)
-  } else {
-    expandedCharacters.value.add(charName)
-  }
-  expandedCharacters.value = new Set(expandedCharacters.value)
+  pendingUI.toggleCharacterExpand(charName)
 }
 
 function projectImageCount(projectName: string): number {
@@ -614,41 +595,16 @@ function toggleExpand(image: PendingImage) {
 }
 
 function toggleSelection(image: PendingImage) {
-  if (selectedImages.value.has(image.id)) {
-    selectedImages.value.delete(image.id)
-  } else {
-    selectedImages.value.add(image.id)
-  }
-  selectedImages.value = new Set(selectedImages.value)
+  pendingUI.toggleImageSelection(image.id)
 }
 
 function selectAll(images: PendingImage[]) {
-  const allSelected = images.every(img => selectedImages.value.has(img.id))
-  if (allSelected) {
-    for (const img of images) {
-      selectedImages.value.delete(img.id)
-    }
-  } else {
-    for (const img of images) {
-      selectedImages.value.add(img.id)
-    }
-  }
-  selectedImages.value = new Set(selectedImages.value)
+  pendingUI.selectAllForCharacter(images)
 }
 
 function selectAllProject(projectGroup: ProjectGroup) {
   const allImages = Object.values(projectGroup.characters).flat()
-  const allSelected = allImages.every(img => selectedImages.value.has(img.id))
-  if (allSelected) {
-    for (const img of allImages) {
-      selectedImages.value.delete(img.id)
-    }
-  } else {
-    for (const img of allImages) {
-      selectedImages.value.add(img.id)
-    }
-  }
-  selectedImages.value = new Set(selectedImages.value)
+  pendingUI.selectAllForCharacter(allImages)
 }
 
 function openReassign(image: PendingImage) {
@@ -873,6 +829,10 @@ async function doApprove(image: PendingImage, approved: boolean, feedback: strin
   delete flashState[image.id]
   processingImages.value.delete(image.id)
   processingImages.value = new Set(processingImages.value)
+}
+
+async function quickReject(image: PendingImage, reason: string) {
+  await doApprove(image, false, reason)
 }
 
 async function approveGroup(groupName: string, images: PendingImage[]) {

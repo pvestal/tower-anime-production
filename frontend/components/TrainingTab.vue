@@ -283,10 +283,13 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useTrainingStore } from '@/stores/training'
 import { useCharactersStore } from '@/stores/characters'
+import { createRequest } from '@/api/base'
 import type { TrainingJob, LoraFile, Character } from '@/types'
 import ConfirmDialog from './training/ConfirmDialog.vue'
 import type { ConfirmDialogData } from './training/ConfirmDialog.vue'
 import ProductionReadiness from './training/ProductionReadiness.vue'
+
+const trainingRequest = createRequest('/api/training')
 
 const props = defineProps<{
   initialProject?: string
@@ -453,16 +456,10 @@ async function submitBatchGenerate(slug: string) {
   generatingSlug.value = slug
   batchGenMessage.value = null
   try {
-    const resp = await fetch(`/api/training/regenerate/${encodeURIComponent(slug)}?count=${batchGenCount.value}`, { method: 'POST' })
-    if (resp.ok) {
-      const data = await resp.json()
-      batchGenMessage.value = data.message || `Queued ${batchGenCount.value} images`
-    } else {
-      const err = await resp.text()
-      batchGenMessage.value = `Error: ${err}`
-    }
+    const data = await trainingRequest<{ message?: string }>(`/regenerate/${encodeURIComponent(slug)}?count=${batchGenCount.value}`, { method: 'POST' })
+    batchGenMessage.value = data.message || `Queued ${batchGenCount.value} images`
   } catch (e) {
-    batchGenMessage.value = `Failed: ${e}`
+    batchGenMessage.value = `Failed: ${e instanceof Error ? e.message : e}`
   } finally {
     setTimeout(() => { generatingSlug.value = null }, 3000)
   }
@@ -485,9 +482,8 @@ function elapsed(iso?: string): string {
 async function fetchLog(jobId: string) {
   logLoading.value = true
   try {
-    const resp = await fetch(`/api/training/jobs/${encodeURIComponent(jobId)}/log?tail=60`)
-    if (resp.ok) { const data = await resp.json(); logLines.value = data.lines || [] }
-    else logLines.value = ['(Log not available)']
+    const data = await trainingRequest<{ lines?: string[] }>(`/jobs/${encodeURIComponent(jobId)}/log?tail=60`)
+    logLines.value = data.lines || []
   } catch { logLines.value = ['(Failed to fetch log)'] }
   finally { logLoading.value = false }
 }

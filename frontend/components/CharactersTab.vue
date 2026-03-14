@@ -476,10 +476,12 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { storeToRefs } from 'pinia'
 import { useCharactersStore } from '@/stores/characters'
 import { useTrainingStore } from '@/stores/training'
 import { useProjectStore } from '@/stores/project'
 import { useAuthStore } from '@/stores/auth'
+import { useIngestionStore } from '@/stores/ingestion'
 import { api } from '@/api/client'
 import type { Character, DatasetImage } from '@/types'
 import CharacterFilters from './characters/CharacterFilters.vue'
@@ -503,6 +505,7 @@ const charactersStore = useCharactersStore()
 const trainingStore = useTrainingStore()
 const projectStore = useProjectStore()
 const authStore = useAuthStore()
+const ingestionStore = useIngestionStore()
 const activeSubTab = ref<'characters' | 'ingest' | 'workbench'>(props.initialSubTab)
 const filterProject = ref('')
 const filterCharacter = ref('')
@@ -513,178 +516,72 @@ const editPromptText = ref('')
 const savingPrompt = ref(false)
 const trainingMessage = ref('')
 
-// New character form state
+// New character form state (characters sub-tab form — separate from ingest quick-create)
 const showNewCharForm = ref(false)
-const newCharName = ref('')
-const newCharProject = ref('')
 const newCharDescription = ref('')
-const newCharDesignPrompt = ref('')
-const creatingCharacter = ref(false)
-const newCharError = ref('')
 
 // Detail panel state
 const detailCharacter = ref<Character | null>(null)
 
-// --- Ingest state ---
-const showIngestNewChar = ref(false)
-const ingestTargetMode = ref<'character' | 'project'>('project')
-const ingestSelectedCharacter = ref('')
-const ingestSelectedProject = ref('')
-const ingestError = ref('')
-const ingestProjects = ref<Array<{ id: number; name: string; default_style: string; character_count: number }>>([])
-const youtubeUrl = ref('')
-const maxFrames = ref(60)
-const youtubeFps = ref(4)
-const youtubeLoading = ref(false)
-const youtubeResult = ref<{ frames_extracted: number; characters_seeded?: number } | null>(null)
-const synthesizing = ref(false)
-const synthesisResult = ref<Record<string, any> | null>(null)
+// --- Ingest state (local UI-only refs for file inputs) ---
 const imageFile = ref<File | null>(null)
 const imageFileInput = ref<HTMLInputElement | null>(null)
-const imageLoading = ref(false)
-const imageResult = ref<{ image: string } | null>(null)
 const videoFile = ref<File | null>(null)
 const videoFileInput = ref<HTMLInputElement | null>(null)
-const videoFps = ref(0.5)
-const videoLoading = ref(false)
-const videoResult = ref<{ frames_extracted: number } | null>(null)
-const localVideoPath = ref('')
-const localVideoMaxFrames = ref(200)
-const scanLoading = ref(false)
-const scanResult = ref<{ new_images: number; matched: Record<string, number>; unmatched_count: number } | null>(null)
-const ingestProgress = ref<Record<string, any>>({})
-let progressPollTimer: ReturnType<typeof setInterval> | null = null
-
-// Movie upload state
 const movieFile = ref<File | null>(null)
 const movieFileInput = ref<HTMLInputElement | null>(null)
-const movieUploading = ref(false)
-const movieUploadPct = ref(0)
-const movieUploaded = ref(false)
-const movieUploadResult = ref('')
-const uploadedMovies = ref<Array<{ filename: string; path: string; size_mb: number }>>([])
-const movieExtractPath = ref('')
-const movieMaxFrames = ref(500)
-const movieExtracting = ref(false)
 
-function startProgressPolling() {
-  stopProgressPolling()
-  progressPollTimer = setInterval(async () => {
-    try {
-      const resp = await fetch('/api/training/ingest/progress')
-      const data = await resp.json()
-      ingestProgress.value = data
-      // Auto-stop polling when job is done
-      if (data.stage === 'complete' || data.stage === 'error') {
-        if (data.stage === 'complete' && data.per_character) {
-          youtubeResult.value = { frames_extracted: data.frame_total, characters_seeded: Object.keys(data.per_character).length }
-        }
-        // Keep showing result for 30s, then stop
-        setTimeout(() => stopProgressPolling(), 30000)
-      }
-    } catch { /* ignore */ }
-  }, 2000)
-}
-
-function stopProgressPolling() {
-  if (progressPollTimer) {
-    clearInterval(progressPollTimer)
-    progressPollTimer = null
-  }
-}
+// Reactive refs from ingestion store for template compatibility
+const {
+  ingestTargetMode, ingestSelectedCharacter, ingestSelectedProject, ingestProjects,
+  showIngestNewChar, newCharName, newCharProject, newCharDesignPrompt, newCharError,
+  creatingCharacter,
+  youtubeUrl, maxFrames, youtubeFps, youtubeLoading,
+  imageLoading, imageResult,
+  videoLoading, videoResult, localVideoPath, localVideoMaxFrames, videoFps,
+  scanLoading, scanResult,
+  movieUploading, movieUploadPct, movieUploaded, movieUploadResult,
+  uploadedMovies, movieExtractPath, movieMaxFrames, movieExtracting,
+  ingestProgress, ingestError,
+  synthesizing, synthesisResult,
+} = storeToRefs(ingestionStore)
 
 onMounted(async () => {
   try {
     await projectStore.fetchProjects()
-    ingestProjects.value = projectStore.projects
+    ingestionStore.loadIngestProjects(projectStore.projects)
   } catch { /* ignore */ }
-  // Load uploaded movies list
-  await loadMoviesList()
-  // Resume polling if an ingestion is already running (navigated away and back)
-  try {
-    const resp = await fetch('/api/training/ingest/progress')
-    const data = await resp.json()
-    if (data.active) {
-      ingestProgress.value = data
-      startProgressPolling()
-    } else if (data.stage === 'complete' || data.stage === 'error') {
-      ingestProgress.value = data
-    }
-  } catch { /* ignore */ }
+  await ingestionStore.loadMoviesList()
+  await ingestionStore.checkActiveIngestion()
 })
 
-onUnmounted(() => stopProgressPolling())
+onUnmounted(() => ingestionStore.cleanup())
 
 async function ingestYoutube() {
-  youtubeLoading.value = true
-  youtubeResult.value = null
-  ingestError.value = ''
-  try {
-    if (ingestTargetMode.value === 'project') {
-      await api.ingestYoutubeProject(youtubeUrl.value, ingestSelectedProject.value, maxFrames.value, youtubeFps.value)
-    } else {
-      await api.ingestYoutube(youtubeUrl.value, ingestSelectedCharacter.value, maxFrames.value, youtubeFps.value)
-    }
-    youtubeUrl.value = ''
-    // POST returns immediately now -- polling handles the rest
-    startProgressPolling()
-  } catch (e: any) { ingestError.value = e.message || 'YouTube ingestion failed' }
-  finally { youtubeLoading.value = false }
+  await ingestionStore.startYoutubeIngest()
 }
 
 async function synthesizeContext() {
-  if (!ingestSelectedProject.value) return
-  synthesizing.value = true
-  synthesisResult.value = null
-  try {
-    const result = await api.synthesizeContext(ingestSelectedProject.value)
-    synthesisResult.value = result.synthesis || {}
-  } catch (e: any) {
-    ingestError.value = e.message || 'Context synthesis failed'
-  } finally {
-    synthesizing.value = false
-  }
+  await ingestionStore.synthesizeContext()
 }
 
 function onImageDrop(e: DragEvent) { const f = e.dataTransfer?.files[0]; if (f && f.type.startsWith('image/')) imageFile.value = f }
 function onImageSelect(e: Event) { const f = (e.target as HTMLInputElement).files?.[0]; if (f) imageFile.value = f }
 async function ingestImage() {
   if (!imageFile.value) return
-  imageLoading.value = true; imageResult.value = null; ingestError.value = ''
-  try { imageResult.value = await api.ingestImage(imageFile.value, ingestSelectedCharacter.value); imageFile.value = null }
-  catch (e: any) { ingestError.value = e.message || 'Image upload failed' }
-  finally { imageLoading.value = false }
+  await ingestionStore.startImageIngest(imageFile.value)
+  if (!ingestionStore.ingestError) imageFile.value = null
 }
 
 function onVideoDrop(e: DragEvent) { const f = e.dataTransfer?.files[0]; if (f && f.type.startsWith('video/')) videoFile.value = f }
 function onVideoSelect(e: Event) { const f = (e.target as HTMLInputElement).files?.[0]; if (f) videoFile.value = f }
 async function ingestVideoFile() {
-  if (!videoFile.value && !localVideoPath.value) return
-  videoLoading.value = true; videoResult.value = null; ingestError.value = ''
-  try {
-    if (localVideoPath.value) {
-      // Local server path — use local-video endpoint (supports project mode)
-      const projectName = ingestTargetMode.value === 'project'
-        ? ingestSelectedProject.value
-        : charactersStore.characters.find(c => c.slug === ingestSelectedCharacter.value)?.project_name || ''
-      videoResult.value = await api.ingestLocalVideo(
-        localVideoPath.value, projectName, localVideoMaxFrames.value, videoFps.value
-      )
-      localVideoPath.value = ''
-    } else if (videoFile.value) {
-      // Browser upload — character mode only
-      videoResult.value = await api.ingestVideo(videoFile.value, ingestSelectedCharacter.value, videoFps.value)
-      videoFile.value = null
-    }
-  } catch (e: any) { ingestError.value = e.message || 'Video ingestion failed' }
-  finally { videoLoading.value = false }
+  await ingestionStore.startVideoIngest(videoFile.value)
+  if (!ingestionStore.ingestError && videoFile.value) videoFile.value = null
 }
 
 async function scanComfyUI() {
-  scanLoading.value = true; scanResult.value = null; ingestError.value = ''
-  try { scanResult.value = await api.scanComfyUI() }
-  catch (e: any) { ingestError.value = e.message || 'ComfyUI scan failed' }
-  finally { scanLoading.value = false }
+  await ingestionStore.scanComfyUI()
 }
 
 function onMovieDrop(e: DragEvent) {
@@ -697,58 +594,12 @@ function onMovieSelect(e: Event) {
 }
 
 async function uploadMovie() {
-  if (!movieFile.value || !ingestSelectedProject.value) return
-  movieUploading.value = true
-  movieUploadPct.value = 0
-  movieUploadResult.value = ''
-  ingestError.value = ''
-  // Health check before upload
-  try {
-    const health = await fetch('/api/training/ingest/movies', { signal: AbortSignal.timeout(5000) })
-    if (!health.ok) throw new Error(`API returned ${health.status}`)
-  } catch {
-    ingestError.value = 'Anime Studio API is not responding. Check if the service is running.'
-    movieUploading.value = false
-    return
-  }
-  try {
-    const result = await api.uploadMovie(movieFile.value, ingestSelectedProject.value, (pct) => {
-      movieUploadPct.value = pct
-    })
-    movieUploaded.value = true
-    movieUploadResult.value = `Uploaded ${result.filename} (${result.size_mb} MB) — starting extraction...`
-    movieExtractPath.value = result.path
-    await loadMoviesList()
-    // Auto-start extraction immediately after upload
-    await api.extractMovie(result.path, ingestSelectedProject.value, movieMaxFrames.value)
-    movieUploadResult.value = `Uploaded ${result.filename} (${result.size_mb} MB)`
-    startProgressPolling()
-  } catch (e: any) {
-    ingestError.value = e.message || 'Movie upload failed'
-  } finally {
-    movieUploading.value = false
-  }
+  if (!movieFile.value) return
+  await ingestionStore.uploadMovie(movieFile.value)
 }
 
 async function extractMovie() {
-  if (!movieExtractPath.value || !ingestSelectedProject.value) return
-  movieExtracting.value = true
-  ingestError.value = ''
-  try {
-    await api.extractMovie(movieExtractPath.value, ingestSelectedProject.value, movieMaxFrames.value)
-    startProgressPolling()
-  } catch (e: any) {
-    ingestError.value = e.message || 'Movie extraction failed'
-  } finally {
-    movieExtracting.value = false
-  }
-}
-
-async function loadMoviesList() {
-  try {
-    const result = await api.listMovies()
-    uploadedMovies.value = result.movies
-  } catch { /* ignore */ }
+  await ingestionStore.extractMovie()
 }
 
 
@@ -877,27 +728,7 @@ function openNewCharForm() {
 }
 
 async function createIngestCharacter() {
-  if (!newCharName.value.trim() || !newCharProject.value) return
-  creatingCharacter.value = true
-  newCharError.value = ''
-  try {
-    const result = await api.createCharacter({
-      name: newCharName.value.trim(),
-      project_name: newCharProject.value,
-      design_prompt: newCharDesignPrompt.value.trim() || undefined,
-    })
-    showIngestNewChar.value = false
-    // Auto-select the new character in the ingest dropdown
-    ingestSelectedCharacter.value = result.slug
-    newCharName.value = ''
-    newCharProject.value = ''
-    newCharDesignPrompt.value = ''
-    await charactersStore.fetchCharacters()
-  } catch (error: any) {
-    newCharError.value = error.message || 'Failed to create character'
-  } finally {
-    creatingCharacter.value = false
-  }
+  await ingestionStore.createNewCharacter(api.createCharacter.bind(api), () => charactersStore.fetchCharacters())
 }
 
 async function createNewCharacter() {
