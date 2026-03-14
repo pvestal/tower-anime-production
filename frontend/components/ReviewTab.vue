@@ -16,6 +16,9 @@
       <RouterLink to="/review/library" class="review-subtab" active-class="" exact-active-class="active">
         Library
       </RouterLink>
+      <RouterLink to="/review/gallery" class="review-subtab" active-class="" exact-active-class="active">
+        Gallery
+      </RouterLink>
     </div>
 
     <RouterView />

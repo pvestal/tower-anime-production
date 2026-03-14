@@ -18,75 +18,57 @@
       </div>
     </div>
 
-    <!-- Project filter pills -->
-    <div v-if="projectList.length > 1" style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; align-items: center;">
-      <span class="filter-label">Project</span>
-      <button
-        class="chip"
-        :class="{ active: !selectedProject }"
-        @click="selectedProject = ''"
-      >
-        All
-      </button>
-      <button
-        v-for="proj in projectList"
-        :key="proj"
-        class="chip"
-        :class="{ active: selectedProject === proj }"
-        @click="selectedProject = proj"
-      >
-        {{ proj }}
+    <!-- Filter toggle + search -->
+    <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 10px; flex-wrap: wrap;">
+      <input
+        v-model="searchText"
+        type="text"
+        placeholder="Search by name..."
+        style="flex: 1; min-width: 160px; padding: 7px 12px; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border-primary); border-radius: 6px; font-size: 12px; font-family: var(--font-primary); outline: none;"
+      />
+      <button class="btn" style="font-size: 12px; padding: 7px 14px;" @click="libFiltersOpen = !libFiltersOpen">
+        {{ libFiltersOpen ? 'Hide Filters' : 'Filters' }}
+        <span v-if="libActiveFilterCount > 0" style="display: inline-block; background: var(--accent-primary); color: #fff; font-size: 10px; padding: 0 5px; border-radius: 8px; margin-left: 4px;">{{ libActiveFilterCount }}</span>
       </button>
     </div>
 
-    <!-- Model filter pills -->
-    <div v-if="modelList.length > 1" style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; align-items: center;">
-      <span class="filter-label">Model</span>
-      <button
-        v-for="model in modelList"
-        :key="model"
-        class="chip chip-small"
-        :class="{ active: selectedModel === model }"
-        @click="selectedModel = selectedModel === model ? '' : model"
-      >
-        {{ modelShortName(model) }}
-      </button>
-    </div>
+    <!-- Collapsible filters -->
+    <Transition name="lib-collapse">
+      <div v-if="libFiltersOpen" style="background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; display: flex; flex-direction: column; gap: 6px;">
+        <!-- Project -->
+        <div v-if="projectList.length > 1" style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center;">
+          <span class="filter-label">Project</span>
+          <button class="chip" :class="{ active: !selectedProject }" @click="selectedProject = ''">All</button>
+          <button v-for="proj in projectList" :key="proj" class="chip" :class="{ active: selectedProject === proj }" @click="selectedProject = proj">{{ proj }}</button>
+        </div>
+        <!-- Model -->
+        <div v-if="modelList.length > 1" style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center;">
+          <span class="filter-label">Model</span>
+          <button v-for="model in modelList" :key="model" class="chip chip-small" :class="{ active: selectedModel === model }" @click="selectedModel = selectedModel === model ? '' : model">{{ modelShortName(model) }}</button>
+        </div>
+        <!-- Character -->
+        <div v-if="filteredCharacterList.length > 1" style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center;">
+          <span class="filter-label">Character</span>
+          <button class="chip" :class="{ active: !selectedSlug }" @click="selectedSlug = ''">All ({{ filteredApproved }})</button>
+          <button v-for="ch in filteredCharacterList" :key="ch.slug" class="chip" :class="{ active: selectedSlug === ch.slug }" @click="selectedSlug = ch.slug">{{ ch.name }} ({{ ch.approved }})</button>
+        </div>
+      </div>
+    </Transition>
 
-    <!-- Character filter chips -->
-    <div v-if="filteredCharacterList.length > 1" style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; align-items: center;">
-      <span class="filter-label">Character</span>
-      <button
-        class="chip"
-        :class="{ active: !selectedSlug }"
-        @click="selectedSlug = ''"
-      >
-        All ({{ filteredApproved }})
-      </button>
-      <button
-        v-for="ch in filteredCharacterList"
-        :key="ch.slug"
-        class="chip"
-        :class="{ active: selectedSlug === ch.slug }"
-        @click="selectedSlug = ch.slug"
-      >
-        {{ ch.name }} ({{ ch.approved }})
-      </button>
-    </div>
-
-    <!-- Image grid -->
-    <div v-if="displayImages.length" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px;">
+    <!-- Masonry image grid -->
+    <div v-if="displayImages.length" class="lib-masonry" :style="{ columnCount: libColumns }">
       <div
         v-for="img in displayImages"
         :key="img.slug + '/' + img.name"
-        class="card image-card"
+        class="masonry-card"
         @click="openDetail(img)"
       >
         <img
           :src="imageUrl(img.slug, img.name)"
           :alt="img.name"
-          style="width: 100%; display: block; aspect-ratio: 1; object-fit: cover;"
+          class="masonry-card-img"
           loading="lazy"
+          @load="($event.target as HTMLImageElement).parentElement?.classList.add('loaded')"
         />
         <!-- Character name (when showing all) -->
         <span v-if="!selectedSlug" class="char-badge">
@@ -370,6 +352,24 @@ const refineDenoise = ref(0.65)
 const toast = ref<{ message: string; type: 'success' | 'error' } | null>(null)
 const quickGenerating = ref('')
 const rejecting = ref(false)
+const searchText = ref('')
+const libFiltersOpen = ref(false)
+
+const libColumns = computed(() => {
+  if (typeof window === 'undefined') return 4
+  const w = window.innerWidth
+  if (w < 640) return 2
+  if (w < 1024) return 3
+  if (w < 1440) return 4
+  return 5
+})
+const libActiveFilterCount = computed(() => {
+  let c = 0
+  if (selectedProject.value) c++
+  if (selectedModel.value) c++
+  if (selectedSlug.value) c++
+  return c
+})
 
 const totalApproved = computed(() => characterList.value.reduce((s, c) => s + c.approved, 0))
 
@@ -409,6 +409,10 @@ const displayImages = computed(() => {
   }
   if (selectedSlug.value) {
     imgs = imgs.filter(img => img.slug === selectedSlug.value)
+  }
+  if (searchText.value) {
+    const q = searchText.value.toLowerCase()
+    imgs = imgs.filter(img => img.name.toLowerCase().includes(q) || img.characterName.toLowerCase().includes(q))
   }
   return imgs
 })
@@ -600,6 +604,50 @@ async function setAsReference() {
 </script>
 
 <style scoped>
+/* Masonry grid */
+.lib-masonry {
+  column-gap: 10px;
+  column-fill: auto;
+}
+.masonry-card {
+  break-inside: avoid;
+  margin-bottom: 10px;
+  border-radius: 8px;
+  overflow: hidden;
+  position: relative;
+  cursor: pointer;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+.masonry-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+.masonry-card:not(.loaded) { min-height: 180px; }
+.masonry-card-img {
+  width: 100%;
+  display: block;
+  opacity: 0;
+  transition: opacity 300ms ease;
+}
+.masonry-card.loaded .masonry-card-img { opacity: 1; }
+
+/* Collapse transition */
+.lib-collapse-enter-active, .lib-collapse-leave-active {
+  transition: all 200ms ease;
+  overflow: hidden;
+}
+.lib-collapse-enter-from, .lib-collapse-leave-to {
+  opacity: 0;
+  max-height: 0;
+  padding: 0 12px;
+  margin-bottom: 0;
+}
+.lib-collapse-enter-to, .lib-collapse-leave-from {
+  max-height: 300px;
+}
+
 .image-card {
   padding: 0;
   overflow: hidden;

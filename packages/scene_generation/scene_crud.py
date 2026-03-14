@@ -499,6 +499,34 @@ async def get_motion_presets(shot_type: str | None = None):
     return {"presets": MOTION_PRESETS}
 
 
+@router.get("/lora/image-loras")
+async def list_image_loras():
+    """List image LoRA files from ComfyUI, filtering out video/WAN LoRAs."""
+    from pathlib import Path
+
+    lora_dir = Path("/opt/ComfyUI/models/loras")
+    if not lora_dir.exists():
+        return []
+
+    # Substrings that indicate video/WAN LoRAs (not image LoRAs)
+    video_markers = {"_HIGH", "_LOW", "lightx2v", "DR34ML4Y", "wan22", "wan_", "furrynsfw_wan", "ltx", "LTX", "DreamLTXV"}
+
+    results = []
+    for f in sorted(lora_dir.iterdir()):
+        if not f.suffix == ".safetensors":
+            continue
+        if f.is_dir():
+            continue
+        name = f.name
+        # Skip video/WAN LoRAs
+        if any(marker.lower() in name.lower() for marker in video_markers):
+            continue
+        label = name.replace(".safetensors", "").replace("_", " ").replace("-", " ")
+        results.append({"filename": name, "label": label})
+
+    return results
+
+
 @router.get("/scenes/lora-catalog")
 async def lora_catalog_endpoint(content_rating: str = "XXX"):
     """Return the LoRA catalog filtered by content rating."""

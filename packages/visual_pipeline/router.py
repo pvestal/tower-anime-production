@@ -91,6 +91,12 @@ async def generate_for_character(character_slug: str, body: GenerateRequest, all
     except Exception:
         pass  # Never block generation on recommendation failure
 
+    # Build extra_loras list from test LoRA if provided
+    extra_loras = None
+    if body.extra_lora:
+        strength = body.extra_lora_strength if body.extra_lora_strength is not None else 0.7
+        extra_loras = [(body.extra_lora, strength)]
+
     workflow = build_comfyui_workflow(
         design_prompt=prompt,
         checkpoint_model=checkpoint,
@@ -106,6 +112,7 @@ async def generate_for_character(character_slug: str, body: GenerateRequest, all
         character_slug=character_slug,
         db_lora_path=db_info.get("lora_path"),
         lora_trigger=db_info.get("lora_trigger"),
+        extra_loras=extra_loras,
     )
 
     try:
@@ -188,26 +195,165 @@ async def get_dataset_image(slug: str, filename: str):
 
 
 @router.get("/gallery")
-async def get_gallery(limit: int = 50):
-    """Get recent images from ComfyUI output directory."""
-    if not COMFYUI_OUTPUT_DIR.exists():
-        return {"images": []}
+async def get_gallery(
+    limit: int = 60,
+    offset: int = 0,
+    search: str = "",
+    character: str = "",
+    project: str = "",
+    checkpoint: str = "",
+    pose: str = "",
+):
+    """Get images from ComfyUI output enriched with DB metadata. Supports infinite scroll."""
+    from packages.core.db import get_pool
 
+    if not COMFYUI_OUTPUT_DIR.exists():
+        return {"images": [], "total": 0, "has_more": False}
+
+    # Build DB lookup: map character_slug → latest generation metadata
+    pool = await get_pool()
+    rows = await pool.fetch("""
+        SELECT DISTINCT ON (character_slug)
+            character_slug, project_name, checkpoint_model
+        FROM generation_history
+        WHERE character_slug IS NOT NULL
+        ORDER BY character_slug, created_at DESC
+    """)
+    # slug → {project_name, checkpoint_model}
+    char_meta: dict[str, dict] = {}
+    for r in rows:
+        char_meta[r["character_slug"]] = {
+            "project_name": r["project_name"] or "",
+            "checkpoint_model": r["checkpoint_model"] or "",
+        }
+
+    # Also build reverse map: project_name → set of slugs (for project filter)
+    project_slugs: dict[str, set[str]] = {}
+    for slug, meta in char_meta.items():
+        pn = meta["project_name"]
+        if pn:
+            project_slugs.setdefault(pn, set()).add(slug)
+
+    # Scan files
     image_files = []
     for ext in ("*.png", "*.jpg"):
         image_files.extend(COMFYUI_OUTPUT_DIR.glob(ext))
-
     image_files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
 
+    def _normalize(text: str) -> str:
+        return text.lower().strip().replace(" ", "_").replace("-", "_")
+
+    def _extract_char_slug(filename_stem: str) -> str | None:
+        """Try to match a known character slug from the filename."""
+        fl = filename_stem.lower()
+        # Check all known slugs (longest first to match multi-word names)
+        for slug in sorted(char_meta.keys(), key=len, reverse=True):
+            if slug in fl:
+                return slug
+        return None
+
+    def matches(img_path) -> tuple[bool, str | None]:
+        """Return (matches, character_slug)."""
+        fl = img_path.stem.lower()
+        slug = _extract_char_slug(fl)
+        meta = char_meta.get(slug) if slug else None
+
+        # Search: check filename, project_name, checkpoint, character slug
+        if search:
+            q = _normalize(search)
+            searchable = fl
+            if meta:
+                searchable += f" {meta['project_name'].lower()} {meta['checkpoint_model'].lower()}"
+            if q not in searchable.replace(" ", "_") and q not in searchable:
+                return False, slug
+
+        # Character filter
+        if character:
+            cn = _normalize(character)
+            if not slug or cn not in slug:
+                # Also check by display name from filename
+                if cn not in fl:
+                    return False, slug
+
+        # Project filter — match by DB project name
+        if project:
+            pn = _normalize(project)
+            if meta and pn in _normalize(meta["project_name"]):
+                pass  # match
+            elif pn in fl:
+                pass  # fallback filename match
+            else:
+                return False, slug
+
+        # Checkpoint filter
+        if checkpoint:
+            cn = _normalize(checkpoint)
+            if not meta or cn not in _normalize(meta["checkpoint_model"]):
+                return False, slug
+
+        # Pose filter — match in filename
+        if pose:
+            if _normalize(pose) not in fl:
+                return False, slug
+
+        return True, slug
+
+    # Filter and enrich
+    filtered_items = []
+    for img in image_files:
+        ok, slug = matches(img)
+        if ok:
+            filtered_items.append((img, slug))
+
+    total = len(filtered_items)
+    page = filtered_items[offset:offset + limit]
+
+    results = []
+    for img, slug in page:
+        meta = char_meta.get(slug) if slug else None
+        entry = {
+            "filename": img.name,
+            "created_at": datetime.fromtimestamp(img.stat().st_mtime).isoformat(),
+            "size_kb": round(img.stat().st_size / 1024, 1),
+        }
+        if meta:
+            entry["project_name"] = meta["project_name"]
+            entry["checkpoint_model"] = meta["checkpoint_model"]
+            entry["character_slug"] = slug
+        results.append(entry)
+
     return {
-        "images": [
-            {
-                "filename": img.name,
-                "created_at": datetime.fromtimestamp(img.stat().st_mtime).isoformat(),
-                "size_kb": round(img.stat().st_size / 1024, 1),
-            }
-            for img in image_files[:limit]
-        ]
+        "images": results,
+        "total": total,
+        "has_more": (offset + limit) < total,
+    }
+
+
+@router.get("/gallery/filters")
+async def get_gallery_filters():
+    """Get available filter values from DB generation history."""
+    from packages.core.db import get_pool
+
+    pool = await get_pool()
+
+    projects = await pool.fetch("""
+        SELECT DISTINCT project_name FROM generation_history
+        WHERE project_name IS NOT NULL ORDER BY project_name
+    """)
+    characters = await pool.fetch("""
+        SELECT DISTINCT character_slug FROM generation_history
+        WHERE character_slug IS NOT NULL ORDER BY character_slug
+    """)
+    checkpoints = await pool.fetch("""
+        SELECT DISTINCT checkpoint_model FROM generation_history
+        WHERE checkpoint_model IS NOT NULL ORDER BY checkpoint_model
+    """)
+
+    return {
+        "projects": [r["project_name"] for r in projects],
+        "characters": [r["character_slug"].replace("_", " ").title() for r in characters],
+        "character_slugs": [r["character_slug"] for r in characters],
+        "checkpoints": [r["checkpoint_model"] for r in checkpoints],
     }
 
 

@@ -10,6 +10,55 @@ from packages.core.model_profiles import get_model_profile
 logger = logging.getLogger(__name__)
 
 
+def _validate_lora_format(path: Path, character_slug: str) -> bool:
+    """Check that a LoRA file is loadable by ComfyUI.
+
+    Accepts:
+    - kohya format: keys start with lora_unet_ or lora_te
+    - diffusers-named with kohya weights: keys have .lora_down.weight/.lora_up.weight
+    Rejects:
+    - Pure diffusers format without lora_down/lora_up weights
+    - FramePack/HunyuanVideo LoRAs (lora_unet_single_transformer_blocks)
+    """
+    try:
+        import safetensors.torch
+        keys = list(safetensors.torch.load_file(str(path), device="cpu").keys())
+        if not keys:
+            return False
+        k0 = keys[0]
+        # Reject FramePack/HunyuanVideo LoRAs — wrong architecture for image gen
+        if "single_transformer_blocks" in k0:
+            logger.warning(f"LoRA {path.name} for {character_slug} is FramePack/HunyuanVideo format. Skipping.")
+            return False
+        # Accept kohya format
+        if k0.startswith("lora_unet_") or k0.startswith("lora_te"):
+            return True
+        # Accept diffusers-named with lora_down/lora_up weights (ComfyUI handles conversion)
+        has_lora_weights = any(".lora_down." in k or ".lora_up." in k or ".lora_A." in k for k in keys[:10])
+        if has_lora_weights:
+            return True
+        logger.warning(
+            f"LoRA {path.name} for {character_slug} has unrecognized format "
+            f"(key: {k0[:60]}). Skipping."
+        )
+        return False
+    except Exception as e:
+        logger.warning(f"Could not validate LoRA {path.name}: {e}")
+        return False
+
+
+# Cache validated LoRAs so we don't re-read safetensors headers every generation
+_lora_format_cache: dict[str, bool] = {}
+
+
+def _is_valid_lora(path: Path, character_slug: str) -> bool:
+    """Cached LoRA format validation."""
+    key = str(path)
+    if key not in _lora_format_cache:
+        _lora_format_cache[key] = _validate_lora_format(path, character_slug)
+    return _lora_format_cache[key]
+
+
 def _find_lora(character_slug: str, checkpoint_model: str, db_lora_path: str | None = None) -> Path | None:
     """Find the architecture-matched LoRA for a character.
 
@@ -17,6 +66,7 @@ def _find_lora(character_slug: str, checkpoint_model: str, db_lora_path: str | N
     1. Explicit lora_path from DB characters table (trusted — admin sets this).
     2. Naming convention: SDXL uses *_xl_lora.safetensors, SD1.5 uses *_lora.safetensors.
     3. Glob fallback: {slug}*_ill_lora*.safetensors or {slug}*_lora*.safetensors.
+    All candidates are validated for kohya/ComfyUI format before returning.
     Returns None if no matching LoRA exists.
     """
     lora_dir = Path("/opt/ComfyUI/models/loras")
@@ -25,24 +75,25 @@ def _find_lora(character_slug: str, checkpoint_model: str, db_lora_path: str | N
     if db_lora_path:
         for candidate in [lora_dir / db_lora_path, Path(db_lora_path)]:
             if candidate.exists():
-                return candidate
+                if _is_valid_lora(candidate, character_slug):
+                    return candidate
+                return None  # DB path exists but wrong format — don't fall through
         logger.warning(f"DB lora_path '{db_lora_path}' for {character_slug} not found on disk")
 
     # 2. Naming convention
     profile = get_model_profile(checkpoint_model)
     if profile["architecture"] == "sdxl":
         xl_path = lora_dir / f"{character_slug}_xl_lora.safetensors"
-        if xl_path.exists():
+        if xl_path.exists() and _is_valid_lora(xl_path, character_slug):
             return xl_path
         # 3. Glob fallback for illustrious-style names
-        matches = list(lora_dir.glob(f"{character_slug}*_ill_lora*.safetensors"))
-        if not matches:
-            matches = list(lora_dir.glob(f"{character_slug}*_lora*.safetensors"))
-        if matches:
-            return matches[0]
+        for pattern in [f"{character_slug}*_ill_lora*.safetensors", f"{character_slug}*_lora*.safetensors"]:
+            for match in lora_dir.glob(pattern):
+                if _is_valid_lora(match, character_slug):
+                    return match
     else:
         sd_path = lora_dir / f"{character_slug}_lora.safetensors"
-        if sd_path.exists():
+        if sd_path.exists() and _is_valid_lora(sd_path, character_slug):
             return sd_path
 
     return None

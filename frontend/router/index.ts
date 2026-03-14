@@ -118,6 +118,11 @@ const routes = [
         name: 'ReviewTrailers',
         component: () => import('@/components/trailer/TrailerReviewView.vue'),
       },
+      {
+        path: 'gallery',
+        name: 'ReviewGallery',
+        component: () => import('@/components/GalleryTab.vue'),
+      },
     ],
   },
   {
@@ -159,7 +164,7 @@ const routes = [
   { path: '/echo', redirect: '/produce' },
   { path: '/approve', redirect: '/review/images' },
   { path: '/library', redirect: '/review/library' },
-  { path: '/gallery', redirect: '/review/library' },
+  { path: '/gallery', redirect: '/review/gallery' },
   { path: '/interactive', redirect: '/play' },
 ]
 

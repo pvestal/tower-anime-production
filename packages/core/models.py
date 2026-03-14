@@ -68,6 +68,8 @@ class GenerateRequest(BaseModel):
     negative_prompt: Optional[str] = None
     seed: Optional[int] = None
     style_override: Optional[str] = None  # e.g. "pony_nsfw_xl" to override project default
+    extra_lora: Optional[str] = None  # additional LoRA filename for test generation
+    extra_lora_strength: Optional[float] = None  # strength for extra_lora (default 0.7)
 
 
 class FramePackRequest(BaseModel):

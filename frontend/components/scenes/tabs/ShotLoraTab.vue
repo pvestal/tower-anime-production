@@ -47,13 +47,18 @@
     <!-- Image LoRA -->
     <div class="field-group">
       <label class="field-label">Image LoRA (Keyframe)</label>
-      <input
+      <select
         :value="shot.image_lora || ''"
-        @input="updateField('image_lora', ($event.target as HTMLInputElement).value || null)"
-        type="text"
-        placeholder="e.g. ass_ride_illustrious.safetensors"
+        @change="updateField('image_lora', ($event.target as HTMLSelectElement).value || null)"
         class="field-input"
-      />
+      >
+        <option value="">None</option>
+        <option
+          v-for="lora in imageLoras"
+          :key="lora.filename"
+          :value="lora.filename"
+        >{{ lora.label || lora.filename.replace('.safetensors', '') }}</option>
+      </select>
       <div v-if="shot.image_lora" class="strength-row">
         <label class="field-label-sm">Strength</label>
         <input
@@ -171,6 +176,7 @@ const emit = defineEmits<{
 const loading = ref(false)
 const presets = ref<Record<string, LoraPreset>>({})
 const loraPairs = ref<Record<string, LoraPair>>({})
+const imageLoras = ref<{filename: string; label: string}[]>([])
 
 async function loadCatalog() {
   loading.value = true
@@ -184,6 +190,14 @@ async function loadCatalog() {
     }
   } catch (e) {
     console.error('Failed to load LoRA catalog:', e)
+  }
+  try {
+    const loraResp = await fetch('/api/lora/image-loras')
+    if (loraResp.ok) {
+      imageLoras.value = await loraResp.json()
+    }
+  } catch (e) {
+    // Fallback: empty list, dropdown will just show "None"
   } finally {
     loading.value = false
   }

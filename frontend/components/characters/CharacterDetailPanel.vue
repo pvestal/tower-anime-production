@@ -340,6 +340,33 @@
               </div>
             </div>
 
+            <!-- Quick Poses -->
+            <div style="margin-bottom: 8px;">
+              <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Quick Pose</label>
+              <div style="display: flex; gap: 3px; flex-wrap: wrap;">
+                <button v-for="pose in quickPoses" :key="pose.label"
+                  :class="['btn', genPrompt.includes(pose.suffix) ? 'btn-active' : '']"
+                  style="font-size: 10px; padding: 3px 8px;"
+                  @click="applyPose(pose)"
+                >{{ pose.label }}</button>
+              </div>
+            </div>
+
+            <!-- Test LoRA -->
+            <div style="margin-bottom: 8px;">
+              <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Test LoRA</label>
+              <div style="display: flex; gap: 8px; align-items: center;">
+                <select v-model="testLora" style="flex: 1; padding: 4px 8px; font-size: 12px; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border-primary); border-radius: 3px;">
+                  <option value="">None (use character default)</option>
+                  <option v-for="lora in availableLoras" :key="lora" :value="lora">{{ lora.replace('.safetensors', '') }}</option>
+                </select>
+                <div v-if="testLora" style="display: flex; align-items: center; gap: 4px;">
+                  <input v-model.number="testLoraStrength" type="range" min="0.1" max="1.5" step="0.05" style="width: 80px;" />
+                  <span style="font-size: 11px; color: var(--accent-primary); min-width: 28px;">{{ testLoraStrength.toFixed(2) }}</span>
+                </div>
+              </div>
+            </div>
+
             <!-- Prompt override -->
             <div style="margin-bottom: 8px;">
               <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">
@@ -583,7 +610,14 @@ async function loadDetail() {
   }
 }
 
-onMounted(loadDetail)
+onMounted(() => {
+  loadDetail()
+  // Load available image LoRAs for test generation
+  fetch('/api/lora/image-loras')
+    .then(r => r.ok ? r.json() : [])
+    .then((data: any[]) => { availableLoras.value = data.map(l => l.filename) })
+    .catch(() => {})
+})
 
 watch(() => props.character.slug, () => {
   profile.design_prompt = props.character.design_prompt || ''
@@ -702,7 +736,36 @@ const genOutput = ref<string[]>([])
 const fpSec = ref(3)
 const fpSteps = ref(25)
 const fpF1 = ref(false)
+const testLora = ref('')
+const testLoraStrength = ref(0.7)
+const availableLoras = ref<string[]>([])
 let genPollTimer: ReturnType<typeof setInterval> | null = null
+
+const quickPoses = [
+  { label: 'Standing', suffix: 'standing, full body, looking at viewer' },
+  { label: 'Portrait', suffix: 'close up portrait, face focus, looking at viewer' },
+  { label: 'Action', suffix: 'dynamic action pose, fighting stance' },
+  { label: 'Sitting', suffix: 'sitting, relaxed pose' },
+  { label: 'Walking', suffix: 'walking, mid-stride, full body' },
+  { label: 'Back View', suffix: 'from behind, looking over shoulder, full body' },
+  { label: 'Side View', suffix: 'side profile, full body' },
+  { label: 'Leaning', suffix: 'leaning forward, slight smile' },
+  { label: 'Lying', suffix: 'lying down, relaxed' },
+  { label: 'Kneeling', suffix: 'kneeling, on knees' },
+]
+
+function applyPose(pose: { label: string; suffix: string }) {
+  if (genPrompt.value.includes(pose.suffix)) {
+    genPrompt.value = genPrompt.value.replace(', ' + pose.suffix, '').replace(pose.suffix, '').trim()
+  } else {
+    let cleaned = genPrompt.value
+    for (const p of quickPoses) {
+      cleaned = cleaned.replace(', ' + p.suffix, '').replace(p.suffix, '')
+    }
+    cleaned = cleaned.replace(/,\s*$/, '').trim()
+    genPrompt.value = cleaned ? `${cleaned}, ${pose.suffix}` : pose.suffix
+  }
+}
 
 onUnmounted(() => {
   if (genPollTimer) { clearInterval(genPollTimer); genPollTimer = null }
@@ -741,6 +804,8 @@ async function testGenerate() {
         prompt_override: genPrompt.value || undefined,
         negative_prompt: genNegative.value || undefined,
         seed: genSeed.value || undefined,
+        extra_lora: testLora.value || undefined,
+        extra_lora_strength: testLora.value ? testLoraStrength.value : undefined,
       })
       genStatus.value = 'Submitted to ComfyUI'
       genProgress.value = 0.05

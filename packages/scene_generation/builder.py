@@ -1020,6 +1020,13 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                     except Exception as e:
                         logger.warning(f"Shot {shot_id}: Wan prompt build failed: {e}")
 
+                # Apply alternating motion prompt for dynamic video motion
+                if shot_engine == "wan22_14b" and motion_prompt:
+                    from .scene_prompt import build_alternating_motion_prompt
+                    _motion_tier = classify_motion_intensity(shot_dict, lora_name=shot_dict.get("lora_name"), prompt=motion_prompt)
+                    current_prompt = build_alternating_motion_prompt(current_prompt, _motion_tier)
+                    logger.debug(f"Shot {shot_id}: alternating motion applied (tier={_motion_tier})")
+
                 # Inject NSM state descriptors into prompt (Phase 4)
                 _shot_nsm = _nsm_shot_states.get(str(shot_id), {})
                 if _shot_nsm and character_slug and character_slug in _shot_nsm:

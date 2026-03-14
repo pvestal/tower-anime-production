@@ -97,6 +97,86 @@ GENRE_VIDEO_PROFILES: dict[str, dict] = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Alternating motion prompt syntax — {variant1|variant2} for dynamic video
+# ---------------------------------------------------------------------------
+# Action keywords mapped to intensity-variant pairs for high/extreme tiers
+_ACTION_VARIANTS: dict[str, tuple[str, str]] = {
+    "walk": ("brisk energetic stride", "slow gentle steps"),
+    "run": ("sprint with explosive speed", "fluid jogging motion"),
+    "fight": ("fast aggressive strikes, dynamic impact", "powerful slow motion blow, dramatic pause"),
+    "punch": ("rapid flurry of punches", "heavy deliberate strike with weight"),
+    "kick": ("swift spinning kick", "powerful grounded kick"),
+    "swing": ("fast fluid swing", "heavy deliberate swing with follow-through"),
+    "jump": ("explosive leap upward", "graceful arc through the air"),
+    "dance": ("energetic rhythmic movement", "smooth flowing motion"),
+    "fly": ("rapid soaring speed", "graceful gliding motion"),
+    "slash": ("lightning fast blade arc", "deliberate powerful cut"),
+    "shoot": ("rapid firing sequence", "precise calculated aim"),
+    "throw": ("fast aggressive throw", "controlled powerful release"),
+    "dodge": ("quick evasive movement", "fluid sidestep motion"),
+    "spin": ("rapid whirling rotation", "graceful controlled turn"),
+    "climb": ("scrambling urgent ascent", "steady determined climb"),
+}
+
+# Medium-tier subtle variations (camera/movement feel)
+_MEDIUM_VARIANTS: list[tuple[str, str]] = [
+    ("steady movement with smooth pacing", "slight natural sway in motion"),
+    ("fluid continuous motion", "gentle rhythmic movement"),
+    ("smooth camera follow", "subtle drift in framing"),
+]
+
+
+def build_alternating_motion_prompt(motion_prompt: str, motion_tier: str) -> str:
+    """Add ``{variant1|variant2}`` alternating syntax for more dynamic video motion.
+
+    Parameters
+    ----------
+    motion_prompt:
+        The assembled prompt string (may already contain character/scene context).
+    motion_tier:
+        One of ``low``, ``medium``, ``high``, ``extreme`` from
+        :func:`motion_intensity.classify_motion_intensity`.
+
+    Returns
+    -------
+    str
+        The prompt, potentially with appended ``{A|B}`` alternation clauses.
+        ``low`` tier prompts are returned unchanged.
+    """
+    if not motion_prompt or not motion_tier:
+        return motion_prompt
+
+    tier = motion_tier.lower().strip()
+
+    if tier == "low":
+        return motion_prompt
+
+    if tier in ("high", "extreme"):
+        # Try to match a specific action keyword for tailored variants
+        prompt_lower = motion_prompt.lower()
+        for keyword, (fast_var, slow_var) in _ACTION_VARIANTS.items():
+            if keyword in prompt_lower:
+                suffix = f" {{{fast_var}|{slow_var}}}"
+                logger.debug("Alternating motion (action=%s, tier=%s): appending variants", keyword, tier)
+                return motion_prompt + suffix
+        # Fallback: generic high-energy alternation
+        suffix = " {Movement is fast with dynamic motion|Movement is slow and deliberate}"
+        logger.debug("Alternating motion (generic, tier=%s): appending variants", tier)
+        return motion_prompt + suffix
+
+    if tier == "medium":
+        # Pick a subtle variant set based on prompt hash for determinism
+        idx = hash(motion_prompt) % len(_MEDIUM_VARIANTS)
+        var_a, var_b = _MEDIUM_VARIANTS[idx]
+        suffix = f". {{{var_a}|{var_b}}}"
+        logger.debug("Alternating motion (medium): appending subtle variants")
+        return motion_prompt + suffix
+
+    # Unknown tier — return unchanged
+    return motion_prompt
+
+
 def _get_genre_profile(genre: str | None, content_rating: str | None) -> dict:
     """Resolve project genre + content_rating → video profile dict."""
     # Explicit content rating overrides genre completely

@@ -61,8 +61,28 @@ export const visualApi = {
 
   // --- Gallery ---
 
-  async getGallery(limit: number = 50): Promise<{ images: GalleryImage[] }> {
-    return request(`/gallery?limit=${limit}`)
+  async getGallery(params: number | {
+    limit?: number; offset?: number; search?: string;
+    character?: string; project?: string; checkpoint?: string; pose?: string;
+  } = {}): Promise<{ images: GalleryImage[]; total: number; has_more: boolean }> {
+    if (typeof params === 'number') {
+      params = { limit: params }
+    }
+    const qs = new URLSearchParams()
+    if (params.limit) qs.set('limit', String(params.limit))
+    if (params.offset) qs.set('offset', String(params.offset))
+    if (params.search) qs.set('search', params.search)
+    if (params.character) qs.set('character', params.character)
+    if (params.project) qs.set('project', params.project)
+    if (params.checkpoint) qs.set('checkpoint', params.checkpoint)
+    if (params.pose) qs.set('pose', params.pose)
+    return request(`/gallery?${qs.toString()}`)
+  },
+
+  async getGalleryFilters(): Promise<{
+    projects: string[]; characters: string[]; character_slugs: string[]; checkpoints: string[];
+  }> {
+    return request('/gallery/filters')
   },
 
   galleryImageUrl(filename: string): string {

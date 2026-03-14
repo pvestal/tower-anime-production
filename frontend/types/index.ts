@@ -236,6 +236,8 @@ export interface GenerateParams {
   prompt_override?: string
   negative_prompt?: string
   seed?: number
+  extra_lora?: string
+  extra_lora_strength?: number
 }
 
 export interface GenerateResponse {
