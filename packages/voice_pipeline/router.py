@@ -701,6 +701,183 @@ async def stream_sfx_audio(category: str, filename: str):
     return FileResponse(audio_path, media_type="audio/wav")
 
 
+# =============================================================================
+# Motion SFX — Audio extracted from stock footage for motion LoRA training
+# =============================================================================
+
+MOTION_SFX_DIR = BASE_PATH / "_motion_loras"
+
+MOTION_CATEGORIES = {
+    "walk_cycle": {
+        "label": "Footsteps — Walking",
+        "icon": "walk",
+        "color": "#22c55e",
+        "description": "Street ambience, footsteps on pavement, hallway echoes",
+    },
+    "run_cycle": {
+        "label": "Footsteps — Running",
+        "icon": "run",
+        "color": "#f59e0b",
+        "description": "Running footsteps, outdoor ambience, athletic movement",
+    },
+    "talk_gesture": {
+        "label": "Conversation & Room Tone",
+        "icon": "talk",
+        "color": "#7aa2f7",
+        "description": "Room tone, murmur, ambient conversation, office sounds",
+    },
+    "hug_interaction": {
+        "label": "Embrace & Rustle",
+        "icon": "hug",
+        "color": "#e879f9",
+        "description": "Clothing rustle, body contact, gentle ambient sounds",
+    },
+    "jump_action": {
+        "label": "Impact — Jump",
+        "icon": "jump",
+        "color": "#ef4444",
+        "description": "Landing impacts, gym sounds, athletic exertion",
+    },
+    "cook_action": {
+        "label": "Kitchen & Cooking",
+        "icon": "cook",
+        "color": "#fb923c",
+        "description": "Sizzling, chopping, pan sounds, kitchen ambience",
+    },
+    "kiss_sfw": {
+        "label": "Gentle Contact",
+        "icon": "kiss",
+        "color": "#f472b6",
+        "description": "Soft ambient sounds, gentle contact, outdoor ambience",
+    },
+    "swim_cycle": {
+        "label": "Water & Splash",
+        "icon": "swim",
+        "color": "#06b6d4",
+        "description": "Water splashing, pool ambience, underwater sounds",
+    },
+}
+
+
+def _load_motion_approval(category: str) -> dict:
+    """Load approval_status.json for a motion SFX category."""
+    path = MOTION_SFX_DIR / category / "sfx_approval.json"
+    if path.exists():
+        with open(path) as f:
+            return json.load(f)
+    return {}
+
+
+def _save_motion_approval(category: str, data: dict):
+    """Save approval_status.json for a motion SFX category."""
+    path = MOTION_SFX_DIR / category / "sfx_approval.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w") as f:
+        json.dump(data, f, indent=2)
+
+
+@router.get("/sfx/motion/catalog")
+async def motion_sfx_catalog():
+    """List all motion SFX clips extracted from training footage."""
+    categories = {}
+    total = 0
+    stats = {"approved": 0, "rejected": 0, "pending": 0}
+    for lora_name, meta in MOTION_CATEGORIES.items():
+        sfx_dir = MOTION_SFX_DIR / lora_name / "sfx"
+        clips_dir = MOTION_SFX_DIR / lora_name / "clips"
+        if not sfx_dir.exists():
+            continue
+        approval = _load_motion_approval(lora_name)
+        samples = []
+        cat_stats = {"approved": 0, "rejected": 0, "pending": 0}
+        for f in sorted(sfx_dir.glob("*.wav")):
+            clip_name = f.stem + ".mp4"
+            has_video = (clips_dir / clip_name).exists() if clips_dir.exists() else False
+            status = approval.get(f.name, "pending")
+            samples.append({
+                "name": f.stem,
+                "filename": f.name,
+                "category": lora_name,
+                "has_video": has_video,
+                "size_kb": round(f.stat().st_size / 1024, 1),
+                "status": status,
+            })
+            cat_stats[status] = cat_stats.get(status, 0) + 1
+            stats[status] = stats.get(status, 0) + 1
+            total += 1
+        if samples:
+            categories[lora_name] = {
+                "meta": meta,
+                "samples": samples,
+                "count": len(samples),
+                "stats": cat_stats,
+            }
+    return {"categories": categories, "total": total, "stats": stats}
+
+
+@router.post("/sfx/motion/approve")
+async def approve_motion_sfx(request: Request):
+    """Approve or reject a motion SFX clip."""
+    body = await request.json()
+    category = body.get("category", "")
+    filename = body.get("filename", "")
+    approved = body.get("approved", True)
+
+    safe_cat = Path(category).name
+    safe_file = Path(filename).name
+    sfx_path = MOTION_SFX_DIR / safe_cat / "sfx" / safe_file
+    if not sfx_path.exists():
+        raise HTTPException(status_code=404, detail="SFX file not found")
+
+    approval = _load_motion_approval(safe_cat)
+    approval[safe_file] = "approved" if approved else "rejected"
+    _save_motion_approval(safe_cat, approval)
+    return {"status": "ok", "filename": safe_file, "approval": approval[safe_file]}
+
+
+@router.post("/sfx/motion/batch-approve")
+async def batch_approve_motion_sfx(request: Request):
+    """Batch approve or reject motion SFX clips."""
+    body = await request.json()
+    category = body.get("category", "")
+    filenames = body.get("filenames", [])
+    approved = body.get("approved", True)
+
+    safe_cat = Path(category).name
+    approval = _load_motion_approval(safe_cat)
+    status_val = "approved" if approved else "rejected"
+    updated = 0
+    for fn in filenames:
+        safe_file = Path(fn).name
+        if (MOTION_SFX_DIR / safe_cat / "sfx" / safe_file).exists():
+            approval[safe_file] = status_val
+            updated += 1
+    _save_motion_approval(safe_cat, approval)
+    return {"status": "ok", "updated": updated, "approval": status_val}
+
+
+@router.get("/sfx/motion/audio/{category}/{filename}")
+async def stream_motion_sfx(category: str, filename: str):
+    """Stream a motion SFX WAV file."""
+    safe_cat = Path(category).name
+    safe_file = Path(filename).name
+    audio_path = MOTION_SFX_DIR / safe_cat / "sfx" / safe_file
+    if not audio_path.exists() or audio_path.suffix != ".wav":
+        raise HTTPException(status_code=404, detail="Motion SFX not found")
+    return FileResponse(audio_path, media_type="audio/wav")
+
+
+@router.get("/sfx/motion/video/{category}/{filename}")
+async def stream_motion_video(category: str, filename: str):
+    """Stream a motion training clip MP4 (for visual preview)."""
+    safe_cat = Path(category).name
+    safe_file = Path(filename).name
+    video_path = MOTION_SFX_DIR / safe_cat / "clips" / safe_file
+    if not video_path.exists() or video_path.suffix != ".mp4":
+        raise HTTPException(status_code=404, detail="Motion clip not found")
+    return FileResponse(video_path, media_type="video/mp4")
+
+
 @router.get("/sfx/player")
 async def sfx_player():
     """HTML page for browsing and playing SFX samples."""

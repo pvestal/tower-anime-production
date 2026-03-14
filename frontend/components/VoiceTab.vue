@@ -75,8 +75,11 @@
     <SfxLibraryView
       v-if="currentView === 'sfx'"
     />
+    <MotionSfxView
+      v-if="currentView === 'motion_sfx'"
+    />
 
-    <div v-if="!selectedProjectId && currentView !== 'sfx'" style="text-align: center; padding: 60px 0; color: var(--text-muted);">
+    <div v-if="!selectedProjectId && !['sfx', 'motion_sfx'].includes(currentView)" style="text-align: center; padding: 60px 0; color: var(--text-muted);">
       Select a project to manage character voices.
     </div>
   </div>
@@ -92,6 +95,7 @@ import VoiceReviewView from '@/components/voice/VoiceReviewView.vue'
 import VoiceTrainView from '@/components/voice/VoiceTrainView.vue'
 import VoiceSynthesizeView from '@/components/voice/VoiceSynthesizeView.vue'
 import SfxLibraryView from '@/components/voice/SfxLibraryView.vue'
+import MotionSfxView from '@/components/voice/MotionSfxView.vue'
 
 interface ProjectInfo {
   id: number
@@ -100,7 +104,7 @@ interface ProjectInfo {
 
 const charactersStore = useCharactersStore()
 const selectedProjectId = ref(0)
-const currentView = ref<'ingest' | 'speakers' | 'review' | 'train' | 'synthesize' | 'sfx'>('ingest')
+const currentView = ref<'ingest' | 'speakers' | 'review' | 'train' | 'synthesize' | 'sfx' | 'motion_sfx'>('ingest')
 const projects = ref<ProjectInfo[]>([])
 
 const subViews = [
@@ -110,6 +114,7 @@ const subViews = [
   { id: 'train' as const, label: 'Train', global: false },
   { id: 'synthesize' as const, label: 'Synthesize', global: false },
   { id: 'sfx' as const, label: 'SFX Library', global: true },
+  { id: 'motion_sfx' as const, label: 'Motion SFX', global: true },
 ]
 
 const selectedProjectName = computed(() => {
