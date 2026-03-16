@@ -533,12 +533,10 @@ async def lora_catalog_endpoint(content_rating: str = "XXX"):
     import yaml
     from pathlib import Path
 
-    catalog_path = Path("/opt/anime-studio/config/lora_catalog.yaml")
-    if not catalog_path.exists():
+    from .catalog_loader import load_catalog
+    catalog = load_catalog()
+    if not catalog:
         raise HTTPException(status_code=500, detail="LoRA catalog not found")
-
-    with open(catalog_path) as f:
-        catalog = yaml.safe_load(f) or {}
 
     rating_gates = catalog.get("rating_gates", {})
     allowed_tiers = set(rating_gates.get(content_rating, rating_gates.get("G", ["universal"])))
@@ -1192,7 +1190,7 @@ async def regenerate_shot(scene_id: str, shot_id: str):
                 await conn.execute("UPDATE shots SET video_engine = $2 WHERE id = $1", shid, engine)
                 logger.info(f"regenerate_shot: engine re-selected → {engine} ({_sel.reason})")
 
-        _default_steps = 4 if engine == "wan22_14b" else (20 if engine in ("wan", "wan22") else 25)
+        _default_steps = 6 if engine == "wan22_14b" else (20 if engine in ("wan", "wan22") else 25)
         shot_steps = shot["steps"] or _default_steps
 
         # Resolve source image for I2V engines
@@ -1285,7 +1283,7 @@ async def regenerate_shot(scene_id: str, shot_id: str):
                 total_steps=shot_steps,
                 seed=shot_seed,
                 negative_text=negative_text,
-                use_lightx2v=True,
+                use_lightx2v=False,
                 content_lora_high=_content_high if _content_high else None,
                 content_lora_low=_content_low if _content_low else None,
                 content_lora_strength=_content_strength,
@@ -1324,7 +1322,7 @@ async def regenerate_shot(scene_id: str, shot_id: str):
                 await c.execute("""
                     UPDATE shots SET status = 'completed', output_video_path = $2,
                            last_frame_path = $3, generation_time_seconds = $4,
-                           error_message = NULL
+                           error_message = NULL, review_status = 'pending_review'
                     WHERE id = $1
                 """, shid, vpath, last_frame, _time.time() - start)
 

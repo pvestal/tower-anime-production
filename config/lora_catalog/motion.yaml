@@ -1,0 +1,113 @@
+# Custom Motion LoRAs (WAN 2.2 14B — single-file, high noise model)
+# 10 entries
+video_motion_loras:
+  walk_cycle:
+    label: Walk Cycle
+    lora_type: action
+    tier: wholesome
+    motion_tier: low
+    file: wan22_motion/wan22_walk_cycle.safetensors
+    strength: 0.8
+    tags: [walk, walking, stroll, wander, pace]
+    description: "Natural walking motion — human gait, arm swing, weight shift"
+    motion_description: "character walks forward at steady pace, left-right leg alternation, arms swinging naturally opposite to legs, slight body bounce with each step, continuous forward locomotion"
+
+  run_cycle:
+    label: Run Cycle
+    lora_type: action
+    tier: wholesome
+    motion_tier: medium
+    file: wan22_motion/wan22_run_cycle.safetensors
+    strength: 0.85
+    tags: [run, running, sprint, jog, dash, chase]
+    description: "Running motion — full body movement, arm pump, stride"
+    motion_description: "character running with full stride, knees lifting high, arms pumping forward and back, body leaning slightly forward, hair and clothing bouncing with each stride, fast continuous locomotion"
+
+  talk_gesture:
+    label: Talking Gesture
+    lora_type: action
+    tier: wholesome
+    motion_tier: low
+    file: wan22_motion/wan22_talk_gesture.safetensors
+    strength: 0.75
+    tags: [talk, talking, gesture, conversation, speaking, dialogue, hands]
+    description: "Conversational gestures — hand movement, head nods, expressive body language"
+    motion_description: "character speaking with expressive hand gestures, hands rising and falling to emphasize points, occasional head nods and tilts, subtle upper body shifts, mouth moving in conversation"
+
+  hug_interaction:
+    label: Hug / Embrace
+    lora_type: action
+    tier: wholesome
+    motion_tier: low
+    file: wan22_motion/wan22_hug_interaction.safetensors
+    strength: 0.8
+    tags: [hug, embrace, hold, comfort, affection, cuddle]
+    description: "Embracing motion — arms wrapping, leaning in, body contact"
+    counter_motion: "reciprocal embrace, arms around partner, leaning into hug"
+    motion_description: "two characters moving into embrace, arms wrapping around each other, bodies pressing together, heads resting on shoulders, gentle swaying while holding"
+
+  subtle_idle:
+    label: Subtle Idle
+    lora_type: action
+    tier: wholesome
+    motion_tier: low
+    file: wan22_motion/wan22_subtle_idle.safetensors
+    strength: 0.7
+    tags: [idle, standing, still, breathing, subtle, waiting, calm]
+    description: "Minimal idle movement — breathing, subtle weight shift, blinking"
+    motion_description: "character standing mostly still with subtle breathing motion, chest rising and falling gently, slight weight shift between feet, occasional blink, hair settling naturally"
+
+  dance_exotic:
+    label: Dance / Exotic
+    lora_type: action
+    tier: mature
+    motion_tier: high
+    file: wan22_motion/wan22_dance_exotic.safetensors
+    strength: 0.9
+    tags: [dance, dancing, exotic, performance, rhythm, sway, spin]
+    description: "Dance movements — rhythmic body motion, spins, hip sway"
+    motion_description: "full body dance performance, rhythmic hip circles and body rolls, arms flowing through choreographed positions, occasional spin, continuous fluid movement matching a beat"
+
+  fight_combat:
+    label: Fight / Combat
+    lora_type: action
+    tier: mature
+    motion_tier: extreme
+    file: wan22_motion/wan22_fight_combat.safetensors
+    strength: 0.9
+    tags: [fight, combat, punch, kick, battle, martial, attack, strike, melee]
+    description: "Combat motion — punches, kicks, dodges, aggressive body movement"
+    motion_description: "aggressive martial combat, rapid punch and kick combinations, body twisting into strikes, defensive dodges and blocks between attacks, full body weight behind each movement"
+
+  hair_wind:
+    label: Hair in Wind
+    lora_type: action
+    tier: wholesome
+    motion_tier: low
+    file: wan22_motion/wan22_hair_wind.safetensors
+    strength: 0.75
+    tags: [hair, wind, blowing, breeze, flowing, flutter]
+    description: "Wind-blown hair motion — natural hair flow, fabric flutter"
+    motion_description: "hair flowing and whipping in wind, strands lifting and separating, continuous directional movement, loose fabric and clothing edges fluttering, natural breeze effect"
+
+  motorcycle_drift:
+    label: Motorcycle / Drift
+    lora_type: action
+    tier: mature
+    motion_tier: high
+    file: wan22_motion/wan22_motorcycle_drift.safetensors
+    strength: 0.85
+    tags: [motorcycle, bike, drift, wheelie, ride, speed, vehicle, sportbike]
+    description: "Motorcycle riding and drifting — lean angles, speed blur, wheel spin"
+    motion_description: "motorcycle leaning into sharp turn, rider body shifting for counterbalance, rear wheel sliding in controlled drift, speed blur on background, sparks from foot peg scraping"
+
+  vehicle_chase:
+    label: Vehicle Chase
+    lora_type: action
+    tier: mature
+    motion_tier: extreme
+    file: wan22_motion/wan22_vehicle_chase.safetensors
+    strength: 0.9
+    tags: [vehicle, chase, car, pursuit, driving, race, speed, crash]
+    description: "Vehicle chase motion — fast tracking, swerving, speed effects"
+    motion_description: "high speed vehicle pursuit, cars swerving between lanes, tires screeching on turns, background streaking with motion blur, close calls and near-misses, aggressive driving maneuvers"

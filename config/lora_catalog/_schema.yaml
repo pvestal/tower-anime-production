@@ -1,0 +1,69 @@
+# LoRA Catalog Schema — content tiers, rating gates, checkpoint compatibility
+# Loaded first; other files merge into the catalog namespace.
+#
+# lora_type taxonomy:
+#   pose     — body position/action (cowgirl, doggy, missionary)
+#   camera   — camera movement (orbit, push_in, tilt)
+#   action   — non-sexual body motion (fight, dance, walk)
+#   style    — visual style modifier (retro_90s, live2d)
+#   quality  — quality/anatomy enhancer (general_nsfw, penis_enhancer)
+#   pov      — first-person perspective LoRAs
+#   furry    — anthro/furry-specific LoRAs
+#
+# Enforcement rules (applied in builder.py):
+#   - Max 1 pose LoRA per shot
+#   - Max 1 camera LoRA per shot
+#   - When character LoRA present: pose/quality strength capped at 0.6
+#   - Camera LoRA strength capped at 0.5 when combined with pose LoRA
+content_tiers:
+  universal:
+  - camera
+  - speed
+  - motion
+  wholesome:
+  - walk
+  - run
+  - idle
+  - emotion
+  - environment_sfw
+  mature:
+  - fight
+  - explosion
+  - weapon
+  - cyberpunk
+  - chase
+  explicit:
+  - position
+  - oral
+  - group
+  - finish
+  - nude
+  furry_explicit:
+  - furry_enhancer
+  - anthro_interaction
+rating_gates:
+  G:
+  - universal
+  - wholesome
+  PG:
+  - universal
+  - wholesome
+  PG-13:
+  - universal
+  - wholesome
+  - mature
+  R:
+  - universal
+  - wholesome
+  - mature
+  XXX:
+  - universal
+  - wholesome
+  - mature
+  - explicit
+  - furry_explicit
+checkpoint_compat:
+  illustrious:
+  - waiIllustriousSDXL_v160.safetensors
+  nova_animal:
+  - nova_animal_xl_v11.safetensors

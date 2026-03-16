@@ -1,0 +1,61 @@
+# Video LoRA Pairs — style type
+# 5 entries
+video_lora_pairs:
+  dr34ml4y:
+    label: DR34ML4Y All-in-One NSFW
+    lora_type: style
+    tier: explicit
+    high: DR34ML4Y_I2V_14B_HIGH.safetensors
+    low: DR34ML4Y_I2V_14B_LOW_V2.safetensors
+    tags:
+    - missionary
+    - blowjob
+    - doggy
+    - cowgirl
+    - all_in_one
+  live2d_background:
+    label: Live2D Background
+    lora_type: style
+    tier: universal
+    high: wan22_camera/live2d_background_HIGH.safetensors
+    low: wan22_camera/live2d_background_LOW.safetensors
+    tags:
+    - style
+    - live2d
+    - background
+    - parallax
+  retro_90s_anime:
+    label: Retro 90s Anime Style
+    lora_type: style
+    tier: universal
+    high: null
+    low: wan22_action/retro_90s_anime_LOW.safetensors
+    tags:
+    - style
+    - retro
+    - 90s
+    - anime
+    - vhs
+  sigma_face:
+    label: Sigma Face Expression
+    lora_type: style
+    tier: universal
+    high: wan22_action/sigma_face_HIGH.safetensors
+    low: wan22_action/sigma_face_LOW.safetensors
+    tags:
+    - expression
+    - sigma
+    - dramatic
+    - meme
+    - face
+  transition_v2:
+    label: Deepfake / Transition V2
+    lora_type: style
+    tier: universal
+    high: wan22_camera/transition_v2_HIGH.safetensors
+    low: null
+    tags:
+    - transition
+    - deepfake
+    - face_swap
+    - scene_change

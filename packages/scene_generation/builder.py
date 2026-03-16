@@ -74,27 +74,55 @@ def _resolve_content_lora_pair(
             high = None
         return high, low, 0.85
 
-    # Pattern 3: Catalog key name (e.g. "cowgirl") — look up in lora_catalog.yaml
+    # Pattern 3: Catalog key name (e.g. "cowgirl") — look up in catalog
     try:
-        import yaml
-        from pathlib import Path
-        catalog_path = Path("/opt/anime-studio/config/lora_catalog.yaml")
-        if catalog_path.exists():
-            with open(catalog_path) as f:
-                catalog = yaml.safe_load(f) or {}
+        from .catalog_loader import load_catalog
+        catalog = load_catalog()
+        if catalog:
             pairs = catalog.get("video_lora_pairs", {})
+
+            # Direct match in video_lora_pairs
             if lora_name in pairs:
                 pair = pairs[lora_name]
+                if pair.get("single"):
+                    return pair["single"], pair["single"], 0.85
                 return pair.get("high"), pair.get("low"), 0.85
+
+            # Check action_presets — follow video_lora reference to video_lora_pairs
+            presets = catalog.get("action_presets", {})
+            if lora_name in presets:
+                preset = presets[lora_name]
+                vl_key = preset.get("video_lora")
+                if vl_key and vl_key in pairs:
+                    pair = pairs[vl_key]
+                    strength = preset.get("video_lora_strength", 0.85)
+                    if pair.get("single"):
+                        return pair["single"], pair["single"], strength
+                    return pair.get("high"), pair.get("low"), strength
+                # Preset exists but video_lora isn't in video_lora_pairs —
+                # it's a motion-only preset (e.g. idle, walking, talking).
+                # No content LoRA needed; motion_lora_matcher handles it.
+                return None, None, 0.85
+
+            # Check video_motion_loras — these are motion LoRAs, not content
+            motion_loras = catalog.get("video_motion_loras", {})
+            if lora_name in motion_loras:
+                return None, None, 0.85
     except Exception:
         pass
 
     # Pattern 4: Generic single LoRA (e.g. project-level video_lora) — apply to high model only
-    return lora_name, None, 0.85
+    # Only if the file actually exists on disk; otherwise return None to avoid
+    # passing bogus strings to ComfyUI
+    from pathlib import Path as _P4
+    if (_P4(f"/opt/ComfyUI/models/loras/{lora_name}").exists()
+            or _P4(f"/opt/ComfyUI/models/loras/{lora_name}.safetensors").exists()):
+        return lora_name, None, 0.85
+    return None, None, 0.85
 
 from .framepack import build_framepack_workflow, _submit_comfyui_workflow
 from .ltx_video import build_ltx_workflow, build_ltxv_looping_workflow, _submit_comfyui_workflow as _submit_ltx_workflow
-from .wan_video import build_wan_t2v_workflow, build_wan22_workflow, build_wan22_14b_i2v_workflow, _submit_comfyui_workflow as _submit_wan_workflow
+from .wan_video import build_wan_t2v_workflow, build_wan22_workflow, build_wan22_14b_i2v_workflow, build_dasiwa_i2v_workflow, check_dasiwa_ready, _submit_comfyui_workflow as _submit_wan_workflow
 from .video_config import get_engine_defaults
 from .motion_intensity import classify_motion_intensity, get_motion_params, get_counter_motion
 from .image_recommender import recommend_for_scene, batch_read_metadata
@@ -798,7 +826,7 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                 from .video_qc import check_engine_blacklist
                 from .framepack import build_framepack_workflow, _submit_comfyui_workflow
                 from .ltx_video import build_ltx_workflow, build_ltxv_looping_workflow, _submit_comfyui_workflow as _submit_ltx_workflow
-                from .wan_video import build_wan_t2v_workflow, build_wan22_workflow, build_wan22_14b_i2v_workflow, _submit_comfyui_workflow as _submit_wan_workflow
+                from .wan_video import build_wan_t2v_workflow, build_wan22_workflow, build_wan22_14b_i2v_workflow, build_dasiwa_i2v_workflow, check_dasiwa_ready, _submit_comfyui_workflow as _submit_wan_workflow
                 import time as _time_inner
 
                 shot_dict = dict(shot)
@@ -1431,9 +1459,17 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                     wan_h = _14b_cfg.get("height", 720)
                     if _project_width and _project_height and _project_width > _project_height:
                         wan_w, wan_h = wan_h, wan_w
-                    # Get motion LoRA from engine selector
+                    # Get motion LoRA — prefer engine selector, fall back to catalog matcher
                     _14b_motion_lora = engine_sel.motion_loras[0] if engine_sel.motion_loras else None
                     _14b_motion_str = 0.8
+                    if not _14b_motion_lora:
+                        from .motion_lora_matcher import match_motion_lora
+                        _ml_prompt = motion_prompt or ""
+                        _ml_desc = shot_dict.get("scene_description") or shot_dict.get("description") or ""
+                        _ml_rating = (scene_row.get("content_rating") if scene_row else None) or "R"
+                        _14b_motion_lora, _14b_motion_str = match_motion_lora(
+                            motion_prompt=_ml_prompt, description=_ml_desc, content_rating=_ml_rating
+                        )
                     # Resolve content LoRA HIGH/LOW pair from shot or project
                     # Skip project fallback for trailer intros/interactions —
                     # they test character fidelity, not content LoRAs
@@ -1487,6 +1523,46 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                     if _counter_motion and _counter_motion not in current_prompt:
                         current_prompt = f"{current_prompt}, {_counter_motion}"
                         logger.info(f"Shot {shot_id}: counter-motion injected: {_counter_motion[:60]}")
+
+                    # --- LoRA motion description injection ---
+                    # Append explicit motion cues from catalog so WAN knows
+                    # what motion the LoRA is supposed to produce
+                    from .motion_intensity import get_motion_description
+                    _motion_desc = get_motion_description(_shot_lora) if _shot_lora else None
+                    if not _motion_desc and _14b_clh:
+                        _motion_desc = get_motion_description(_14b_clh)
+                    if _motion_desc and _motion_desc not in current_prompt:
+                        current_prompt = f"{current_prompt}, {_motion_desc}"
+                        logger.info(f"Shot {shot_id}: motion_description injected: {_motion_desc[:80]}")
+
+                    # --- LoRA type enforcement ---
+                    # Cap content LoRA strength when character has a trained LoRA
+                    # to prevent content/pose LoRAs from overriding character identity
+                    from .motion_intensity import get_lora_type, cap_content_strength
+                    _has_char_lora = False
+                    if character_slug:
+                        from pathlib import Path as _LP
+                        for _suf in ("_ill_lora", "_xl_lora", "_lora"):
+                            if (_LP(f"/opt/ComfyUI/models/loras/{character_slug}{_suf}.safetensors").exists()):
+                                _has_char_lora = True
+                                break
+                    _content_lora_type = get_lora_type(_14b_clh) if _14b_clh else None
+                    _motion_lora_type = get_lora_type(_14b_motion_lora) if _14b_motion_lora else None
+                    _has_pose = _content_lora_type == "pose"
+                    if _14b_clh and _has_char_lora:
+                        _14b_cl_str = cap_content_strength(
+                            _14b_clh, _14b_cl_str,
+                            has_character_lora=True,
+                            has_pose_lora=_has_pose,
+                        )
+                    # Log the type-aware decision
+                    if _content_lora_type or _motion_lora_type:
+                        logger.info(
+                            f"Shot {shot_id}: lora_types content={_content_lora_type} "
+                            f"motion={_motion_lora_type} char_lora={_has_char_lora} "
+                            f"final_str={_14b_cl_str}"
+                        )
+
                     logger.info(
                         f"Shot {shot_id}: motion_tier={_motion_tier} "
                         f"steps={_14b_steps} split={_14b_split} cfg={_14b_cfg} "
@@ -1617,6 +1693,81 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                         logger.warning(f"Shot {shot_id}: source {image_filename} already queued (prompt={_existing}), skipping duplicate")
                         continue
                     comfyui_prompt_id = _submit_wan_workflow(workflow)
+                elif shot_engine == "dasiwa":
+                    # DaSiWa TastySin v8 — pre-baked distillation, 4 steps, no lightx2v needed
+                    if not image_filename:
+                        logger.error(f"Shot {shot_id}: dasiwa requires a source image (I2V only)")
+                        await conn.execute(
+                            "UPDATE shots SET status = 'failed', error_message = $2 WHERE id = $1",
+                            shot_id, "dasiwa requires a source image (I2V only)",
+                        )
+                        continue
+                    _dasi_ok, _dasi_msg = check_dasiwa_ready()
+                    if not _dasi_ok:
+                        logger.warning(f"Shot {shot_id}: {_dasi_msg}, falling back to wan22_14b")
+                        shot_engine = "wan22_14b"
+                        # Fall through to wan22_14b branch on next iteration
+                        # For now, just use wan22_14b directly
+                        _14b_cfg_d = get_engine_defaults("wan22_14b_dasiwa")
+                        fps = _14b_cfg_d.get("fps", 16)
+                        num_frames = max(9, int(shot_seconds * fps) + 1)
+                        wan_w = _14b_cfg_d.get("width", 480)
+                        wan_h = _14b_cfg_d.get("height", 720)
+                        if _project_width and _project_height and _project_width > _project_height:
+                            wan_w, wan_h = wan_h, wan_w
+                        workflow, prefix = build_wan22_14b_i2v_workflow(
+                            prompt_text=current_prompt, ref_image=image_filename,
+                            width=wan_w, height=wan_h, num_frames=num_frames, fps=fps,
+                            total_steps=6, split_steps=3, cfg=3.5, seed=shot_seed,
+                            negative_text=current_negative, output_prefix=_file_prefix,
+                            use_lightx2v=False,
+                        )
+                        comfyui_prompt_id = _submit_wan_workflow(workflow)
+                    else:
+                        _dasi_cfg = get_engine_defaults("wan22_14b_dasiwa")
+                        fps = _dasi_cfg.get("fps", 16)
+                        num_frames = max(9, int(shot_seconds * fps) + 1)
+                        wan_w = _dasi_cfg.get("width", 480)
+                        wan_h = _dasi_cfg.get("height", 720)
+                        if _project_width and _project_height and _project_width > _project_height:
+                            wan_w, wan_h = wan_h, wan_w
+                        import hashlib as _hashlib
+                        if not shot_seed:
+                            _scene_seed_bytes = _hashlib.sha256(str(scene_id).encode()).digest()
+                            _scene_base_seed = int.from_bytes(_scene_seed_bytes[:8], "big") % (2**63)
+                            shot_seed = _scene_base_seed + (shot_dict.get("shot_number", 0) or 0)
+                        _shot_lora = shot_dict.get("lora_name")
+                        _dasi_clh, _dasi_cll, _dasi_cl_str = _resolve_content_lora_pair(
+                            _shot_lora, project_video_lora
+                        )
+                        _14b_motion_lora = engine_sel.motion_loras[0] if engine_sel.motion_loras else None
+                        if not _14b_motion_lora:
+                            from .motion_lora_matcher import match_motion_lora
+                            _ml_prompt = motion_prompt or ""
+                            _ml_desc = shot_dict.get("scene_description") or shot_dict.get("description") or ""
+                            _ml_rating = (scene_row.get("content_rating") if scene_row else None) or "R"
+                            _14b_motion_lora, _14b_motion_str_dasi = match_motion_lora(
+                                motion_prompt=_ml_prompt, description=_ml_desc, content_rating=_ml_rating
+                            )
+                        logger.info(
+                            f"Shot {shot_id}: DaSiWa I2V dims={wan_w}x{wan_h} "
+                            f"ref={image_filename} content_high={_dasi_clh} "
+                            f"content_low={_dasi_cll} motion={_14b_motion_lora}"
+                        )
+                        workflow, prefix = build_dasiwa_i2v_workflow(
+                            prompt_text=current_prompt,
+                            ref_image=image_filename,
+                            width=wan_w, height=wan_h,
+                            num_frames=num_frames, fps=fps,
+                            seed=shot_seed,
+                            negative_text=current_negative,
+                            output_prefix=_file_prefix,
+                            motion_lora=_14b_motion_lora,
+                            content_lora_high=_dasi_clh,
+                            content_lora_low=_dasi_cll,
+                            content_lora_strength=min(_dasi_cl_str, 0.6),
+                        )
+                        comfyui_prompt_id = _submit_wan_workflow(workflow)
                 elif shot_engine == "wan":
                     fps = 16
                     num_frames = max(9, int(shot_seconds * fps) + 1)

@@ -1,0 +1,140 @@
+# Video LoRA Pairs — camera type
+# 15 entries
+video_lora_pairs:
+  camera_push_in:
+    label: Camera Push In / Dolly
+    lora_type: camera
+    tier: universal
+    motion_tier: medium
+    high: wan22_camera/camera_push_in.safetensors
+    low: null
+    tags: [camera, push_in, dolly, zoom]
+    motion_description: "camera steadily pushes in from medium shot to tight close-up, slight handheld sway, subject holds pose, background gradually fills frame"
+
+  camera_rotation:
+    label: Camera Rotation
+    lora_type: camera
+    tier: universal
+    high: wan22_camera/camera_rotation_HIGH.safetensors
+    low: null
+    tags: [camera, rotation, orbit]
+    motion_description: "camera rotates horizontally around subject, smooth continuous arc, subject stays centered in frame, background pans behind"
+
+  orbit_v2:
+    label: Orbit Around Subject V2
+    lora_type: camera
+    tier: universal
+    high: wan22_camera/orbit_v2_HIGH.safetensors
+    low: wan22_camera/orbit_v2_LOW.safetensors
+    tags: [camera, orbit, surround, 360]
+    motion_description: "camera orbits 180 degrees around subject, smooth circular tracking shot, subject remains centered, perspective shifts continuously"
+
+  drone_shot:
+    label: Drone Shot / Aerial
+    lora_type: camera
+    tier: universal
+    high: wan22_camera/drone_shot_HIGH.safetensors
+    low: null
+    tags: [camera, drone, aerial, overhead]
+    motion_description: "aerial camera descends or rises revealing scene from above, high angle to eye level transition, wide establishing perspective"
+
+  tilt_down:
+    label: Camera Tilt-down Undershot
+    lora_type: camera
+    tier: universal
+    high: wan22_camera/tilt_down_HIGH.safetensors
+    low: wan22_camera/tilt_down_LOW.safetensors
+    tags: [camera, tilt, undershot, dramatic]
+    motion_description: "camera tilts downward from above subject to below, dramatic low angle undershot, subject appears increasingly powerful and imposing"
+
+  rotation_360:
+    label: 360 Rotation
+    lora_type: camera
+    tier: universal
+    high: wan22_camera/360_rotation_HIGH.safetensors
+    low: null
+    tags: [camera, 360, rotation, turntable]
+    motion_description: "full 360 degree rotation around subject, continuous smooth spin, all sides of subject visible in sequence"
+
+  turntable_360:
+    label: Turntable 360
+    lora_type: camera
+    tier: universal
+    high: wan22_camera/turntable_360_HIGH.safetensors
+    low: null
+    tags: [camera, turntable, reveal, product]
+    motion_description: "subject rotates on turntable while camera stays fixed, product showcase spin, even lighting throughout rotation"
+
+  lazy_susan:
+    label: Lazy Susan Rotation
+    lora_type: camera
+    tier: universal
+    high: wan22_camera/lazy_susan_rotation_HIGH.safetensors
+    low: null
+    tags: [camera, rotation, table, product]
+    motion_description: "slow table-top rotation, subject spins gently on surface, camera fixed at slight angle above, smooth continuous reveal"
+
+  cinematic_smash_cut:
+    label: Cinematic Smash Cut
+    lora_type: camera
+    tier: universal
+    high: wan22_camera/cinematic_smash_cut.safetensors
+    low: null
+    tags: [camera, smash_cut, transition, cinematic]
+    motion_description: "abrupt hard cut transition with motion blur, sudden scene shift, kinetic energy carries across the cut, fast jarring movement"
+
+  hard_cut:
+    label: Cinematic Hard Cut v3
+    lora_type: camera
+    tier: universal
+    high: wan22_camera/hard_cut_v3_HIGH.safetensors
+    low: null
+    tags: [camera, hard_cut, transition, scene_change]
+    motion_description: "clean hard cut between two compositions, sharp instant scene transition, no dissolve or fade, crisp editorial cut"
+
+  set_reveal:
+    label: Set Reveal
+    lora_type: camera
+    tier: universal
+    high: wan22_camera/set_reveal_HIGH.safetensors
+    low: null
+    tags: [camera, reveal, zoom_out, establishing]
+    motion_description: "camera pulls back wide to reveal full environment, zoom out from detail to establishing shot, scene context gradually appears"
+
+  eyes_in:
+    label: Eyes In (Close-up Zoom)
+    lora_type: camera
+    tier: universal
+    high: wan22_camera/eyes_in_HIGH.safetensors
+    low: null
+    tags: [camera, eyes, close_up, zoom, dramatic]
+    motion_description: "camera zooms directly into subject's eyes, tight close-up on face, dramatic focus pull to eyes, intimate intense framing"
+
+  cinematic_flare:
+    label: Cinematic Lens Flare
+    lora_type: camera
+    tier: universal
+    high: null
+    low: wan22_camera/cinematic_flare_LOW.safetensors
+    tags: [camera, flare, cinematic, atmosphere]
+    motion_description: "warm lens flare sweeps across frame, anamorphic light streaks, cinematic atmosphere, soft glowing highlights drift"
+
+  forward_flight:
+    label: Cinematic Forward Flight / Chase
+    lora_type: camera
+    tier: universal
+    motion_tier: medium
+    high: wan22_forward_flight_HIGH.safetensors
+    low: null
+    tags: [camera, forward, chase, fpv, flight, drone]
+    motion_description: "camera flies forward through environment at speed, first-person chase perspective, scenery rushes past on both sides, continuous forward momentum"
+
+  face_to_feet:
+    label: Face-to-Feet Camera Sweep
+    lora_type: camera
+    tier: universal
+    motion_tier: medium
+    high: wan22_face_to_feet_HIGH.safetensors
+    low: wan22_face_to_feet_LOW.safetensors
+    tags: [camera, vertical_sweep, face, feet, full_body, reveal, pov]
+    motion_description: "camera sweeps vertically from face down to feet, slow full-body reveal, smooth continuous downward tilt covering entire figure"

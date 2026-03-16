@@ -1,0 +1,55 @@
+# Video LoRA Pairs — pov type
+# 4 entries
+video_lora_pairs:
+  pov_doggystyle:
+    label: POV Doggystyle
+    lora_type: pov
+    tier: explicit
+    high: pov_doggystyle_sdxl.safetensors
+    low: null
+    tags:
+    - pov
+    - doggy
+    - doggystyle
+    - first_person
+    - position
+  pov_cowgirl:
+    label: POV Cowgirl
+    lora_type: pov
+    tier: explicit
+    high: wan22_nsfw/WAN-2.2-I2V-POV-Cowgirl-HIGH-v1.0-fixed.safetensors
+    low: null
+    tags:
+    - pov
+    - cowgirl
+    - riding
+    - first_person
+    scene_description: pov shot from below, cowgirl riding position, straddling viewer, bouncing, nude, looking down at viewer,
+      first person perspective, explicit
+  pov_insertion:
+    label: POV Insertion
+    lora_type: pov
+    tier: explicit
+    high: wan22_nsfw/wan22_pov_insertion_HIGH.safetensors
+    low: wan22_nsfw/wan22_pov_insertion_LOW.safetensors
+    tags:
+    - pov
+    - insertion
+    - penetration
+    - first_person
+    - missionary
+    - doggystyle
+    trigger_prompt: A man appears and inserts his penis into her pussy
+    scene_description: pov insertion shot, penis entering frame, penetration moment, first person perspective, explicit
+  pov_fellatio:
+    label: POV Fellatio (Taker)
+    lora_type: pov
+    tier: explicit
+    high: wan22_nsfw/wan22_i2v_taker_pov_bj_high_noise.safetensors
+    low: null
+    tags:
+    - pov
+    - blowjob
+    - fellatio
+    - oral
+    - first_person

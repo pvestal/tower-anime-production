@@ -1,0 +1,25 @@
+# Video LoRA Pairs — furry type
+# 2 entries
+video_lora_pairs:
+  furry_nsfw_general:
+    label: Furry NSFW General (14B I2V)
+    lora_type: furry
+    tier: furry_explicit
+    high: wan22_nsfw/wan_furry_nsfw_14b_i2v.safetensors
+    low: null
+    tags:
+    - furry
+    - anthro
+    - nsfw
+    - general
+    scene_description: anthro furry, nude, explicit pose, presenting, seductive expression, tail raised, bedroom eyes, nsfw
+  furry_transformation:
+    label: Anthro Furry Transformation
+    lora_type: furry
+    tier: furry_explicit
+    high: wan22_nsfw/wan22_furry_tf_HIGH.safetensors
+    low: null
+    tags:
+    - furry
+    - anthro
+    - transformation

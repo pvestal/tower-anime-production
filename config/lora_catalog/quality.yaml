@@ -1,0 +1,47 @@
+# Video LoRA Pairs — quality type
+# 4 entries
+video_lora_pairs:
+  nsfw_group_girls:
+    label: Group (Girls)
+    lora_type: quality
+    tier: explicit
+    high: wan22_nsfw/wan22_nsfw_group_girls.safetensors
+    low: null
+    tags:
+    - group
+    - girls
+    - lesbian
+  penis_enhancer:
+    label: Penis Enhancer
+    lora_type: quality
+    tier: explicit
+    motion_tier: low
+    high: wan22_nsfw/PENISLORA_22_i2v_HIGH_e320.safetensors
+    low: wan22_nsfw/PENISLORA_22_i2v_LOW_e496.safetensors
+    tags:
+    - anatomy
+    - male
+    - enhancer
+  pussy_asshole_closeup:
+    label: Pussy/Asshole Close-up
+    lora_type: quality
+    tier: explicit
+    motion_tier: low
+    high: wan22_nsfw/wan2.2_i2v_high_ulitmate_pussy_asshole.safetensors
+    low: wan22_nsfw/wan2.2_i2v_low_ulitmate_pussy_asshole.safetensors
+    tags:
+    - closeup
+    - anatomy
+    - female
+  general_nsfw:
+    label: WAN General NSFW Enhancer
+    lora_type: quality
+    tier: explicit
+    motion_tier: low
+    high: wan22_nsfw/wan22_general_nsfw_HIGH.safetensors
+    low: wan22_nsfw/wan22_general_nsfw_LOW.safetensors
+    tags:
+    - nsfw
+    - quality
+    - enhancer
+    - general

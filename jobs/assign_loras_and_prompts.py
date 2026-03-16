@@ -138,8 +138,14 @@ MOTION_TEMPLATES = {
 
 
 def load_catalog():
-    with open(CATALOG_PATH) as f:
-        return yaml.safe_load(f) or {}
+    import sys
+    sys.path.insert(0, str(CATALOG_PATH.parent.parent))
+    try:
+        from packages.scene_generation.catalog_loader import load_catalog as _lc
+        return _lc()
+    except ImportError:
+        with open(CATALOG_PATH) as f:
+            return yaml.safe_load(f) or {}
 
 
 async def get_effective_lora(conn, char_slug: str, content_rating: str, catalog: dict):

@@ -74,10 +74,8 @@ class TrailerScorecard:
 
 
 def _load_lora_catalog() -> dict:
-    if not LORA_CATALOG_PATH.exists():
-        return {}
-    with open(LORA_CATALOG_PATH) as f:
-        return yaml.safe_load(f) or {}
+    from packages.scene_generation.catalog_loader import load_catalog
+    return load_catalog()
 
 
 def _qc_val(qc: dict | str | None, key: str) -> float | None:

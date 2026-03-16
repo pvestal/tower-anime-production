@@ -29,7 +29,6 @@ from packages.core.config import OLLAMA_URL, VISION_MODEL
 
 logger = logging.getLogger(__name__)
 
-_CATALOG_PATH = Path("/opt/anime-studio/config/lora_catalog.yaml")
 _interaction_cache: dict | None = None
 
 
@@ -48,11 +47,8 @@ def get_interaction_metadata(lora_name: str) -> dict | None:
     """
     global _interaction_cache
     if _interaction_cache is None:
-        try:
-            with open(_CATALOG_PATH) as f:
-                _interaction_cache = yaml.safe_load(f) or {}
-        except Exception:
-            _interaction_cache = {}
+        from .catalog_loader import load_catalog
+        _interaction_cache = load_catalog()
 
     pairs = _interaction_cache.get("video_lora_pairs", {})
     if not lora_name:

@@ -1,0 +1,591 @@
+# Image LoRA Categories (Illustrious/SDXL keyframe generation)
+# 22 categories
+image_lora_categories:
+  position:
+    tier: explicit
+    loras:
+    - filename: ass_ride_illustrious.safetensors
+      label: Ass Ride / Cowgirl
+      tags:
+      - cowgirl
+      - riding
+    - filename: IL_doggy.safetensors
+      label: Doggy Style
+      tags:
+      - doggy
+    - filename: Doggystyle_leaning_on_the_counter.safetensors
+      label: Doggy (Counter)
+      tags:
+      - doggy
+      - counter
+      - standing
+    - filename: Squatting_Doggy.safetensors
+      label: Squatting Doggy
+      tags:
+      - doggy
+      - squatting
+    - filename: prone_face_cam_v0_2.safetensors
+      label: Prone Face Cam
+      tags:
+      - prone
+      - pov
+    - filename: sex_wall_1.safetensors
+      label: Wall Sex
+      tags:
+      - wall
+      - standing
+    - filename: Standing 69 (Illustrious) v1.safetensors
+      label: Standing 69
+      tags:
+      - standing
+      - oral
+      - 69
+    - filename: spitroast_illustrious.safetensors
+      label: Spitroast
+      tags:
+      - spitroast
+      - group
+    - filename: breeding_slave_illustrious.safetensors
+      label: Breeding
+      tags:
+      - breeding
+      - intense
+    - filename: Upright_straddle_back_XL.safetensors
+      label: Upright Straddle (Back View)
+      tags:
+      - straddle
+      - riding
+      - leg_lock
+      - back_view
+      trigger: girl on top, straddling, upright straddle, leg lock
+    - filename: pov_doggystyle_sdxl.safetensors
+      label: POV Doggystyle (SDXL)
+      tags:
+      - doggy
+      - pov
+      - first_person
+      trigger: dggy, girl, pov, penis
+    - filename: mating_press_illustrious.safetensors
+      label: Mating Press
+      tags:
+      - mating_press
+      - missionary
+      - intense
+      trigger: matpress
+    - filename: bi_mmf_threesome_sdxl.safetensors
+      label: Bi MMF Threesome
+      tags:
+      - mmf
+      - threesome
+      - bisexual
+      - group
+  choking:
+    tier: explicit
+    loras:
+    - filename: POVThroatGrab_Ill_v1.safetensors
+      label: POV Throat Grab
+      tags:
+      - choking
+      - throat
+      - pov
+      - rough
+      trigger: POV_throatgrab, pov choking
+  oral:
+    tier: explicit
+    loras:
+    - filename: deepthroat_doggy.safetensors
+      label: Deepthroat + Doggy
+      tags:
+      - deepthroat
+      - doggy
+      - oral
+    - filename: choking-doggy-style-IL-000011.safetensors
+      label: Choking Doggy
+      tags:
+      - choking
+      - doggy
+      - rough
+    - filename: side_view_reverse_blowjobthroatfuckdeepthroatmouthfuck.safetensors
+      label: Side View BJ/Throatfuck
+      tags:
+      - blowjob
+      - throatfuck
+      - side
+    - filename: Face_Fucking.safetensors
+      label: Face Fucking
+      tags:
+      - facefuck
+      - rough
+      - oral
+    - filename: LoRASexAndAnalFingering.safetensors
+      label: Sex & Fingering
+      tags:
+      - fingering
+      - anal
+  group:
+    tier: explicit
+    loras:
+    - filename: group_sex_orgy_illustrious.safetensors
+      label: Group Sex / Orgy
+      tags:
+      - group
+      - orgy
+    - filename: group_grab_illustrious.safetensors
+      label: Group Grab
+      tags:
+      - group
+      - grab
+    - filename: mmmf_doggy.safetensors
+      label: MMMF Doggy
+      tags:
+      - group
+      - mmmf
+      - doggy
+    - filename: mounted_dp-000001.safetensors
+      label: Mounted DP
+      tags:
+      - dp
+      - mounted
+      - group
+    - filename: multiple-boys-v8-illustriousxl-lora-nochekaiser.safetensors
+      label: Multiple Males
+      tags:
+      - group
+      - multiple_males
+  nude:
+    tier: explicit
+    loras:
+    - filename: NM_FitButt_illv4.safetensors
+      label: Fit Butt
+      tags:
+      - butt
+      - fitness
+      - nude
+    - filename: cold_fresh_skin_ill.safetensors
+      label: Realistic Skin
+      tags:
+      - skin
+      - realism
+      - quality
+    - filename: kangoku_gakuen_gamecg_ill.safetensors
+      label: Prison School CG
+      tags:
+      - anime
+      - ecchi
+    - filename: melkor_mancin_style_ill.safetensors
+      label: Melkor Mancin Style
+      tags:
+      - style
+      - western
+      - comic
+  furry:
+    tier: furry_explicit
+    checkpoint: nova_animal
+    loras:
+    - filename: furry_enhancer_v8.2.safetensors
+      label: Furry Enhancer
+      tags:
+      - furry
+      - quality
+      - enhancer
+    - filename: furry_realism_illus.safetensors
+      label: Furry Realism
+      tags:
+      - furry
+      - realism
+    - filename: human_on_anthro_male_pov_il.safetensors
+      label: Human on Anthro (Male POV)
+      tags:
+      - furry
+      - human_anthro
+      - pov
+    - filename: human_male_on_furry_female_concept.safetensors
+      label: Human Male on Furry Female
+      tags:
+      - furry
+      - human_anthro
+      - concept
+    - filename: human_female_on_furry_male_concept.safetensors
+      label: Human Female on Furry Male
+      tags:
+      - furry
+      - human_anthro
+    - filename: ma_tianba_horse_anthro.safetensors
+      label: Horse Anthro
+      tags:
+      - furry
+      - horse
+      - anthro
+  facesitting:
+    tier: explicit
+    loras:
+    - filename: imminentfacesitill.safetensors
+      label: Facesitting POV (Illustrious)
+      tags:
+      - facesitting
+      - pov
+      - from_below
+      - dominant
+      trigger: facesitpovILL, from below, imminent facesit, facesitting pov, looking down at viewer, foreshortening
+      strength: 0.7
+  monster:
+    tier: explicit
+    loras:
+    - filename: unrealistic_nsfw_concepts_sdxl.safetensors
+      label: Unrealistic NSFW Concepts (Non-Pony SDXL)
+      tags:
+      - monster
+      - demon
+      - alien
+      - interspecies
+      - unrealistic
+      trigger: monster, demon, alien, dominant male, submissive female, interspecies, sex from behind, hetero
+    - filename: enhanced_unrealistic_bigasp_v2.safetensors
+      label: Enhanced Unrealistic (bigASP V2)
+      tags:
+      - monster
+      - demon
+      - alien
+      - interspecies
+      - creature
+      - bigasp
+      trigger: source_render, monster, demon, alien, interspecies
+      note: Requires bigASP V2 checkpoint — may not work with Illustrious
+    - filename: cc_cyborg_sdxl.safetensors
+      label: Cyborg Concept
+      tags:
+      - cyborg
+      - robot
+      - mechanical
+      - scifi
+    - filename: monster_crowd_ilxl_v1.0_ex.safetensors
+      label: Monster Crowd
+      tags:
+      - monster
+      - crowd
+      - group
+      - creature
+    - filename: aliens_ailf_sdxl.safetensors
+      label: Aliens AILF
+      tags:
+      - alien
+      - xenomorph
+      - interspecies
+      - scifi
+      trigger: alienailf
+    - filename: piccolhoe_alien_babe_sdxl.safetensors
+      label: Piccolhoe Alien Babe
+      tags:
+      - alien
+      - babe
+      - interspecies
+      - scifi
+      - exotic
+      trigger: Tw3ak1t
+    - filename: symbiote_she_venom_sdxl.safetensors
+      label: Symbiote She-Venom
+      tags:
+      - symbiote
+      - venom
+      - tentacle
+      - monster
+      - latex
+    - filename: scifi_sex_machine_rider_ill.safetensors
+      label: Sci-fi Sex Machine Rider
+      tags:
+      - machine
+      - robot
+      - riding
+      - scifi
+      - mechanical
+    - filename: male_android_ill-10.safetensors
+      label: Male Android (Illustrious)
+      tags:
+      - android
+      - robot
+      - scifi
+      - male
+      - mechanical
+      - gangbang
+      trigger: male_android_ill
+      strength: 0.8
+    - filename: MusRob_Robot_Illustrious.safetensors
+      label: Robot (Illustrious)
+      tags:
+      - robot
+      - mechanical
+      - scifi
+  mario:
+    tier: wholesome
+    loras:
+    - filename: rosalina_super_mario_ill.safetensors
+      label: Princess Rosalina (Super Mario Galaxy)
+      tags:
+      - mario
+      - nintendo
+      - rosalina
+      - princess
+      - galaxy
+      trigger: rosalina, super mario galaxy, princess, blue dress, crown
+      strength: 0.75
+    - filename: princess_peach_mario_ill.safetensors
+      label: Princess Peach (Mario)
+      tags:
+      - mario
+      - nintendo
+      - peach
+      - princess
+      trigger: princess peach, super mario, pink dress, crown, blonde hair
+      strength: 0.75
+    - filename: yoshi_super_mario_ill.safetensors
+      label: Yoshi (Super Mario Bros)
+      tags:
+      - mario
+      - nintendo
+      - yoshi
+      - dinosaur
+      trigger: yoshi, super mario, green dinosaur, red saddle
+      strength: 0.75
+    - filename: chun_li_default_ill.safetensors
+      label: Chun-Li Default (Street Fighter)
+      tags:
+      - street_fighter
+      - chun_li
+      - fighter
+      - capcom
+      trigger: chun-li, street fighter, chinese dress, hair buns, spiked bracelet
+      strength: 0.75
+    - filename: chun_li_sf6_ill.safetensors
+      label: Chun-Li SF6 (Street Fighter 6)
+      tags:
+      - street_fighter
+      - chun_li
+      - sf6
+      - fighter
+      - capcom
+      trigger: chun-li, street fighter 6, blue outfit, hair buns
+      strength: 0.75
+    - filename: wheelbarrow_pose_ill.safetensors
+      label: Wheelbarrow Pose
+      tags:
+      - position
+      - wheelbarrow
+      - standing
+      - couple
+      trigger: wheelbarrow position, 1boy, 1girl, standing
+      strength: 0.5
+    - filename: walk_in_ntr_ill.safetensors
+      label: Walk-In / Caught Scene
+      tags:
+      - walk_in
+      - caught
+      - ntr
+      - voyeur
+      - surprise
+      trigger: walk-in, caught, surprised expression, doorway
+      strength: 0.6
+  style:
+    tier: universal
+    loras:
+    - filename: cyberpunk_style_ill.safetensors
+      label: Cyberpunk Style
+      tags:
+      - cyberpunk
+      - neon
+      - style
+    - filename: fantasy_forge_v3_il.safetensors
+      label: Fantasy Forge
+      tags:
+      - fantasy
+      - style
+    - filename: Nightclub_-_IL.safetensors
+      label: Nightclub Environment
+      tags:
+      - nightclub
+      - environment
+      - dark
+    - filename: loviante_v2_illustrious.safetensors
+      label: Loviante Style
+      tags:
+      - style
+      - anime
+    - filename: rrumirumi_artstyle_ill.safetensors
+      label: Rrumirumi Art Style
+      tags:
+      - style
+      - anime
+      - art
+    - filename: honovy_pony_v6.safetensors
+      label: Honovy (Pony)
+      tags:
+      - style
+      - pony
+  action:
+    tier: mature
+    loras:
+    - filename: Illustrious - Nuclear_Explosion.safetensors
+      label: Nuclear Explosion
+      tags:
+      - explosion
+      - destruction
+      - vfx
+    - filename: weapon_rifle_shoulder_carry_illustrious.safetensors
+      label: Rifle Carry
+      tags:
+      - weapon
+      - rifle
+      - military
+    - filename: cybernetic_limbs_illustrious.safetensors
+      label: Cybernetic Limbs
+      tags:
+      - cyberpunk
+      - cybernetic
+      - augmentation
+    - filename: helldivers_b08_light_gunner_illustrious.safetensors
+      label: Helldivers Gunner
+      tags:
+      - military
+      - armor
+      - gunner
+  camera:
+    tier: universal
+    loras:
+    - filename: wan22_arcshot_high.safetensors
+      label: Arc Shot (Camera Orbit)
+      tags:
+      - camera
+      - orbit
+      - cinematic
+      video_only: true
+    - filename: WanAnimate_relight_lora_fp16.safetensors
+      label: Relight (Atmospheric)
+      tags:
+      - lighting
+      - atmosphere
+      - mood
+      video_only: true
+    - filename: DR34ML4Y_I2V_14B_LOW_V2.safetensors
+      label: DR34ML4Y LOW (Anime Style)
+      tags:
+      - anime
+      - style
+      - quality
+      video_only: true
+    - filename: DR34ML4Y_I2V_14B_HIGH_V2.safetensors
+      label: DR34ML4Y HIGH (Anime Style)
+      tags:
+      - anime
+      - style
+      - quality
+      video_only: true
+  walk_cycle:
+    label: Walk Cycle
+    tier: universal
+    motion_tier: medium
+    single: wan22_motion/wan22_walk_cycle.safetensors
+    tags:
+    - walk
+    - locomotion
+    - forward
+    - casual
+    - sfw
+  run_cycle:
+    label: Run Cycle
+    tier: universal
+    motion_tier: high
+    single: wan22_motion/wan22_run_cycle.safetensors
+    tags:
+    - run
+    - jog
+    - locomotion
+    - chase
+    - fitness
+    - sfw
+  talk_gesture:
+    label: Talking / Hand Gestures
+    tier: universal
+    motion_tier: low
+    single: wan22_motion/wan22_talk_gesture.safetensors
+    tags:
+    - talk
+    - gesture
+    - conversation
+    - speaking
+    - sfw
+  hug_interaction:
+    label: Hug (SFW)
+    tier: wholesome
+    motion_tier: medium
+    single: wan22_motion/wan22_hug_interaction.safetensors
+    tags:
+    - hug
+    - embrace
+    - interaction
+    - two_person
+    - sfw
+  subtle_idle:
+    label: Subtle Idle / Breathing
+    tier: universal
+    motion_tier: low
+    single: wan22_motion/wan22_subtle_idle.safetensors
+    tags:
+    - idle
+    - breathing
+    - subtle
+    - standing
+    - sfw
+  dance_exotic:
+    label: Exotic Dance
+    tier: mature
+    motion_tier: high
+    single: wan22_motion/wan22_dance_exotic.safetensors
+    tags:
+    - dance
+    - exotic
+    - hip
+    - sensual
+    - sfw
+  fight_combat:
+    label: Fight / Combat
+    tier: mature
+    motion_tier: extreme
+    single: wan22_motion/wan22_fight_combat.safetensors
+    tags:
+    - fight
+    - combat
+    - punch
+    - kick
+    - action
+  hair_wind:
+    label: Hair in Wind
+    tier: universal
+    motion_tier: low
+    single: wan22_motion/wan22_hair_wind.safetensors
+    tags:
+    - hair
+    - wind
+    - flowing
+    - subtle
+    - sfw
+  motorcycle_drift:
+    label: Motorcycle Drift
+    tier: mature
+    motion_tier: extreme
+    single: wan22_motion/wan22_motorcycle_drift.safetensors
+    tags:
+    - motorcycle
+    - drift
+    - vehicle
+    - speed
+    - action
+  vehicle_chase:
+    label: Vehicle Chase
+    tier: mature
+    motion_tier: extreme
+    single: wan22_motion/wan22_vehicle_chase.safetensors
+    tags:
+    - vehicle
+    - chase
+    - car
+    - speed
+    - action

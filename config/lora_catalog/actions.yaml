@@ -1,0 +1,156 @@
+# Video LoRA Pairs — action type
+# 16 entries
+video_lora_pairs:
+  fight:
+    label: Fight / Combat
+    lora_type: action
+    tier: mature
+    motion_tier: extreme
+    high: wan22_action/wan_fight.safetensors
+    low: null
+    tags: [fight, combat, punch, kick, action]
+    counter_motion: "recoil, dodge, block, stagger from impact, body knockback"
+    motion_description: "aggressive combat strikes, punches and kicks with full body commitment, weight transfer on each hit, defensive blocks and dodges between attacks"
+
+  explosion:
+    label: Explosion
+    lora_type: action
+    tier: mature
+    motion_tier: extreme
+    high: wan22_action/explosion_HIGH.safetensors
+    low: wan22_action/explosion_LOW.safetensors
+    tags: [explosion, blast, vfx, destruction]
+    counter_motion: "thrown back by blast wave, ducking, shielding face, debris impact"
+    motion_description: "fiery explosion expanding outward from center, shockwave ripple, debris flying in all directions, bright flash followed by smoke and fire billowing upward"
+
+  atomic_explosion:
+    label: Atomic Explosion
+    lora_type: action
+    tier: mature
+    motion_tier: extreme
+    high: wan22_action/atomic_explosion_HIGH.safetensors
+    low: wan22_action/atomic_explosion_LOW.safetensors
+    tags: [explosion, atomic, mushroom_cloud, vfx]
+    counter_motion: "massive shockwave knockback, disintegration, environmental destruction"
+    motion_description: "massive mushroom cloud rising upward, ground-level shockwave expanding in ring, blinding white flash, debris column climbing into sky, dust cloud spreading"
+
+  pixel_walk:
+    label: Pixel Walk
+    lora_type: action
+    tier: wholesome
+    high: wan22_action/pixel_walk_HIGH.safetensors
+    low: wan22_action/pixel_walk_LOW.safetensors
+    tags: [walk, movement, character]
+    motion_description: "character walking forward with natural gait, alternating leg steps, arms swinging at sides, steady forward momentum, body weight shifting side to side"
+
+  catwalk:
+    label: Catwalk / Model Walk
+    lora_type: action
+    tier: universal
+    high: wan22_action/catwalk.safetensors
+    low: null
+    tags: [walk, model, strut, fashion]
+    motion_description: "confident model strut walking directly toward camera, exaggerated hip sway, one foot placed in front of the other, chin up, shoulders back, runway walk"
+
+  tiktok_dance:
+    label: TikTok Hip Dance
+    lora_type: action
+    tier: universal
+    high: wan22_action/tiktok_hip_dance_HIGH.safetensors
+    low: null
+    tags: [dance, hip, tiktok, movement]
+    motion_description: "rhythmic hip-focused dance moves, quick side-to-side hip pops, arms moving in sync with hips, energetic bouncy movement, social media dance choreography"
+
+  hip_sway_i2v:
+    label: Hip Sway (I2V)
+    lora_type: action
+    tier: universal
+    motion_tier: medium
+    high: wan22_hip_sway_i2v_HIGH.safetensors
+    low: wan22_hip_sway_i2v_LOW.safetensors
+    tags: [dance, sway, idle, hip, subtle_motion]
+    motion_description: "gentle side-to-side hip swaying motion, weight shifting between feet, subtle rhythmic body movement, relaxed standing pose with continuous sway"
+
+  seductive_turns:
+    label: Seductive Turn & Walk Away
+    lora_type: action
+    tier: explicit
+    motion_tier: medium
+    high: wan22_seductive_turns_HIGH.safetensors
+    low: wan22_seductive_turns_LOW.safetensors
+    tags: [turn, walk_away, pose, seductive, spin]
+    counter_motion: "character turns 180 degrees and walks away from camera"
+    motion_description: "character slowly turns 180 degrees looking back over shoulder, then walks away from camera with deliberate hip movement, hair swinging during turn"
+
+  jumpscare:
+    label: Jumpscare / Rush Toward Camera
+    lora_type: action
+    tier: universal
+    motion_tier: extreme
+    high: wan22_jumpscare_HIGH.safetensors
+    low: wan22_jumpscare_LOW.safetensors
+    tags: [jumpscare, rush, toward_camera, horror, fast_motion, impact]
+    motion_description: "figure rushes directly toward camera at high speed, lunging forward with arms outstretched, face filling frame rapidly, sudden violent approach"
+
+  slap:
+    label: Slap (I2V)
+    lora_type: action
+    tier: mature
+    high: wan22_action/slap_HIGH.safetensors
+    low: wan22_action/slap_LOW.safetensors
+    tags: [slap, hit, impact, comedy, action]
+    motion_description: "open-palm slap strike across the face, arm swings in wide arc, head snaps to the side on impact, hair whips from force, brief recoil"
+
+  bullet_time:
+    label: Bullet Time
+    lora_type: action
+    tier: mature
+    high: wan22_action/bullet_time_HIGH.safetensors
+    low: null
+    tags: [bullet_time, slow_motion, matrix, action]
+    motion_description: "extreme slow motion with camera rotating around frozen or near-frozen subject, time nearly stopped, subtle micro-movements visible, matrix-style time dilation"
+
+  timelapse:
+    label: Time-lapse
+    lora_type: action
+    tier: universal
+    high: wan22_action/timelapse_HIGH.safetensors
+    low: wan22_action/timelapse_LOW.safetensors
+    tags: [timelapse, speed, passage_of_time]
+    motion_description: "accelerated passage of time, clouds racing across sky, shadows sweeping across ground, rapid light changes from day to night, environment evolving quickly"
+
+  hip_swing:
+    label: Hip Swing Twist (Dance)
+    lora_type: action
+    tier: universal
+    high: wan22_action/hip_swing_twist_HIGH.safetensors
+    low: null
+    tags: [dance, hip, swing, movement]
+    motion_description: "rhythmic hip twisting and swinging, torso rotation with hips leading, arms following body momentum, continuous looping dance movement"
+
+  anguish_wail:
+    label: Anguish Wail (Emotion)
+    lora_type: action
+    tier: universal
+    high: wan22_action/anguish_wail_HIGH.safetensors
+    low: null
+    tags: [emotion, cry, anguish, dramatic, expression]
+    motion_description: "character overcome with anguish, head thrown back or buried in hands, body shaking with sobs, shoulders heaving, mouth open in wail, tears visible"
+
+  transformation:
+    label: Realistic Transformation
+    lora_type: action
+    tier: mature
+    high: wan22_action/transformation_HIGH.safetensors
+    low: null
+    tags: [transformation, morph, change, vfx]
+    motion_description: "body morphing and reshaping, features shifting and reforming, skin texture changing, proportions gradually altering, continuous physical metamorphosis"
+
+  outfit_transform:
+    label: Outfit Transformation
+    lora_type: action
+    tier: universal
+    high: wan22_action/outfit_transform_HIGH.safetensors
+    low: null
+    tags: [outfit, costume, change, transformation]
+    motion_description: "clothing rapidly changing in place, fabric dissolving and reforming into new outfit, magical wardrobe transition, colors and textures shifting across body"

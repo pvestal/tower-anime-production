@@ -1,0 +1,649 @@
+# Action Presets — one-click image+video LoRA combos
+# 82 presets
+action_presets:
+  cowgirl:
+    label: Cowgirl
+    tier: explicit
+    image_lora: ass_ride_illustrious.safetensors
+    image_lora_strength: 0.7
+    video_lora: cowgirl
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+  assertive_cowgirl:
+    label: Assertive Cowgirl
+    tier: explicit
+    image_lora: ass_ride_illustrious.safetensors
+    image_lora_strength: 0.7
+    video_lora: assertive_cowgirl
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+  reverse_cowgirl:
+    label: Reverse Cowgirl
+    tier: explicit
+    image_lora: ass_ride_illustrious.safetensors
+    image_lora_strength: 0.7
+    video_lora: reverse_cowgirl
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+  missionary:
+    label: Missionary
+    tier: explicit
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: missionary
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+  doggy_front:
+    label: Doggy (Face View)
+    tier: explicit
+    image_lora: IL_doggy.safetensors
+    image_lora_strength: 0.7
+    video_lora: doggy_front
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+  doggy_back:
+    label: Doggy (Rear View)
+    tier: explicit
+    image_lora: Doggystyle_leaning_on_the_counter.safetensors
+    image_lora_strength: 0.7
+    video_lora: doggy_back
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+  prone_bone:
+    label: Prone Bone
+    tier: explicit
+    image_lora: prone_face_cam_v0_2.safetensors
+    image_lora_strength: 0.7
+    video_lora: prone_bone
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+  from_behind:
+    label: From Behind
+    tier: explicit
+    image_lora: Doggystyle_leaning_on_the_counter.safetensors
+    image_lora_strength: 0.7
+    video_lora: from_behind
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+  spooning:
+    label: Spooning
+    tier: explicit
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: spooning
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+  wall_sex:
+    label: Wall Sex
+    tier: explicit
+    image_lora: sex_wall_1.safetensors
+    image_lora_strength: 0.7
+    video_lora: from_behind
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+  blowjob:
+    label: Blowjob
+    tier: explicit
+    image_lora: deepthroat_doggy.safetensors
+    image_lora_strength: 0.7
+    video_lora: combo_hj_bj
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+  sensual_blowjob:
+    label: Sensual BJ
+    tier: explicit
+    image_lora: deepthroat_doggy.safetensors
+    image_lora_strength: 0.65
+    video_lora: sensual_bj
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+  titjob:
+    label: Titjob
+    tier: explicit
+    image_lora: NM_FitButt_illv4.safetensors
+    image_lora_strength: 0.6
+    video_lora: titjob
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+  facial_finish:
+    label: Facial
+    tier: explicit
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: facial
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+  group_girls:
+    label: Group (Girls)
+    tier: explicit
+    image_lora: group_sex_orgy_illustrious.safetensors
+    image_lora_strength: 0.6
+    video_lora: nsfw_group_girls
+    video_lora_strength: 0.8
+    video_engine: wan22_14b
+  furry_cowgirl:
+    label: Furry Cowgirl
+    tier: furry_explicit
+    image_lora: human_male_on_furry_female_concept.safetensors
+    image_lora_strength: 0.75
+    video_lora: assertive_cowgirl
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+  furry_prone:
+    label: Furry Prone Bone
+    tier: furry_explicit
+    image_lora: human_male_on_furry_female_concept.safetensors
+    image_lora_strength: 0.75
+    video_lora: prone_bone
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+  furry_blowjob:
+    label: Furry BJ
+    tier: furry_explicit
+    image_lora: human_on_anthro_male_pov_il.safetensors
+    image_lora_strength: 0.7
+    video_lora: combo_hj_bj
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+  furry_from_behind:
+    label: Furry From Behind
+    tier: furry_explicit
+    image_lora: human_male_on_furry_female_concept.safetensors
+    image_lora_strength: 0.75
+    video_lora: from_behind
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+  squatting_cowgirl:
+    label: Squatting Cowgirl
+    tier: explicit
+    image_lora: ass_ride_illustrious.safetensors
+    image_lora_strength: 0.7
+    video_lora: squatting_cowgirl
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+  double_blowjob:
+    label: Double Blowjob
+    tier: explicit
+    image_lora: deepthroat_doggy.safetensors
+    image_lora_strength: 0.65
+    video_lora: double_blowjob
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+  lips_closeup_bj:
+    label: Lips BJ (Close-up)
+    tier: explicit
+    image_lora: deepthroat_doggy.safetensors
+    image_lora_strength: 0.6
+    video_lora: lips_bj
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+  bukkake:
+    label: Bukkake
+    tier: explicit
+    image_lora: group_sex_orgy_illustrious.safetensors
+    image_lora_strength: 0.6
+    video_lora: bukkake
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+  massage:
+    label: Massage / Tit Play
+    tier: explicit
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: massage_tits
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+  softcore:
+    label: Softcore Photoshoot
+    tier: explicit
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: softcore_photoshoot
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+  dr34ml4y_universal:
+    label: DR34ML4Y All-in-One
+    tier: explicit
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: dr34ml4y
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+  pov_cowgirl:
+    label: POV Cowgirl
+    tier: explicit
+    image_lora: ass_ride_illustrious.safetensors
+    image_lora_strength: 0.5
+    video_lora: pov_cowgirl
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+  pov_blowjob:
+    label: POV Blowjob
+    tier: explicit
+    image_lora: deepthroat_doggy.safetensors
+    image_lora_strength: 0.5
+    video_lora: pov_fellatio
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+  upright_straddle:
+    label: Upright Straddle (Back)
+    tier: explicit
+    image_lora: Upright_straddle_back_XL.safetensors
+    image_lora_strength: 0.7
+    video_lora: cowgirl
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+  furry_straddle:
+    label: Furry Straddle (Back)
+    tier: furry_explicit
+    image_lora: Upright_straddle_back_XL.safetensors
+    image_lora_strength: 0.65
+    video_lora: cowgirl
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+  choking_sex:
+    label: Choking / Neck Grab
+    tier: explicit
+    image_lora: POVThroatGrab_Ill_v1.safetensors
+    image_lora_strength: 0.65
+    video_lora: from_behind
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+  pov_doggystyle:
+    label: POV Doggystyle
+    tier: explicit
+    image_lora: pov_doggystyle_sdxl.safetensors
+    image_lora_strength: 0.8
+    video_lora: doggy_back
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+  mating_press:
+    label: Mating Press
+    tier: explicit
+    image_lora: mating_press_illustrious.safetensors
+    image_lora_strength: 0.7
+    video_lora: missionary
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+  mmf_threesome:
+    label: MMF Threesome
+    tier: explicit
+    image_lora: bi_mmf_threesome_sdxl.safetensors
+    image_lora_strength: 0.7
+    video_lora: dr34ml4y
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+  monster_sex:
+    label: Monster / Interspecies
+    tier: explicit
+    image_lora: unrealistic_nsfw_concepts_sdxl.safetensors
+    image_lora_strength: 0.7
+    video_lora: from_behind
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+  cyborg_sex:
+    label: Cyborg / Robot
+    tier: explicit
+    image_lora: cc_cyborg_sdxl.safetensors
+    image_lora_strength: 0.7
+    video_lora: cowgirl
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+  alien_ailf:
+    label: Alien AILF
+    tier: explicit
+    image_lora: aliens_ailf_sdxl.safetensors
+    image_lora_strength: 0.7
+    video_lora: from_behind
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+  alien_babe:
+    label: Alien Babe
+    tier: explicit
+    image_lora: piccolhoe_alien_babe_sdxl.safetensors
+    image_lora_strength: 0.7
+    video_lora: cowgirl
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+  symbiote_venom:
+    label: Symbiote / She-Venom
+    tier: explicit
+    image_lora: symbiote_she_venom_sdxl.safetensors
+    image_lora_strength: 0.7
+    video_lora: from_behind
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+  sex_machine:
+    label: Sex Machine Rider
+    tier: explicit
+    image_lora: scifi_sex_machine_rider_ill.safetensors
+    image_lora_strength: 0.7
+    video_lora: assertive_cowgirl
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+  facesitting:
+    label: Facesitting POV
+    tier: explicit
+    image_lora: imminentfacesitill.safetensors
+    image_lora_strength: 0.7
+    video_lora: assertive_cowgirl
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+  android_sex:
+    label: Male Android
+    tier: explicit
+    image_lora: male_android_ill-10.safetensors
+    image_lora_strength: 0.8
+    video_lora: from_behind
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+  android_gangbang:
+    label: Android Gangbang
+    tier: explicit
+    image_lora: male_android_ill-10.safetensors
+    image_lora_strength: 0.8
+    video_lora: dr34ml4y
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+  robot_rider:
+    label: Robot Rider
+    tier: explicit
+    image_lora: scifi_sex_machine_rider_ill.safetensors
+    image_lora_strength: 0.7
+    video_lora: assertive_cowgirl
+    video_lora_strength: 0.85
+    video_engine: wan22_14b
+  gentle_walk:
+    label: Gentle Walk
+    tier: wholesome
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: pixel_walk
+    video_lora_strength: 0.7
+    video_engine: wan22_14b
+  dance_groove:
+    label: Dance / Hip Sway
+    tier: wholesome
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: hip_swing
+    video_lora_strength: 0.7
+    video_engine: wan22_14b
+  tiktok_dance:
+    label: TikTok Dance
+    tier: wholesome
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: tiktok_dance
+    video_lora_strength: 0.7
+    video_engine: wan22_14b
+  dramatic_close:
+    label: Dramatic Close-up
+    tier: wholesome
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: eyes_in
+    video_lora_strength: 0.8
+    video_engine: wan22_14b
+  aerial_reveal:
+    label: Aerial / Drone Reveal
+    tier: wholesome
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: drone_shot
+    video_lora_strength: 0.8
+    video_engine: wan22_14b
+  hip_sway:
+    label: Hip Sway / Idle Dance
+    tier: wholesome
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: hip_sway_i2v
+    video_lora_strength: 0.7
+    video_engine: wan22_14b
+  chase_flight:
+    label: Chase / Forward Flight
+    tier: wholesome
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: forward_flight
+    video_lora_strength: 0.8
+    video_engine: wan22_14b
+  seductive_turn:
+    label: Seductive Turn & Walk Away
+    tier: explicit
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: seductive_turns
+    video_lora_strength: 0.8
+    video_engine: wan22_14b
+  jumpscare_rush:
+    label: Jumpscare / Rush Camera
+    tier: universal
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: jumpscare
+    video_lora_strength: 0.9
+    video_engine: wan22_14b
+  walk_in_scene:
+    label: Walk-In / Caught Scene
+    tier: explicit
+    image_lora: walk_in_ntr_ill.safetensors
+    image_lora_strength: 0.6
+    video_lora: seductive_turns
+    video_lora_strength: 0.6
+    video_engine: wan22_14b
+  chun_li_fight:
+    label: Chun-Li Fight
+    tier: mature
+    image_lora: chun_li_default_ill.safetensors
+    image_lora_strength: 0.75
+    video_lora: wan_fight
+    video_lora_strength: 0.8
+    video_engine: wan22_14b
+  mario_rosalina:
+    label: Rosalina (Galaxy)
+    tier: wholesome
+    image_lora: rosalina_super_mario_ill.safetensors
+    image_lora_strength: 0.75
+    video_lora: orbit_v2
+    video_lora_strength: 0.7
+    video_engine: wan22_14b
+  mario_peach:
+    label: Princess Peach
+    tier: wholesome
+    image_lora: princess_peach_mario_ill.safetensors
+    image_lora_strength: 0.75
+    video_lora: catwalk
+    video_lora_strength: 0.7
+    video_engine: wan22_14b
+  mario_yoshi:
+    label: Yoshi
+    tier: wholesome
+    image_lora: yoshi_super_mario_ill.safetensors
+    image_lora_strength: 0.75
+    video_lora: pixel_walk
+    video_lora_strength: 0.7
+    video_engine: wan22_14b
+  fight_scene:
+    label: Fight Scene
+    tier: mature
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: fight
+    video_lora_strength: 0.7
+    video_engine: wan22_14b
+  explosion_scene:
+    label: Explosion
+    tier: mature
+    image_lora: Illustrious - Nuclear_Explosion.safetensors
+    image_lora_strength: 0.6
+    video_lora: explosion
+    video_lora_strength: 0.8
+    video_engine: wan22_14b
+  atomic_explosion_scene:
+    label: Atomic Explosion
+    tier: mature
+    image_lora: Illustrious - Nuclear_Explosion.safetensors
+    image_lora_strength: 0.7
+    video_lora: atomic_explosion
+    video_lora_strength: 0.8
+    video_engine: wan22_14b
+  bullet_time_scene:
+    label: Bullet Time
+    tier: mature
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: bullet_time
+    video_lora_strength: 0.8
+    video_engine: wan22_14b
+  slap_scene:
+    label: Slap
+    tier: mature
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: slap
+    video_lora_strength: 0.8
+    video_engine: wan22_14b
+  drone_reveal:
+    label: Drone Reveal
+    tier: universal
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: drone_shot
+    video_lora_strength: 0.8
+    video_engine: wan22_14b
+  orbit_reveal:
+    label: Orbit Reveal
+    tier: universal
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: orbit_v2
+    video_lora_strength: 0.8
+    video_engine: wan22_14b
+  dramatic_tilt:
+    label: Dramatic Tilt-down
+    tier: universal
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: tilt_down
+    video_lora_strength: 0.8
+    video_engine: wan22_14b
+  scene_transition:
+    label: Hard Cut Transition
+    tier: universal
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: hard_cut
+    video_lora_strength: 0.8
+    video_engine: wan22_14b
+  dramatic_eyes:
+    label: Dramatic Eyes Close-up
+    tier: universal
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: eyes_in
+    video_lora_strength: 0.8
+    video_engine: wan22_14b
+  character_walk:
+    label: Character Walk
+    tier: wholesome
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: pixel_walk
+    video_lora_strength: 0.7
+    video_engine: wan22_14b
+  emotional_anguish:
+    label: Emotional Anguish
+    tier: universal
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: anguish_wail
+    video_lora_strength: 0.8
+    video_engine: wan22_14b
+  timelapse_scene:
+    label: Time-lapse
+    tier: universal
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: timelapse
+    video_lora_strength: 0.8
+    video_engine: wan22_14b
+  transformation_scene:
+    label: Transformation
+    tier: mature
+    image_lora: null
+    image_lora_strength: 0.0
+    video_lora: transformation
+    video_lora_strength: 0.8
+    video_engine: wan22_14b
+  walking:
+    label: Walking
+    tier: wholesome
+    image_lora: null
+    video_lora: walk_cycle
+    video_lora_strength: 0.7
+    video_engine: wan22_14b
+  running:
+    label: Running
+    tier: wholesome
+    image_lora: null
+    video_lora: run_cycle
+    video_lora_strength: 0.7
+    video_engine: wan22_14b
+  talking:
+    label: Talking
+    tier: wholesome
+    image_lora: null
+    video_lora: talk_gesture
+    video_lora_strength: 0.7
+    video_engine: wan22_14b
+  hugging:
+    label: Hugging
+    tier: wholesome
+    image_lora: null
+    video_lora: hug_interaction
+    video_lora_strength: 0.7
+    video_engine: wan22_14b
+  idle:
+    label: Idle / Breathing
+    tier: universal
+    image_lora: null
+    video_lora: subtle_idle
+    video_lora_strength: 0.6
+    video_engine: wan22_14b
+  dancing:
+    label: Dancing
+    tier: mature
+    image_lora: null
+    video_lora: dance_exotic
+    video_lora_strength: 0.75
+    video_engine: wan22_14b
+  fighting:
+    label: Fighting
+    tier: mature
+    image_lora: null
+    video_lora: fight_combat
+    video_lora_strength: 0.75
+    video_engine: wan22_14b
+  hair_flowing:
+    label: Hair in Wind
+    tier: universal
+    image_lora: null
+    video_lora: hair_wind
+    video_lora_strength: 0.6
+    video_engine: wan22_14b
+  motorcycle:
+    label: Motorcycle
+    tier: mature
+    image_lora: null
+    video_lora: motorcycle_drift
+    video_lora_strength: 0.75
+    video_engine: wan22_14b
+  vehicle_chase:
+    label: Vehicle Chase
+    tier: mature
+    image_lora: null
+    video_lora: vehicle_chase
+    video_lora_strength: 0.75
+    video_engine: wan22_14b

@@ -1,0 +1,442 @@
+# Video LoRA Pairs — pose type
+# 26 entries
+video_lora_pairs:
+  cowgirl:
+    label: Cowgirl
+    lora_type: pose
+    tier: explicit
+    motion_tier: high
+    high: wan22_nsfw/wan22_cowgirl_HIGH.safetensors
+    low: wan22_nsfw/wan22_cowgirl_LOW.safetensors
+    tags:
+    - cowgirl
+    - riding
+    - position
+    scene_description: straddling on top, cowgirl position, legs apart, hands on chest, leaning forward, riding pose, nude,
+      explicit
+    counter_motion: reactive hip thrusts from below, body compression, mutual rhythmic motion
+    layout: top_bottom
+    roles:
+      actor: top
+      reactor: bottom
+    actor_motion: bouncing, riding, hip rolling, hands on chest
+    reactor_motion: reactive hip thrusts from below, body compression
+  assertive_cowgirl:
+    label: Assertive Cowgirl
+    lora_type: pose
+    tier: explicit
+    motion_tier: high
+    high: wan22_nsfw/wan22_assertive_cowgirl_HIGH.safetensors
+    low: wan22_nsfw/wan22_assertive_cowgirl_LOW.safetensors
+    tags:
+    - cowgirl
+    - assertive
+    - dominant
+    - riding
+    - position
+    counter_motion: pinned down, reactive thrusts upward, gripping hips, body rocking
+    layout: top_bottom
+    roles:
+      actor: top
+      reactor: bottom
+    actor_motion: assertive bouncing, pinning down, dominant riding
+    reactor_motion: pinned down, reactive thrusts upward, gripping hips
+  reverse_cowgirl:
+    label: Reverse Cowgirl
+    lora_type: pose
+    tier: explicit
+    motion_tier: high
+    high: wan22_nsfw/wan22_reverse_cowgirl_HIGH.safetensors
+    low: wan22_nsfw/wan22_reverse_cowgirl_LOW.safetensors
+    tags:
+    - cowgirl
+    - reverse
+    - riding
+    - position
+    counter_motion: thrusting upward, hands gripping waist, reactive hip motion
+    layout: top_bottom
+    roles:
+      actor: top
+      reactor: bottom
+    actor_motion: riding, bouncing, facing away
+    reactor_motion: thrusting upward, hands gripping waist
+  anal_reverse_cowgirl_pov:
+    label: Anal Reverse Cowgirl POV
+    lora_type: pose
+    tier: explicit
+    motion_tier: high
+    high: wan22_nsfw/wan22_i2v_anal_reverse_cowgirl_pov_HIGH.safetensors
+    low: wan22_nsfw/wan22_i2v_anal_reverse_cowgirl_pov_LOW.safetensors
+    tags:
+    - anal
+    - cowgirl
+    - reverse
+    - pov
+    - position
+    counter_motion: thrusting upward, hands gripping hips, reactive motion
+    layout: top_bottom
+    roles:
+      actor: top
+      reactor: bottom
+    actor_motion: riding, bouncing, facing away, anal penetration
+    reactor_motion: thrusting upward, hands on hips, pov perspective
+  licking_lips:
+    label: Licking Lips
+    lora_type: pose
+    tier: explicit
+    motion_tier: low
+    high: wan22_nsfw/LipL-high-60.safetensors
+    low: wan22_nsfw/LipL-low-60.safetensors
+    tags:
+    - lips
+    - licking
+    - seductive
+    - facial
+    scene_description: licking lips seductively with tongue
+  missionary:
+    label: Missionary
+    lora_type: pose
+    tier: explicit
+    motion_tier: high
+    high: wan22_nsfw/wan22_missionary_HIGH.safetensors
+    low: wan22_nsfw/wan22_missionary_LOW.safetensors
+    tags:
+    - missionary
+    - position
+    counter_motion: legs wrapping around, body rocking, arching back, receiving thrusts
+    layout: top_bottom
+    roles:
+      actor: top
+      reactor: bottom
+    actor_motion: thrusting, weight on arms, rhythmic pressing
+    reactor_motion: legs wrapping around, arching back, receiving thrusts
+  prone_bone:
+    label: Prone Bone
+    lora_type: pose
+    tier: explicit
+    motion_tier: high
+    high: wan22_nsfw/wan22_prone_bone_HIGH.safetensors
+    low: wan22_nsfw/wan22_prone_bone_LOW.safetensors
+    tags:
+    - prone
+    - position
+    counter_motion: body pressing into surface, subtle rocking, gripping sheets
+    layout: top_bottom
+    roles:
+      actor: top
+      reactor: bottom
+    actor_motion: pressing down, thrusting
+    reactor_motion: body pressing into surface, subtle rocking, gripping sheets
+  doggy_front:
+    label: Doggy (Front View)
+    lora_type: pose
+    tier: explicit
+    motion_tier: high
+    high: wan22_nsfw/wan22_doggy_front_HIGH.safetensors
+    low: wan22_nsfw/wan22_doggy_front_LOW.safetensors
+    tags:
+    - doggy
+    - front
+    - position
+    counter_motion: body rocking forward from thrusts, breasts swaying, hair swinging
+    layout: halves
+    roles:
+      actor: right
+      reactor: left
+    actor_motion: thrusting from behind, gripping hips
+    reactor_motion: body rocking forward, breasts swaying, hair swinging
+  doggy_back:
+    label: Doggy (Back View)
+    lora_type: pose
+    tier: explicit
+    motion_tier: high
+    high: wan22_nsfw/wan22_doggy_back_HIGH.safetensors
+    low: wan22_nsfw/wan22_doggy_back_LOW.safetensors
+    tags:
+    - doggy
+    - back
+    - position
+    counter_motion: ass jiggling from impact, body rocking forward, back arching
+    layout: halves
+    roles:
+      actor: right
+      reactor: left
+    actor_motion: thrusting from behind, holding hips
+    reactor_motion: ass jiggling from impact, body rocking forward, back arching
+  from_behind:
+    label: Sex From Behind
+    lora_type: pose
+    tier: explicit
+    motion_tier: high
+    high: wan22_nsfw/wan22_from_behind_HIGH.safetensors
+    low: wan22_nsfw/wan22_from_behind_LOW.safetensors
+    tags:
+    - behind
+    - standing
+    - position
+    counter_motion: body pushed forward, hands bracing against surface, reactive sway
+    layout: halves
+    roles:
+      actor: right
+      reactor: left
+    actor_motion: thrusting, holding partner
+    reactor_motion: body pushed forward, hands bracing, reactive sway
+  spooning:
+    label: Spooning
+    lora_type: pose
+    tier: explicit
+    motion_tier: high
+    high: wan22_nsfw/wan22_spooning_HIGH.safetensors
+    low: wan22_nsfw/wan22_spooning_LOW.safetensors
+    tags:
+    - spooning
+    - side
+    - intimate
+    - position
+    counter_motion: body pressing back into partner, subtle mutual rocking, intimate motion
+    layout: halves
+    roles:
+      actor: right
+      reactor: left
+    actor_motion: spooning motion, arm around partner
+    reactor_motion: body pressing back, subtle mutual rocking
+  combo_hj_bj:
+    label: HJ/BJ Combo
+    lora_type: pose
+    tier: explicit
+    motion_tier: high
+    high: wan22_nsfw/wan22_combo_hj_bj_HIGH.safetensors
+    low: wan22_nsfw/wan22_combo_hj_bj_LOW.safetensors
+    tags:
+    - blowjob
+    - handjob
+    - oral
+    counter_motion: hip shifting forward, hand resting on head, reactive body tension
+    layout: top_bottom
+    roles:
+      actor: bottom
+      reactor: top
+    actor_motion: head bobbing, hand stroking
+    reactor_motion: hip shifting forward, hand on head, body tension
+  sensual_bj:
+    label: Sensual BJ
+    lora_type: pose
+    tier: explicit
+    motion_tier: high
+    high: wan22_nsfw/wan22_sensual_bj_HIGH.safetensors
+    low: wan22_nsfw/wan22_sensual_bj_LOW.safetensors
+    tags:
+    - blowjob
+    - sensual
+    - teasing
+    - oral
+    counter_motion: subtle hip tension, hand guiding head, reactive pleasure expression
+    layout: top_bottom
+    roles:
+      actor: bottom
+      reactor: top
+    actor_motion: sensual head motion, teasing licks
+    reactor_motion: subtle hip tension, hand guiding head
+  titjob:
+    label: Titjob / Paizuri
+    lora_type: pose
+    tier: explicit
+    motion_tier: high
+    high: wan22_nsfw/wan22_titjob_HIGH.safetensors
+    low: wan22_nsfw/wan22_titjob_LOW.safetensors
+    tags:
+    - titjob
+    - paizuri
+    scene_description: paizuri, breasts wrapped around shaft, hands pressing breasts together, looking up, kneeling, titjob,
+      nude, explicit, close-up
+    counter_motion: reactive hip motion, hands squeezing breasts together, rhythmic body sway
+    layout: top_bottom
+    roles:
+      actor: bottom
+      reactor: top
+    actor_motion: breast pressing, rhythmic squeezing
+    reactor_motion: reactive hip motion, body sway
+  facial:
+    label: Facial
+    lora_type: pose
+    tier: explicit
+    motion_tier: high
+    high: wan22_nsfw/wan22_facial_HIGH.safetensors
+    low: wan22_nsfw/wan22_facial_LOW.safetensors
+    tags:
+    - facial
+    - cumshot
+    - finish
+    counter_motion: flinching, eyes closing, reactive head movement, mouth opening
+    layout: top_bottom
+    roles:
+      actor: top
+      reactor: bottom
+    actor_motion: release motion, body tensing
+    reactor_motion: flinching, eyes closing, reactive head movement
+  squatting_cowgirl:
+    label: Squatting Cowgirl
+    lora_type: pose
+    tier: explicit
+    motion_tier: high
+    high: wan22_nsfw/Blink_Squatting_Cowgirl_Position_I2V_HIGH.safetensors
+    low: wan22_nsfw/Blink_Squatting_Cowgirl_Position_I2V_LOW.safetensors
+    tags:
+    - cowgirl
+    - squatting
+    - riding
+    - position
+    counter_motion: reactive upward thrusts, gripping thighs, mutual bouncing rhythm
+    layout: top_bottom
+    roles:
+      actor: top
+      reactor: bottom
+    actor_motion: squatting bounce, riding
+    reactor_motion: reactive upward thrusts, gripping thighs
+  double_blowjob:
+    label: Double Blowjob
+    lora_type: pose
+    tier: explicit
+    motion_tier: high
+    high: wan22_nsfw/WAN-2.2-I2V-Double-Blowjob-HIGH-v1.safetensors
+    low: wan22_nsfw/WAN-2.2-I2V-Double-Blowjob-LOW-v1.safetensors
+    tags:
+    - blowjob
+    - double
+    - oral
+    - group
+    counter_motion: hip shifting, hands guiding heads, reactive body tension
+  lips_bj:
+    label: Lips BJ (Close-up)
+    lora_type: pose
+    tier: explicit
+    motion_tier: high
+    high: wan22_nsfw/lips-bj_high_noise.safetensors
+    low: wan22_nsfw/lips-bj_low_noise.safetensors
+    tags:
+    - blowjob
+    - closeup
+    - lips
+    - oral
+    counter_motion: subtle hip motion, hand on back of head
+  mouthful:
+    label: Mouthful
+    lora_type: pose
+    tier: explicit
+    motion_tier: high
+    high: wan22_nsfw/wan22-mouthfull-140epoc-high-k3nk.safetensors
+    low: wan22_nsfw/wan22-mouthfull-152epoc-low-k3nk.safetensors
+    tags:
+    - oral
+    - mouthful
+    - finish
+    counter_motion: body tensing, release motion, reactive shudder
+  bukkake:
+    label: Bukkake
+    lora_type: pose
+    tier: explicit
+    motion_tier: high
+    high: wan22_nsfw/Pornmaster_wan 2.2_14b_I2V_bukkake_v1.4_high_noise.safetensors
+    low: wan22_nsfw/Pornmaster_wan 2.2_14b_I2V_bukkake_v1.4_low_noise.safetensors
+    tags:
+    - bukkake
+    - group
+    - finish
+    counter_motion: flinching, eyes closing, reactive head movement, body tensing
+  casting_doggy:
+    label: Casting Doggy (Diagonal Behind)
+    lora_type: pose
+    tier: explicit
+    motion_tier: high
+    high: wan22_nsfw/mql_casting_sex_doggy_kneel_diagonally_behind_vagina_wan22_i2v_v1_high_noise.safetensors
+    low: wan22_nsfw/mql_casting_sex_doggy_kneel_diagonally_behind_vagina_wan22_i2v_v1_low_noise.safetensors
+    tags:
+    - doggy
+    - casting
+    - diagonal
+    - position
+    counter_motion: body rocking forward from impact, ass jiggling, reactive sway
+    layout: halves
+    roles:
+      actor: right
+      reactor: left
+    actor_motion: thrusting from diagonal behind
+    reactor_motion: body rocking forward, ass jiggling, reactive sway
+  massage_tits:
+    label: Massage / Tit Play
+    lora_type: pose
+    tier: explicit
+    motion_tier: medium
+    high: wan22_nsfw/mql_massage_tits_wan22_i2v_v1_high_noise.safetensors
+    low: wan22_nsfw/mql_massage_tits_wan22_i2v_v1_low_noise.safetensors
+    tags:
+    - massage
+    - tits
+    - foreplay
+    counter_motion: pleasure expression, body arching into touch, subtle breathing
+    layout: halves
+    roles:
+      actor: right
+      reactor: left
+    actor_motion: hands massaging, kneading
+    reactor_motion: pleasure expression, body arching into touch
+  panties_aside:
+    label: Panties Aside
+    lora_type: pose
+    tier: explicit
+    motion_tier: medium
+    high: wan22_nsfw/mql_panties_aside_wan22_i2v_v1_high_noise.safetensors
+    low: wan22_nsfw/mql_panties_aside_wan22_i2v_v1_low_noise.safetensors
+    tags:
+    - panties
+    - teasing
+    - position
+    counter_motion: anticipation, body shifting, reactive hip tilt
+  sex_from_behind_v2:
+    label: Sex From Behind v2
+    lora_type: pose
+    tier: explicit
+    motion_tier: high
+    high: wan22_nsfw/sfbehind_v2.1_high_noise.safetensors
+    low: wan22_nsfw/sfbehind_v2.1_low_noise.safetensors
+    tags:
+    - behind
+    - standing
+    - position
+    counter_motion: body pushed forward, hands bracing, reactive sway from thrusts
+    layout: halves
+    roles:
+      actor: right
+      reactor: left
+    actor_motion: thrusting from behind
+    reactor_motion: body pushed forward, hands bracing, reactive sway
+  softcore_photoshoot:
+    label: Softcore Photoshoot
+    lora_type: pose
+    tier: explicit
+    motion_tier: low
+    high: wan22_nsfw/W22_Multiscene_Photoshoot_Softcore_i2v_HN.safetensors
+    low: wan22_nsfw/W22_Multiscene_Photoshoot_Softcore_i2v_LN.safetensors
+    tags:
+    - softcore
+    - photoshoot
+    - teasing
+    - glamour
+  side_transition:
+    label: Side Legs Transition
+    lora_type: pose
+    tier: explicit
+    motion_tier: high
+    high: wan22_nsfw/sid3l3g_transition_v2.0_H.safetensors
+    low: wan22_nsfw/sid3l3g_transition_v2.0_L.safetensors
+    tags:
+    - transition
+    - side
+    - position_change
+    counter_motion: body adjusting to new position, mutual repositioning
+    layout: halves
+    roles:
+      actor: right
+      reactor: left
+    actor_motion: initiating position change
+    reactor_motion: body adjusting to new position, mutual repositioning

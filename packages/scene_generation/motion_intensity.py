@@ -36,30 +36,34 @@ class MotionParams:
     use_lightx2v: bool
     description: str
 
+# 12GB VRAM LOCKED PROFILE — 6 steps / split 3 / CFG 3.5 / no lightx2v.
+# Proven stable on RTX 3060 12GB: no OOM, 8-10 min gen time.
+# Quality comes from prompt/LoRA/motion guidance, NOT more steps/CFG.
+# Only content_lora_strength varies across tiers.
 MOTION_TIERS: dict[str, MotionParams] = {
     "low": MotionParams(
         tier="low",
-        total_steps=4, split_steps=2, cfg=1.0,
-        content_lora_strength=0.7, use_lightx2v=True,
+        total_steps=6, split_steps=3, cfg=3.5,
+        content_lora_strength=0.7, use_lightx2v=False,
         description="Subtle motion — style, softcore, static poses, enhancers",
     ),
     "medium": MotionParams(
         tier="medium",
-        total_steps=4, split_steps=2, cfg=1.0,
-        content_lora_strength=0.85, use_lightx2v=True,
+        total_steps=6, split_steps=3, cfg=3.5,
+        content_lora_strength=0.85, use_lightx2v=False,
         description="Moderate motion — camera moves, utility, gentle movement",
     ),
     "high": MotionParams(
         tier="high",
-        total_steps=6, split_steps=3, cfg=1.5,
-        content_lora_strength=0.95, use_lightx2v=True,
+        total_steps=6, split_steps=3, cfg=3.5,
+        content_lora_strength=0.95, use_lightx2v=False,
         description="Strong motion — positions, oral, action sequences",
     ),
     "extreme": MotionParams(
         tier="extreme",
-        total_steps=8, split_steps=4, cfg=3.5,
+        total_steps=6, split_steps=3, cfg=3.5,
         content_lora_strength=1.0, use_lightx2v=False,
-        description="Maximum motion — fights, explosions, fast action, no lightx2v",
+        description="Maximum motion — fights, explosions, fast action",
     ),
 }
 
@@ -116,16 +120,9 @@ _MEDIUM_KEYWORDS = {
 
 
 def _load_catalog() -> dict:
-    """Load lora_catalog.yaml (cached per-process)."""
-    catalog_path = Path(__file__).resolve().parent.parent.parent / "config" / "lora_catalog.yaml"
-    if not hasattr(_load_catalog, "_cache"):
-        try:
-            with open(catalog_path) as f:
-                _load_catalog._cache = yaml.safe_load(f) or {}
-        except Exception as e:
-            logger.warning(f"Failed to load lora_catalog.yaml: {e}")
-            _load_catalog._cache = {}
-    return _load_catalog._cache
+    """Load LoRA catalog via shared modular loader."""
+    from .catalog_loader import load_catalog
+    return load_catalog()
 
 
 def _normalize_lora_name(lora_name: str) -> str:
@@ -267,10 +264,155 @@ def get_counter_motion(lora_name: str) -> Optional[str]:
     return None
 
 
+def _find_catalog_entry(lora_name: str) -> Optional[dict]:
+    """Find the catalog entry for a LoRA by key or filename match."""
+    if not lora_name:
+        return None
+    catalog = _load_catalog()
+    norm = _normalize_lora_name(lora_name)
+
+    for section in ("video_lora_pairs", "video_motion_loras"):
+        for key, entry in catalog.get(section, {}).items():
+            if not entry:
+                continue
+            if key == norm:
+                return entry
+            for field in ("high", "low", "file"):
+                fname = entry.get(field)
+                if fname and _normalize_lora_name(fname) == norm:
+                    return entry
+    return None
+
+
+def get_motion_description(lora_name: str) -> Optional[str]:
+    """Look up motion_description from the catalog for a LoRA.
+
+    Returns an explicit description of the expected motion for this LoRA,
+    or falls back to scene_description / description fields.
+    Used to enrich WAN prompts so the LoRA's motion is properly guided.
+    """
+    entry = _find_catalog_entry(lora_name)
+    if not entry:
+        return None
+    return (
+        entry.get("motion_description")
+        or entry.get("scene_description")
+        or entry.get("description")
+    )
+
+
+def get_lora_type(lora_name: str) -> Optional[str]:
+    """Look up lora_type from lora_catalog.yaml for a content or motion LoRA.
+
+    Returns one of: pose, camera, action, style, quality, pov, furry — or None.
+    Checks video_lora_pairs first, then video_motion_loras, then falls back
+    to heuristic based on file path and tags.
+    """
+    if not lora_name:
+        return None
+    catalog = _load_catalog()
+    norm = _normalize_lora_name(lora_name)
+
+    # Check video_lora_pairs
+    for key, entry in catalog.get("video_lora_pairs", {}).items():
+        if not entry:
+            continue
+        if key == norm:
+            return entry.get("lora_type")
+        for field in ("high", "low"):
+            fname = entry.get(field)
+            if fname and _normalize_lora_name(fname) == norm:
+                return entry.get("lora_type")
+
+    # Check video_motion_loras
+    for key, entry in catalog.get("video_motion_loras", {}).items():
+        if not entry:
+            continue
+        if key == norm:
+            return entry.get("lora_type")
+        fname = entry.get("file")
+        if fname and _normalize_lora_name(fname) == norm:
+            return entry.get("lora_type")
+
+    # Heuristic fallback based on path
+    lower = lora_name.lower()
+    if "wan22_camera/" in lower or "camera" in lower:
+        return "camera"
+    if "wan22_action/" in lower:
+        return "action"
+    if "wan22_motion/" in lower:
+        return "action"
+    if "wan22_nsfw/" in lower:
+        return "pose"
+    if "pov" in lower:
+        return "pov"
+    if "furry" in lower or "anthro" in lower:
+        return "furry"
+    if "enhancer" in lower or "general_nsfw" in lower:
+        return "quality"
+    return None
+
+
+# --- LoRA stacking strength caps ---
+# When a character LoRA is present, content LoRA strength must be capped
+# to prevent the content LoRA from overriding character identity.
+
+STRENGTH_CAPS = {
+    # lora_type → max strength when character LoRA is also present
+    "pose": 0.6,
+    "quality": 0.5,
+    "pov": 0.6,
+    "furry": 0.7,
+    "camera": 0.5,    # camera LoRAs shouldn't need high strength
+    "action": 0.7,
+    "style": 0.6,
+}
+
+# When pose + camera are combined, camera gets an additional cap
+CAMERA_WITH_POSE_CAP = 0.4
+
+
+def cap_content_strength(
+    content_lora_name: str | None,
+    requested_strength: float,
+    has_character_lora: bool,
+    has_pose_lora: bool = False,
+) -> float:
+    """Apply strength caps based on LoRA type and stacking context.
+
+    Rules:
+    - When a character LoRA (identity) is present, content LoRA strength
+      is capped to prevent identity override.
+    - Camera LoRAs get an additional cap when combined with pose LoRAs.
+    """
+    if not content_lora_name or not has_character_lora:
+        return requested_strength
+
+    ltype = get_lora_type(content_lora_name)
+    if not ltype:
+        # Unknown type — apply conservative cap
+        return min(requested_strength, 0.6)
+
+    cap = STRENGTH_CAPS.get(ltype, 0.7)
+
+    # Extra cap for camera + pose combo
+    if ltype == "camera" and has_pose_lora:
+        cap = min(cap, CAMERA_WITH_POSE_CAP)
+
+    if requested_strength > cap:
+        logger.info(
+            f"LoRA strength capped: {content_lora_name} "
+            f"type={ltype} {requested_strength:.2f} → {cap:.2f} "
+            f"(char_lora={has_character_lora}, pose={has_pose_lora})"
+        )
+        return cap
+    return requested_strength
+
+
 def invalidate_catalog_cache():
     """Clear the cached catalog (call when YAML is updated)."""
-    if hasattr(_load_catalog, "_cache"):
-        del _load_catalog._cache
+    from .catalog_loader import invalidate_catalog
+    invalidate_catalog()
 
 
 # --- Adaptive Motion Tuner (Phase 2) ---

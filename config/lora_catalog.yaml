@@ -43,10 +43,27 @@ checkpoint_compat:
   nova_animal:
     - nova_animal_xl_v11.safetensors
 
+# ---- LORA TYPE TAXONOMY ----
+# Every video LoRA entry MUST have a lora_type field:
+#   pose     — body position/action (cowgirl, doggy, missionary, etc.)
+#   camera   — camera movement (orbit, push_in, tilt, etc.)
+#   action   — non-sexual body motion (fight, explosion, dance, walk, etc.)
+#   style    — visual style modifier (retro_90s, live2d, DR34ML4Y, etc.)
+#   quality  — quality/anatomy enhancer (general_nsfw, penis_enhancer, etc.)
+#   pov      — first-person perspective LoRAs
+#   furry    — anthro/furry-specific LoRAs
+#
+# Enforcement rules (applied in builder.py):
+#   - Max 1 pose LoRA per shot
+#   - Max 1 camera LoRA per shot
+#   - When character LoRA is present: pose/quality strength capped at 0.6
+#   - Camera LoRA strength capped at 0.5 when combined with pose LoRA
+
 # ---- VIDEO LORA PAIRS (WAN 2.2 14B) ----
 video_lora_pairs:
   cowgirl:
     label: "Cowgirl"
+    lora_type: pose
     tier: explicit
     motion_tier: high
     high: wan22_nsfw/wan22_cowgirl_HIGH.safetensors
@@ -61,6 +78,7 @@ video_lora_pairs:
 
   assertive_cowgirl:
     label: "Assertive Cowgirl"
+    lora_type: pose
     tier: explicit
     motion_tier: high
     high: wan22_nsfw/wan22_assertive_cowgirl_HIGH.safetensors
@@ -74,6 +92,7 @@ video_lora_pairs:
 
   reverse_cowgirl:
     label: "Reverse Cowgirl"
+    lora_type: pose
     tier: explicit
     motion_tier: high
     high: wan22_nsfw/wan22_reverse_cowgirl_HIGH.safetensors
@@ -85,8 +104,33 @@ video_lora_pairs:
     actor_motion: "riding, bouncing, facing away"
     reactor_motion: "thrusting upward, hands gripping waist"
 
+  anal_reverse_cowgirl_pov:
+    label: "Anal Reverse Cowgirl POV"
+    lora_type: pose
+    tier: explicit
+    motion_tier: high
+    high: wan22_nsfw/wan22_i2v_anal_reverse_cowgirl_pov_HIGH.safetensors
+    low: wan22_nsfw/wan22_i2v_anal_reverse_cowgirl_pov_LOW.safetensors
+    tags: [anal, cowgirl, reverse, pov, position]
+    counter_motion: "thrusting upward, hands gripping hips, reactive motion"
+    layout: top_bottom
+    roles: {actor: top, reactor: bottom}
+    actor_motion: "riding, bouncing, facing away, anal penetration"
+    reactor_motion: "thrusting upward, hands on hips, pov perspective"
+
+  licking_lips:
+    label: "Licking Lips"
+    lora_type: pose
+    tier: explicit
+    motion_tier: low
+    high: wan22_nsfw/LipL-high-60.safetensors
+    low: wan22_nsfw/LipL-low-60.safetensors
+    tags: [lips, licking, seductive, facial]
+    scene_description: "licking lips seductively with tongue"
+
   missionary:
     label: "Missionary"
+    lora_type: pose
     tier: explicit
     motion_tier: high
     high: wan22_nsfw/wan22_missionary_HIGH.safetensors
@@ -100,6 +144,7 @@ video_lora_pairs:
 
   prone_bone:
     label: "Prone Bone"
+    lora_type: pose
     tier: explicit
     motion_tier: high
     high: wan22_nsfw/wan22_prone_bone_HIGH.safetensors
@@ -113,6 +158,7 @@ video_lora_pairs:
 
   doggy_front:
     label: "Doggy (Front View)"
+    lora_type: pose
     tier: explicit
     motion_tier: high
     high: wan22_nsfw/wan22_doggy_front_HIGH.safetensors
@@ -126,6 +172,7 @@ video_lora_pairs:
 
   doggy_back:
     label: "Doggy (Back View)"
+    lora_type: pose
     tier: explicit
     motion_tier: high
     high: wan22_nsfw/wan22_doggy_back_HIGH.safetensors
@@ -139,6 +186,7 @@ video_lora_pairs:
 
   from_behind:
     label: "Sex From Behind"
+    lora_type: pose
     tier: explicit
     motion_tier: high
     high: wan22_nsfw/wan22_from_behind_HIGH.safetensors
@@ -152,6 +200,7 @@ video_lora_pairs:
 
   spooning:
     label: "Spooning"
+    lora_type: pose
     tier: explicit
     motion_tier: high
     high: wan22_nsfw/wan22_spooning_HIGH.safetensors
@@ -165,6 +214,7 @@ video_lora_pairs:
 
   combo_hj_bj:
     label: "HJ/BJ Combo"
+    lora_type: pose
     tier: explicit
     motion_tier: high
     high: wan22_nsfw/wan22_combo_hj_bj_HIGH.safetensors
@@ -178,6 +228,7 @@ video_lora_pairs:
 
   sensual_bj:
     label: "Sensual BJ"
+    lora_type: pose
     tier: explicit
     motion_tier: high
     high: wan22_nsfw/wan22_sensual_bj_HIGH.safetensors
@@ -191,6 +242,7 @@ video_lora_pairs:
 
   titjob:
     label: "Titjob / Paizuri"
+    lora_type: pose
     tier: explicit
     motion_tier: high
     high: wan22_nsfw/wan22_titjob_HIGH.safetensors
@@ -205,6 +257,7 @@ video_lora_pairs:
 
   facial:
     label: "Facial"
+    lora_type: pose
     tier: explicit
     motion_tier: high
     high: wan22_nsfw/wan22_facial_HIGH.safetensors
@@ -218,6 +271,7 @@ video_lora_pairs:
 
   nsfw_group_girls:
     label: "Group (Girls)"
+    lora_type: quality
     tier: explicit
     high: wan22_nsfw/wan22_nsfw_group_girls.safetensors
     low: null
@@ -226,6 +280,7 @@ video_lora_pairs:
   # --- NEW: DR34ML4Y All-in-One (trigger words: m15510n4ry, bl0wj0b, d0gg1e, c0wg1rl, d0ubl3_bj) ---
   dr34ml4y:
     label: "DR34ML4Y All-in-One NSFW"
+    lora_type: style
     tier: explicit
     high: DR34ML4Y_I2V_14B_HIGH.safetensors
     low: DR34ML4Y_I2V_14B_LOW_V2.safetensors
@@ -234,6 +289,7 @@ video_lora_pairs:
   # --- NEW: HuggingFace lkzd7 collection ---
   squatting_cowgirl:
     label: "Squatting Cowgirl"
+    lora_type: pose
     tier: explicit
     motion_tier: high
     high: wan22_nsfw/Blink_Squatting_Cowgirl_Position_I2V_HIGH.safetensors
@@ -247,6 +303,7 @@ video_lora_pairs:
 
   double_blowjob:
     label: "Double Blowjob"
+    lora_type: pose
     tier: explicit
     motion_tier: high
     high: wan22_nsfw/WAN-2.2-I2V-Double-Blowjob-HIGH-v1.safetensors
@@ -256,6 +313,7 @@ video_lora_pairs:
 
   lips_bj:
     label: "Lips BJ (Close-up)"
+    lora_type: pose
     tier: explicit
     motion_tier: high
     high: wan22_nsfw/lips-bj_high_noise.safetensors
@@ -265,6 +323,7 @@ video_lora_pairs:
 
   mouthful:
     label: "Mouthful"
+    lora_type: pose
     tier: explicit
     motion_tier: high
     high: wan22_nsfw/wan22-mouthfull-140epoc-high-k3nk.safetensors
@@ -274,6 +333,7 @@ video_lora_pairs:
 
   bukkake:
     label: "Bukkake"
+    lora_type: pose
     tier: explicit
     motion_tier: high
     high: "wan22_nsfw/Pornmaster_wan 2.2_14b_I2V_bukkake_v1.4_high_noise.safetensors"
@@ -283,6 +343,7 @@ video_lora_pairs:
 
   casting_doggy:
     label: "Casting Doggy (Diagonal Behind)"
+    lora_type: pose
     tier: explicit
     motion_tier: high
     high: wan22_nsfw/mql_casting_sex_doggy_kneel_diagonally_behind_vagina_wan22_i2v_v1_high_noise.safetensors
@@ -296,6 +357,7 @@ video_lora_pairs:
 
   massage_tits:
     label: "Massage / Tit Play"
+    lora_type: pose
     tier: explicit
     motion_tier: medium
     high: wan22_nsfw/mql_massage_tits_wan22_i2v_v1_high_noise.safetensors
@@ -309,6 +371,7 @@ video_lora_pairs:
 
   panties_aside:
     label: "Panties Aside"
+    lora_type: pose
     tier: explicit
     motion_tier: medium
     high: wan22_nsfw/mql_panties_aside_wan22_i2v_v1_high_noise.safetensors
@@ -318,6 +381,7 @@ video_lora_pairs:
 
   sex_from_behind_v2:
     label: "Sex From Behind v2"
+    lora_type: pose
     tier: explicit
     motion_tier: high
     high: wan22_nsfw/sfbehind_v2.1_high_noise.safetensors
@@ -331,6 +395,7 @@ video_lora_pairs:
 
   penis_enhancer:
     label: "Penis Enhancer"
+    lora_type: quality
     tier: explicit
     motion_tier: low
     high: wan22_nsfw/PENISLORA_22_i2v_HIGH_e320.safetensors
@@ -339,6 +404,7 @@ video_lora_pairs:
 
   pussy_asshole_closeup:
     label: "Pussy/Asshole Close-up"
+    lora_type: quality
     tier: explicit
     motion_tier: low
     high: wan22_nsfw/wan2.2_i2v_high_ulitmate_pussy_asshole.safetensors
@@ -347,6 +413,7 @@ video_lora_pairs:
 
   softcore_photoshoot:
     label: "Softcore Photoshoot"
+    lora_type: pose
     tier: explicit
     motion_tier: low
     high: wan22_nsfw/W22_Multiscene_Photoshoot_Softcore_i2v_HN.safetensors
@@ -355,6 +422,7 @@ video_lora_pairs:
 
   side_transition:
     label: "Side Legs Transition"
+    lora_type: pose
     tier: explicit
     motion_tier: high
     high: wan22_nsfw/sid3l3g_transition_v2.0_H.safetensors
@@ -369,6 +437,7 @@ video_lora_pairs:
   # General NSFW quality enhancer — stacks with position LoRAs
   general_nsfw:
     label: "WAN General NSFW Enhancer"
+    lora_type: quality
     tier: explicit
     motion_tier: low
     high: wan22_nsfw/wan22_general_nsfw_HIGH.safetensors
@@ -378,6 +447,7 @@ video_lora_pairs:
   # --- CAMERA LORAS (WAN 2.2 14B I2V) ---
   camera_push_in:
     label: "Camera Push In / Dolly"
+    lora_type: camera
     tier: universal
     motion_tier: medium
     high: wan22_camera/camera_push_in.safetensors
@@ -386,6 +456,7 @@ video_lora_pairs:
 
   camera_rotation:
     label: "Camera Rotation"
+    lora_type: camera
     tier: universal
     high: wan22_camera/camera_rotation_HIGH.safetensors
     low: null
@@ -393,6 +464,7 @@ video_lora_pairs:
 
   orbit_v2:
     label: "Orbit Around Subject V2"
+    lora_type: camera
     tier: universal
     high: wan22_camera/orbit_v2_HIGH.safetensors
     low: wan22_camera/orbit_v2_LOW.safetensors
@@ -400,6 +472,7 @@ video_lora_pairs:
 
   drone_shot:
     label: "Drone Shot / Aerial"
+    lora_type: camera
     tier: universal
     high: wan22_camera/drone_shot_HIGH.safetensors
     low: null
@@ -407,6 +480,7 @@ video_lora_pairs:
 
   tilt_down:
     label: "Camera Tilt-down Undershot"
+    lora_type: camera
     tier: universal
     high: wan22_camera/tilt_down_HIGH.safetensors
     low: wan22_camera/tilt_down_LOW.safetensors
@@ -414,6 +488,7 @@ video_lora_pairs:
 
   rotation_360:
     label: "360 Rotation"
+    lora_type: camera
     tier: universal
     high: wan22_camera/360_rotation_HIGH.safetensors
     low: null
@@ -421,6 +496,7 @@ video_lora_pairs:
 
   turntable_360:
     label: "Turntable 360"
+    lora_type: camera
     tier: universal
     high: wan22_camera/turntable_360_HIGH.safetensors
     low: null
@@ -428,6 +504,7 @@ video_lora_pairs:
 
   lazy_susan:
     label: "Lazy Susan Rotation"
+    lora_type: camera
     tier: universal
     high: wan22_camera/lazy_susan_rotation_HIGH.safetensors
     low: null
@@ -435,6 +512,7 @@ video_lora_pairs:
 
   cinematic_smash_cut:
     label: "Cinematic Smash Cut"
+    lora_type: camera
     tier: universal
     high: wan22_camera/cinematic_smash_cut.safetensors
     low: null
@@ -442,6 +520,7 @@ video_lora_pairs:
 
   hard_cut:
     label: "Cinematic Hard Cut v3"
+    lora_type: camera
     tier: universal
     high: wan22_camera/hard_cut_v3_HIGH.safetensors
     low: null
@@ -449,6 +528,7 @@ video_lora_pairs:
 
   set_reveal:
     label: "Set Reveal"
+    lora_type: camera
     tier: universal
     high: wan22_camera/set_reveal_HIGH.safetensors
     low: null
@@ -456,6 +536,7 @@ video_lora_pairs:
 
   eyes_in:
     label: "Eyes In (Close-up Zoom)"
+    lora_type: camera
     tier: universal
     high: wan22_camera/eyes_in_HIGH.safetensors
     low: null
@@ -463,6 +544,7 @@ video_lora_pairs:
 
   cinematic_flare:
     label: "Cinematic Lens Flare"
+    lora_type: camera
     tier: universal
     high: null
     low: wan22_camera/cinematic_flare_LOW.safetensors
@@ -470,6 +552,7 @@ video_lora_pairs:
 
   live2d_background:
     label: "Live2D Background"
+    lora_type: style
     tier: universal
     high: wan22_camera/live2d_background_HIGH.safetensors
     low: wan22_camera/live2d_background_LOW.safetensors
@@ -478,6 +561,7 @@ video_lora_pairs:
   # --- ACTION / EFFECT LORAS ---
   fight:
     label: "Fight / Combat"
+    lora_type: action
     tier: mature
     motion_tier: extreme
     high: wan22_action/wan_fight.safetensors
@@ -487,6 +571,7 @@ video_lora_pairs:
 
   explosion:
     label: "Explosion"
+    lora_type: action
     tier: mature
     motion_tier: extreme
     high: wan22_action/explosion_HIGH.safetensors
@@ -496,6 +581,7 @@ video_lora_pairs:
 
   atomic_explosion:
     label: "Atomic Explosion"
+    lora_type: action
     tier: mature
     motion_tier: extreme
     high: wan22_action/atomic_explosion_HIGH.safetensors
@@ -505,6 +591,7 @@ video_lora_pairs:
 
   pixel_walk:
     label: "Pixel Walk"
+    lora_type: action
     tier: wholesome
     high: wan22_action/pixel_walk_HIGH.safetensors
     low: wan22_action/pixel_walk_LOW.safetensors
@@ -512,6 +599,7 @@ video_lora_pairs:
 
   catwalk:
     label: "Catwalk / Model Walk"
+    lora_type: action
     tier: universal
     high: wan22_action/catwalk.safetensors
     low: null
@@ -519,6 +607,7 @@ video_lora_pairs:
 
   tiktok_dance:
     label: "TikTok Hip Dance"
+    lora_type: action
     tier: universal
     high: wan22_action/tiktok_hip_dance_HIGH.safetensors
     low: null
@@ -526,6 +615,7 @@ video_lora_pairs:
 
   hip_sway_i2v:
     label: "Hip Sway (I2V)"
+    lora_type: action
     tier: universal
     motion_tier: medium
     high: wan22_hip_sway_i2v_HIGH.safetensors
@@ -534,6 +624,7 @@ video_lora_pairs:
 
   forward_flight:
     label: "Cinematic Forward Flight / Chase"
+    lora_type: camera
     tier: universal
     motion_tier: medium
     high: wan22_forward_flight_HIGH.safetensors
@@ -542,6 +633,7 @@ video_lora_pairs:
 
   seductive_turns:
     label: "Seductive Turn & Walk Away"
+    lora_type: action
     tier: explicit
     motion_tier: medium
     high: wan22_seductive_turns_HIGH.safetensors
@@ -551,6 +643,7 @@ video_lora_pairs:
 
   jumpscare:
     label: "Jumpscare / Rush Toward Camera"
+    lora_type: action
     tier: universal
     motion_tier: extreme
     high: wan22_jumpscare_HIGH.safetensors
@@ -559,6 +652,7 @@ video_lora_pairs:
 
   face_to_feet:
     label: "Face-to-Feet Camera Sweep"
+    lora_type: camera
     tier: universal
     motion_tier: medium
     high: wan22_face_to_feet_HIGH.safetensors
@@ -568,6 +662,7 @@ video_lora_pairs:
 
   retro_90s_anime:
     label: "Retro 90s Anime Style"
+    lora_type: style
     tier: universal
     high: null
     low: wan22_action/retro_90s_anime_LOW.safetensors
@@ -575,6 +670,7 @@ video_lora_pairs:
 
   slap:
     label: "Slap (I2V)"
+    lora_type: action
     tier: mature
     high: wan22_action/slap_HIGH.safetensors
     low: wan22_action/slap_LOW.safetensors
@@ -582,6 +678,7 @@ video_lora_pairs:
 
   bullet_time:
     label: "Bullet Time"
+    lora_type: action
     tier: mature
     high: wan22_action/bullet_time_HIGH.safetensors
     low: null
@@ -589,6 +686,7 @@ video_lora_pairs:
 
   timelapse:
     label: "Time-lapse"
+    lora_type: action
     tier: universal
     high: wan22_action/timelapse_HIGH.safetensors
     low: wan22_action/timelapse_LOW.safetensors
@@ -596,6 +694,7 @@ video_lora_pairs:
 
   hip_swing:
     label: "Hip Swing Twist (Dance)"
+    lora_type: action
     tier: universal
     high: wan22_action/hip_swing_twist_HIGH.safetensors
     low: null
@@ -603,6 +702,7 @@ video_lora_pairs:
 
   anguish_wail:
     label: "Anguish Wail (Emotion)"
+    lora_type: action
     tier: universal
     high: wan22_action/anguish_wail_HIGH.safetensors
     low: null
@@ -610,6 +710,7 @@ video_lora_pairs:
 
   sigma_face:
     label: "Sigma Face Expression"
+    lora_type: style
     tier: universal
     high: wan22_action/sigma_face_HIGH.safetensors
     low: wan22_action/sigma_face_LOW.safetensors
@@ -617,6 +718,7 @@ video_lora_pairs:
 
   transformation:
     label: "Realistic Transformation"
+    lora_type: action
     tier: mature
     high: wan22_action/transformation_HIGH.safetensors
     low: null
@@ -624,6 +726,7 @@ video_lora_pairs:
 
   outfit_transform:
     label: "Outfit Transformation"
+    lora_type: action
     tier: universal
     high: wan22_action/outfit_transform_HIGH.safetensors
     low: null
@@ -631,6 +734,7 @@ video_lora_pairs:
 
   transition_v2:
     label: "Deepfake / Transition V2"
+    lora_type: style
     tier: universal
     high: wan22_camera/transition_v2_HIGH.safetensors
     low: null
@@ -639,6 +743,7 @@ video_lora_pairs:
   # --- FURRY / ANTHRO (for Fury project) ---
   furry_nsfw_general:
     label: "Furry NSFW General (14B I2V)"
+    lora_type: furry
     tier: furry_explicit
     high: wan22_nsfw/wan_furry_nsfw_14b_i2v.safetensors
     low: null
@@ -647,6 +752,7 @@ video_lora_pairs:
 
   furry_transformation:
     label: "Anthro Furry Transformation"
+    lora_type: furry
     tier: furry_explicit
     high: wan22_nsfw/wan22_furry_tf_HIGH.safetensors
     low: null
@@ -655,6 +761,7 @@ video_lora_pairs:
   # --- POV VIDEO LORAS ---
   pov_doggystyle:
     label: "POV Doggystyle"
+    lora_type: pov
     tier: explicit
     high: pov_doggystyle_sdxl.safetensors
     low: null
@@ -662,18 +769,135 @@ video_lora_pairs:
 
   pov_cowgirl:
     label: "POV Cowgirl"
+    lora_type: pov
     tier: explicit
     high: wan22_nsfw/WAN-2.2-I2V-POV-Cowgirl-HIGH-v1.0-fixed.safetensors
     low: null
     tags: [pov, cowgirl, riding, first_person]
     scene_description: "pov shot from below, cowgirl riding position, straddling viewer, bouncing, nude, looking down at viewer, first person perspective, explicit"
 
+  pov_insertion:
+    label: "POV Insertion"
+    lora_type: pov
+    tier: explicit
+    high: wan22_nsfw/wan22_pov_insertion_HIGH.safetensors
+    low: wan22_nsfw/wan22_pov_insertion_LOW.safetensors
+    tags: [pov, insertion, penetration, first_person, missionary, doggystyle]
+    trigger_prompt: "A man appears and inserts his penis into her pussy"
+    scene_description: "pov insertion shot, penis entering frame, penetration moment, first person perspective, explicit"
+
   pov_fellatio:
     label: "POV Fellatio (Taker)"
+    lora_type: pov
     tier: explicit
     high: wan22_nsfw/wan22_i2v_taker_pov_bj_high_noise.safetensors
     low: null
     tags: [pov, blowjob, fellatio, oral, first_person]
+
+# ---- CUSTOM MOTION LORAS (WAN 2.2 14B — trained on RunPod A100) ----
+# Single-model LoRAs applied to high noise model via motion_lora parameter.
+# NOT content LoRA pairs — these control movement type, not scene content.
+video_motion_loras:
+  walk_cycle:
+    label: "Walk Cycle"
+    lora_type: action
+    tier: wholesome
+    motion_tier: low
+    file: wan22_motion/wan22_walk_cycle.safetensors
+    strength: 0.8
+    tags: [walk, walking, stroll, wander, pace]
+    description: "Natural walking motion — human gait, arm swing, weight shift"
+
+  run_cycle:
+    label: "Run Cycle"
+    lora_type: action
+    tier: wholesome
+    motion_tier: medium
+    file: wan22_motion/wan22_run_cycle.safetensors
+    strength: 0.85
+    tags: [run, running, sprint, jog, dash, chase]
+    description: "Running motion — full body movement, arm pump, stride"
+
+  talk_gesture:
+    label: "Talking Gesture"
+    lora_type: action
+    tier: wholesome
+    motion_tier: low
+    file: wan22_motion/wan22_talk_gesture.safetensors
+    strength: 0.75
+    tags: [talk, talking, gesture, conversation, speaking, dialogue, hands]
+    description: "Conversational gestures — hand movement, head nods, expressive body language"
+
+  hug_interaction:
+    label: "Hug / Embrace"
+    lora_type: action
+    tier: wholesome
+    motion_tier: low
+    file: wan22_motion/wan22_hug_interaction.safetensors
+    strength: 0.8
+    tags: [hug, embrace, hold, comfort, affection, cuddle]
+    description: "Embracing motion — arms wrapping, leaning in, body contact"
+    counter_motion: "reciprocal embrace, arms around partner, leaning into hug"
+
+  subtle_idle:
+    label: "Subtle Idle"
+    lora_type: action
+    tier: wholesome
+    motion_tier: low
+    file: wan22_motion/wan22_subtle_idle.safetensors
+    strength: 0.7
+    tags: [idle, standing, still, breathing, subtle, waiting, calm]
+    description: "Minimal idle movement — breathing, subtle weight shift, blinking"
+
+  dance_exotic:
+    label: "Dance / Exotic"
+    lora_type: action
+    tier: mature
+    motion_tier: high
+    file: wan22_motion/wan22_dance_exotic.safetensors
+    strength: 0.9
+    tags: [dance, dancing, exotic, performance, rhythm, sway, spin]
+    description: "Dance movements — rhythmic body motion, spins, hip sway"
+
+  fight_combat:
+    label: "Fight / Combat"
+    lora_type: action
+    tier: mature
+    motion_tier: extreme
+    file: wan22_motion/wan22_fight_combat.safetensors
+    strength: 0.9
+    tags: [fight, combat, punch, kick, battle, martial, attack, strike, melee]
+    description: "Combat motion — punches, kicks, dodges, aggressive body movement"
+
+  hair_wind:
+    label: "Hair in Wind"
+    lora_type: action
+    tier: wholesome
+    motion_tier: low
+    file: wan22_motion/wan22_hair_wind.safetensors
+    strength: 0.75
+    tags: [hair, wind, blowing, breeze, flowing, flutter]
+    description: "Wind-blown hair motion — natural hair flow, fabric flutter"
+
+  motorcycle_drift:
+    label: "Motorcycle / Drift"
+    lora_type: action
+    tier: mature
+    motion_tier: high
+    file: wan22_motion/wan22_motorcycle_drift.safetensors
+    strength: 0.85
+    tags: [motorcycle, bike, drift, wheelie, ride, speed, vehicle, sportbike]
+    description: "Motorcycle riding and drifting — lean angles, speed blur, wheel spin"
+
+  vehicle_chase:
+    label: "Vehicle Chase"
+    lora_type: action
+    tier: mature
+    motion_tier: extreme
+    file: wan22_motion/wan22_vehicle_chase.safetensors
+    strength: 0.9
+    tags: [vehicle, chase, car, pursuit, driving, race, speed, crash]
+    description: "Vehicle chase motion — fast tracking, swerving, speed effects"
 
 # ---- IMAGE LORA CATEGORIES ----
 image_lora_categories:
@@ -962,6 +1186,77 @@ image_lora_categories:
         label: "DR34ML4Y HIGH (Anime Style)"
         tags: [anime, style, quality]
         video_only: true
+
+  # ---- SFW MOTION LORAS (custom-trained, single-file) ----
+  walk_cycle:
+    label: "Walk Cycle"
+    tier: universal
+    motion_tier: medium
+    single: wan22_motion/wan22_walk_cycle.safetensors
+    tags: [walk, locomotion, forward, casual, sfw]
+
+  run_cycle:
+    label: "Run Cycle"
+    tier: universal
+    motion_tier: high
+    single: wan22_motion/wan22_run_cycle.safetensors
+    tags: [run, jog, locomotion, chase, fitness, sfw]
+
+  talk_gesture:
+    label: "Talking / Hand Gestures"
+    tier: universal
+    motion_tier: low
+    single: wan22_motion/wan22_talk_gesture.safetensors
+    tags: [talk, gesture, conversation, speaking, sfw]
+
+  hug_interaction:
+    label: "Hug (SFW)"
+    tier: wholesome
+    motion_tier: medium
+    single: wan22_motion/wan22_hug_interaction.safetensors
+    tags: [hug, embrace, interaction, two_person, sfw]
+
+  subtle_idle:
+    label: "Subtle Idle / Breathing"
+    tier: universal
+    motion_tier: low
+    single: wan22_motion/wan22_subtle_idle.safetensors
+    tags: [idle, breathing, subtle, standing, sfw]
+
+  dance_exotic:
+    label: "Exotic Dance"
+    tier: mature
+    motion_tier: high
+    single: wan22_motion/wan22_dance_exotic.safetensors
+    tags: [dance, exotic, hip, sensual, sfw]
+
+  fight_combat:
+    label: "Fight / Combat"
+    tier: mature
+    motion_tier: extreme
+    single: wan22_motion/wan22_fight_combat.safetensors
+    tags: [fight, combat, punch, kick, action]
+
+  hair_wind:
+    label: "Hair in Wind"
+    tier: universal
+    motion_tier: low
+    single: wan22_motion/wan22_hair_wind.safetensors
+    tags: [hair, wind, flowing, subtle, sfw]
+
+  motorcycle_drift:
+    label: "Motorcycle Drift"
+    tier: mature
+    motion_tier: extreme
+    single: wan22_motion/wan22_motorcycle_drift.safetensors
+    tags: [motorcycle, drift, vehicle, speed, action]
+
+  vehicle_chase:
+    label: "Vehicle Chase"
+    tier: mature
+    motion_tier: extreme
+    single: wan22_motion/wan22_vehicle_chase.safetensors
+    tags: [vehicle, chase, car, speed, action]
 
 # ---- ACTION PRESETS (one-click combos) ----
 action_presets:
@@ -1620,4 +1915,85 @@ action_presets:
     image_lora_strength: 0.0
     video_lora: transformation
     video_lora_strength: 0.8
+    video_engine: wan22_14b
+
+  # --- SFW Motion Presets (custom-trained LoRAs) ---
+  walking:
+    label: "Walking"
+    tier: wholesome
+    image_lora: null
+    video_lora: walk_cycle
+    video_lora_strength: 0.7
+    video_engine: wan22_14b
+
+  running:
+    label: "Running"
+    tier: wholesome
+    image_lora: null
+    video_lora: run_cycle
+    video_lora_strength: 0.7
+    video_engine: wan22_14b
+
+  talking:
+    label: "Talking"
+    tier: wholesome
+    image_lora: null
+    video_lora: talk_gesture
+    video_lora_strength: 0.7
+    video_engine: wan22_14b
+
+  hugging:
+    label: "Hugging"
+    tier: wholesome
+    image_lora: null
+    video_lora: hug_interaction
+    video_lora_strength: 0.7
+    video_engine: wan22_14b
+
+  idle:
+    label: "Idle / Breathing"
+    tier: universal
+    image_lora: null
+    video_lora: subtle_idle
+    video_lora_strength: 0.6
+    video_engine: wan22_14b
+
+  dancing:
+    label: "Dancing"
+    tier: mature
+    image_lora: null
+    video_lora: dance_exotic
+    video_lora_strength: 0.75
+    video_engine: wan22_14b
+
+  fighting:
+    label: "Fighting"
+    tier: mature
+    image_lora: null
+    video_lora: fight_combat
+    video_lora_strength: 0.75
+    video_engine: wan22_14b
+
+  hair_flowing:
+    label: "Hair in Wind"
+    tier: universal
+    image_lora: null
+    video_lora: hair_wind
+    video_lora_strength: 0.6
+    video_engine: wan22_14b
+
+  motorcycle:
+    label: "Motorcycle"
+    tier: mature
+    image_lora: null
+    video_lora: motorcycle_drift
+    video_lora_strength: 0.75
+    video_engine: wan22_14b
+
+  vehicle_chase:
+    label: "Vehicle Chase"
+    tier: mature
+    image_lora: null
+    video_lora: vehicle_chase
+    video_lora_strength: 0.75
     video_engine: wan22_14b

@@ -23,7 +23,6 @@ logger = logging.getLogger(__name__)
 ECHO_BRAIN_URL = "http://localhost:8309"
 _TIMEOUT = 8
 _LORA_DIR = Path("/opt/ComfyUI/models/loras")
-_CATALOG_PATH = Path("/opt/anime-studio/config/lora_catalog.yaml")
 _catalog_cache: dict | None = None
 
 MOTION_TIER_ORDER = ["low", "medium", "high", "extreme"]
@@ -81,12 +80,8 @@ def _load_catalog() -> dict:
     global _catalog_cache
     if _catalog_cache is not None:
         return _catalog_cache
-    try:
-        with open(_CATALOG_PATH) as f:
-            _catalog_cache = yaml.safe_load(f) or {}
-    except Exception as e:
-        logger.warning("Failed to load LoRA catalog: %s", e)
-        _catalog_cache = {}
+    from .catalog_loader import load_catalog
+    _catalog_cache = load_catalog()
     return _catalog_cache
 
 
