@@ -23,107 +23,21 @@ from packages.core.audit import log_decision
 from packages.core.events import event_bus, SHOT_GENERATED
 
 
-def _resolve_content_lora_pair(
-    shot_lora_name: str | None,
-    project_video_lora: str | None = None,
-) -> tuple[str | None, str | None, float]:
-    """Resolve a shot's lora_name to content LoRA HIGH/LOW pair for Wan22 14B.
-
-    Logic:
-    1. If shot has lora_name containing '_HIGH', derive the LOW counterpart.
-    2. If shot has lora_name matching a video_lora_pairs key from catalog, use that.
-    3. If shot has no lora_name, fall back to project_video_lora as HIGH-only.
-
-    Returns (content_lora_high, content_lora_low, strength).
-    """
-    # Use shot-level LoRA first; only fall back to project LoRA if it's
-    # WAN-compatible (not a framepack/image LoRA)
-    lora_name = shot_lora_name
-    if not lora_name and project_video_lora:
-        pv = project_video_lora.lower()
-        # Skip FramePack / image-only LoRAs — they're incompatible with WAN 2.2 14B
-        if "framepack" not in pv and "illustrious" not in pv and "sdxl" not in pv:
-            lora_name = project_video_lora
-    if not lora_name:
-        return None, None, 0.85
-
-    lora_name = lora_name.strip()
-
-    # Pattern 1: Already a _HIGH filename — derive _LOW
-    if "_HIGH" in lora_name:
-        high = lora_name
-        low = lora_name.replace("_HIGH", "_LOW")
-        # Check LOW exists
-        from pathlib import Path
-        low_path = Path(f"/opt/ComfyUI/models/loras/{low}")
-        if not low_path.exists():
-            low_path = Path(f"/opt/ComfyUI/models/loras/wan22_nsfw/{low}")
-        if not low_path.exists():
-            low = None  # HIGH-only, no LOW counterpart
-        return high, low, 0.85
-
-    # Pattern 2: A _LOW filename — derive _HIGH
-    if "_LOW" in lora_name:
-        low = lora_name
-        high = lora_name.replace("_LOW", "_HIGH")
-        from pathlib import Path
-        high_path = Path(f"/opt/ComfyUI/models/loras/{high}")
-        if not high_path.exists():
-            high_path = Path(f"/opt/ComfyUI/models/loras/wan22_nsfw/{high}")
-        if not high_path.exists():
-            high = None
-        return high, low, 0.85
-
-    # Pattern 3: Catalog key name (e.g. "cowgirl") — look up in catalog
-    try:
-        from .catalog_loader import load_catalog
-        catalog = load_catalog()
-        if catalog:
-            pairs = catalog.get("video_lora_pairs", {})
-
-            # Direct match in video_lora_pairs
-            if lora_name in pairs:
-                pair = pairs[lora_name]
-                if pair.get("single"):
-                    return pair["single"], pair["single"], 0.85
-                return pair.get("high"), pair.get("low"), 0.85
-
-            # Check action_presets — follow video_lora reference to video_lora_pairs
-            presets = catalog.get("action_presets", {})
-            if lora_name in presets:
-                preset = presets[lora_name]
-                vl_key = preset.get("video_lora")
-                if vl_key and vl_key in pairs:
-                    pair = pairs[vl_key]
-                    strength = preset.get("video_lora_strength", 0.85)
-                    if pair.get("single"):
-                        return pair["single"], pair["single"], strength
-                    return pair.get("high"), pair.get("low"), strength
-                # Preset exists but video_lora isn't in video_lora_pairs —
-                # it's a motion-only preset (e.g. idle, walking, talking).
-                # No content LoRA needed; motion_lora_matcher handles it.
-                return None, None, 0.85
-
-            # Check video_motion_loras — these are motion LoRAs, not content
-            motion_loras = catalog.get("video_motion_loras", {})
-            if lora_name in motion_loras:
-                return None, None, 0.85
-    except Exception:
-        pass
-
-    # Pattern 4: Generic single LoRA (e.g. project-level video_lora) — apply to high model only
-    # Only if the file actually exists on disk; otherwise return None to avoid
-    # passing bogus strings to ComfyUI
-    from pathlib import Path as _P4
-    if (_P4(f"/opt/ComfyUI/models/loras/{lora_name}").exists()
-            or _P4(f"/opt/ComfyUI/models/loras/{lora_name}.safetensors").exists()):
-        return lora_name, None, 0.85
-    return None, None, 0.85
+# LoRA resolution logic lives in lora_resolver.py — re-export for backwards compat
+from .lora_resolver import (  # noqa: F401, E402
+    _resolve_content_lora_pair,
+    resolve_content_loras,
+    gate_nsfw_lora,
+    resolve_motion_lora,
+    NSFW_KEYWORDS,
+    ADULT_RATINGS,
+)
 
 from .framepack import build_framepack_workflow, _submit_comfyui_workflow
 from .ltx_video import build_ltx_workflow, build_ltxv_looping_workflow, _submit_comfyui_workflow as _submit_ltx_workflow
 from .wan_video import build_wan_t2v_workflow, build_wan22_workflow, build_wan22_14b_i2v_workflow, build_dasiwa_i2v_workflow, check_dasiwa_ready, _submit_comfyui_workflow as _submit_wan_workflow
 from .video_config import get_engine_defaults
+from .shot_context import derive_scene_seed, resolve_video_dimensions, resolve_color_style, resolve_checkpoint
 from .motion_intensity import classify_motion_intensity, get_motion_params, get_counter_motion
 from .image_recommender import recommend_for_scene, batch_read_metadata
 
@@ -178,12 +92,36 @@ from .scene_source_assign import (  # noqa: F401
     _get_continuity_frame,
     _save_continuity_frame,
 )
+from .shot_completion import complete_shot, postprocess_video
 
 # Stubs for scene_review.py (these were never defined — latent bug)
 _QUALITY_GATES = [{"threshold": 0.6}]
 _MAX_RETRIES = 3
 
 logger = logging.getLogger(__name__)
+
+LORA_DIR = Path("/opt/ComfyUI/models/loras")
+
+
+def validate_shot_paths(shot_dict: dict) -> list[str]:
+    """Pre-generation validation: check that referenced files exist on disk.
+
+    Returns a list of error strings. Empty list = all clear.
+    """
+    errors = []
+    for field in ("image_lora", "content_lora_high", "content_lora_low"):
+        val = shot_dict.get(field)
+        if val and not (LORA_DIR / val).exists():
+            errors.append(f"{field}={val!r} not found in {LORA_DIR}")
+
+    src = shot_dict.get("source_image_path")
+    if src:
+        src_path = Path(src) if Path(src).is_absolute() else BASE_PATH / src
+        if not src_path.exists():
+            errors.append(f"source_image_path={src!r} not found")
+
+    return errors
+
 
 # Scene output directory (canonical location — also set in scene_audio.py)
 SCENE_OUTPUT_DIR = BASE_PATH.parent / "output" / "scenes"
@@ -478,8 +416,11 @@ async def roll_forward_wan_shot(
     content_lora_high: str | None = None,
     content_lora_low: str | None = None,
     content_lora_strength: float = 0.85,
+    engine: str = "wan22_14b",
 ) -> dict:
-    """Generate a long WAN 2.2 14B video by chaining multiple I2V segments.
+    """Generate a long video by chaining multiple I2V segments.
+
+    Supports both WAN 2.2 14B and DaSiWa engines via the `engine` parameter.
 
     Pattern C: generate 5s clip → extract last frame → generate next 5s clip →
     crossfade stitch all segments into one continuous video.
@@ -494,7 +435,7 @@ async def roll_forward_wan_shot(
 
     num_segments = max(1, int(target_seconds / segment_seconds + 0.5))
     logger.info(
-        f"Roll-forward: {target_seconds}s target → {num_segments} segments × "
+        f"Roll-forward ({engine}): {target_seconds}s target → {num_segments} segments × "
         f"{segment_seconds}s, crossfade={crossfade_seconds}s"
     )
 
@@ -507,24 +448,45 @@ async def roll_forward_wan_shot(
         seg_seed = seed + seg_idx
 
         _rf_split = split_steps if split_steps is not None else (steps // 2)
-        workflow, prefix = build_wan22_14b_i2v_workflow(
-            prompt_text=prompt_text,
-            ref_image=current_source,
-            width=width, height=height,
-            num_frames=num_frames_per_seg, fps=fps,
-            total_steps=steps,
-            split_steps=_rf_split,
-            cfg=cfg,
-            seed=seg_seed,
-            negative_text=negative_text,
-            output_prefix=seg_prefix,
-            use_lightx2v=use_lightx2v,
-            motion_lora=motion_lora,
-            motion_lora_strength=motion_lora_strength,
-            content_lora_high=content_lora_high,
-            content_lora_low=content_lora_low,
-            content_lora_strength=content_lora_strength,
-        )
+
+        if engine == "dasiwa":
+            from .wan_video import build_dasiwa_i2v_workflow
+            workflow, prefix = build_dasiwa_i2v_workflow(
+                prompt_text=prompt_text,
+                ref_image=current_source,
+                width=width, height=height,
+                num_frames=num_frames_per_seg, fps=fps,
+                total_steps=steps,
+                split_steps=_rf_split,
+                cfg=cfg,
+                seed=seg_seed,
+                negative_text=negative_text,
+                output_prefix=seg_prefix,
+                motion_lora=motion_lora,
+                motion_lora_strength=motion_lora_strength,
+                content_lora_high=content_lora_high,
+                content_lora_low=content_lora_low,
+                content_lora_strength=content_lora_strength,
+            )
+        else:
+            workflow, prefix = build_wan22_14b_i2v_workflow(
+                prompt_text=prompt_text,
+                ref_image=current_source,
+                width=width, height=height,
+                num_frames=num_frames_per_seg, fps=fps,
+                total_steps=steps,
+                split_steps=_rf_split,
+                cfg=cfg,
+                seed=seg_seed,
+                negative_text=negative_text,
+                output_prefix=seg_prefix,
+                use_lightx2v=use_lightx2v,
+                motion_lora=motion_lora,
+                motion_lora_strength=motion_lora_strength,
+                content_lora_high=content_lora_high,
+                content_lora_low=content_lora_low,
+                content_lora_strength=content_lora_strength,
+            )
 
         logger.info(
             f"Roll-forward seg {seg_idx+1}/{num_segments}: "
@@ -680,18 +642,7 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
         ]
         if multi_char_no_img:
             from .composite_image import generate_composite_source, generate_simple_keyframe
-            _ckpt = "waiIllustriousSDXL_v160.safetensors"
-            try:
-                _style_row = await conn.fetchrow(
-                    """SELECT gs.checkpoint_model FROM projects p
-                       JOIN generation_styles gs ON p.default_style = gs.style_name
-                       WHERE p.id = $1""", project_id)
-                if _style_row and _style_row["checkpoint_model"]:
-                    _ckpt = _style_row["checkpoint_model"]
-                    if not _ckpt.endswith(".safetensors"):
-                        _ckpt += ".safetensors"
-            except Exception:
-                pass
+            _ckpt = await resolve_checkpoint(conn, project_id)
 
             _keyframe_count = 0
             for _mc_shot in multi_char_no_img:
@@ -949,7 +900,13 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                     pass
 
                 current_prompt = motion_prompt
-                if character_slug and shot_engine in ("framepack", "framepack_f1"):
+                # If shot already had a generation_prompt (enriched by Ollama or pre-set),
+                # skip prompt rebuilding — it already contains character + scene context.
+                # Re-building would duplicate descriptions and waste token budget.
+                _prompt_was_enriched = bool((shot_dict.get("generation_prompt") or "").strip())
+                if _prompt_was_enriched:
+                    logger.debug(f"Shot {shot_id}: using pre-enriched prompt ({len(current_prompt)} chars), skipping rebuild")
+                elif character_slug and shot_engine in ("framepack", "framepack_f1"):
                     try:
                         char_row = await _find_character(character_slug)
                         if char_row and char_row["design_prompt"]:
@@ -1128,18 +1085,7 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                     try:
                         from .composite_image import generate_composite_source
                         # Get checkpoint from project's generation style
-                        ckpt = "waiIllustriousSDXL_v160.safetensors"
-                        try:
-                            style_row = await conn.fetchrow(
-                                """SELECT gs.checkpoint_model FROM projects p
-                                   JOIN generation_styles gs ON p.default_style = gs.style_name
-                                   WHERE p.id = $1""", project_id)
-                            if style_row and style_row["checkpoint_model"]:
-                                ckpt = style_row["checkpoint_model"]
-                                if not ckpt.endswith(".safetensors"):
-                                    ckpt += ".safetensors"
-                        except Exception:
-                            pass
+                        ckpt = await resolve_checkpoint(conn, project_id)
 
                         logger.info(f"Shot {shot_id}: multi-char ({chars}) — generating composite source image")
                         composite_path = await generate_composite_source(
@@ -1161,7 +1107,7 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                     # Skip continuity chaining for shots with content LoRAs —
                     # they need keyframes matching their specific position/action,
                     # not a last frame from a different position.
-                    _has_content_lora = bool(shot_dict.get("lora_name") or shot_dict.get("image_lora"))
+                    _has_content_lora = bool(shot_dict.get("lora_name") or shot_dict.get("image_lora") or shot_dict.get("content_lora_high"))
                     same_char_prev_shot = (
                         prev_last_frame
                         and prev_character
@@ -1176,9 +1122,10 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                         logger.info(f"Shot {shot_id}: continuity chain from previous shot (same character: {character_slug})")
                     else:
                         # Priority 2: check for cross-scene continuity frame
-                        # Use state-aware selection when NSM states exist (Phase 4)
+                        # Skip for shots with pre-assigned content LoRAs (test matrix) —
+                        # they need their own source image, not a continuity frame from a different action
                         cross_scene_frame = None
-                        if character_slug and project_id:
+                        if character_slug and project_id and not _has_content_lora:
                             _char_target_state = None
                             if _shot_nsm and character_slug in _shot_nsm:
                                 _char_target_state = _shot_nsm[character_slug].get("state")
@@ -1204,8 +1151,31 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                                 f"(from prior scene)"
                             )
                         else:
-                            # Priority 3: fall back to auto-assigned source image
+                            # Priority 3: pose-matched keyframe if content LoRA has keyframe_prompt
                             source_path = shot_dict.get("source_image_path")
+                            _shot_clh = shot_dict.get("content_lora_high")
+                            # Skip inline keyframe gen if keyframe_generation phase already produced one
+                            _already_has_keyframe = source_path and "keyframe" in source_path and Path(source_path).exists()
+                            if _already_has_keyframe:
+                                logger.info(f"Shot {shot_id}: using pre-generated pose keyframe: {Path(source_path).name}")
+                                image_filename = await copy_to_comfyui_input(source_path)
+                                first_frame_path = source_path
+                            elif _shot_clh and character_slug:
+                                try:
+                                    from .scene_keyframe import generate_pose_keyframe
+                                    _pose_kf = await generate_pose_keyframe(
+                                        conn, shot_id, project_id, character_slug,
+                                        content_lora_high=_shot_clh,
+                                    )
+                                    if _pose_kf and _pose_kf.exists():
+                                        source_path = str(_pose_kf)
+                                        image_filename = await copy_to_comfyui_input(source_path)
+                                        first_frame_path = source_path
+                                        logger.info(f"Shot {shot_id}: pose-matched keyframe for '{_shot_clh}'")
+                                except Exception as _pkf_err:
+                                    logger.debug(f"Shot {shot_id}: pose keyframe skipped: {_pkf_err}")
+
+                            # Priority 4: fall back to auto-assigned source image
                             if not source_path:
                                 if shot_engine in ("wan22", "ltx", "ltx_long"):
                                     # Engines that support T2V: graceful fallback (no ref image)
@@ -1215,18 +1185,7 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                                     logger.warning(f"Shot {shot_id}: wan22_14b needs source image, generating keyframe")
                                     try:
                                         from .composite_image import generate_simple_keyframe
-                                        _ckpt = "waiIllustriousSDXL_v160.safetensors"
-                                        try:
-                                            _sr = await conn.fetchrow(
-                                                "SELECT gs.checkpoint_model FROM projects p "
-                                                "JOIN generation_styles gs ON p.default_style = gs.style_name "
-                                                "WHERE p.id = $1", project_id)
-                                            if _sr and _sr["checkpoint_model"]:
-                                                _ckpt = _sr["checkpoint_model"]
-                                                if not _ckpt.endswith(".safetensors"):
-                                                    _ckpt += ".safetensors"
-                                        except Exception:
-                                            pass
+                                        _ckpt = await resolve_checkpoint(conn, project_id)
                                         # Include shot's image LoRA for content-accurate keyframes
                                         _kf_extra_loras = None
                                         _kf_img_lora = shot_dict.get("image_lora")
@@ -1281,593 +1240,73 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                     shot_id, current_prompt, current_negative,
                 )
 
-                # Dispatch to video engine
-                if shot_engine == "reference_v2v":
-                    # V2V style transfer: use source video clip directly through FramePack V2V
-                    _ref_video = shot_dict.get("source_video_path")
-                    if not _ref_video or not Path(_ref_video).exists():
-                        logger.error(f"Shot {shot_id}: reference_v2v but no source_video_path")
-                        await conn.execute(
-                            "UPDATE shots SET status = 'failed', error_message = $2 WHERE id = $1",
-                            shot_id, "No source video clip available for reference_v2v",
-                        )
-                        continue
-
-                    # Auto-detect kohya-format FramePack LoRA for the character
-                    # Only attach LoRAs that use lora_unet_ key format (kohya/comfyui)
-                    _fp_lora = None
-                    if character_slug:
-                        for _suffix in ("_framepack_lora", "_framepack"):
-                            _lp = Path(f"/opt/ComfyUI/models/loras/{character_slug}{_suffix}.safetensors")
-                            if _lp.exists():
-                                # Validate LoRA format — must be kohya/comfyui format
-                                try:
-                                    from safetensors import safe_open
-                                    with safe_open(str(_lp), framework="pt") as _sf:
-                                        _k0 = list(_sf.keys())[0] if _sf.keys() else ""
-                                    if _k0.startswith("lora_unet_"):
-                                        _fp_lora = _lp.name
-                                    else:
-                                        logger.warning(f"Skipping incompatible LoRA {_lp.name} (not kohya format, key: {_k0[:60]})")
-                                except Exception as _le:
-                                    logger.warning(f"Could not validate LoRA {_lp.name}: {_le}")
-                                break
-
-                    from .framepack_refine import refine_wan_video
-                    attempt_start = _time_inner.time()
-                    refined = await refine_wan_video(
-                        wan_video_path=_ref_video,
-                        prompt_text=current_prompt,
-                        negative_text=current_negative,
-                        denoise_strength=0.45,
-                        total_seconds=shot_seconds,
-                        steps=25,
-                        seed=shot_seed,
-                        guidance_scale=shot_guidance,
-                        lora_name=_fp_lora,
-                        output_prefix=_file_prefix,
+                # Pre-generation validation: verify referenced files exist
+                _val_errors = validate_shot_paths(shot_dict)
+                if _val_errors:
+                    _val_msg = "; ".join(_val_errors)
+                    logger.warning(f"Shot {shot_id}: path validation failed — {_val_msg}")
+                    await conn.execute(
+                        "UPDATE shots SET status = 'failed', error_message = $2 WHERE id = $1",
+                        shot_id, f"Path validation: {_val_msg}",
                     )
-                    gen_time = _time_inner.time() - attempt_start
-
-                    if not refined:
-                        await conn.execute(
-                            "UPDATE shots SET status = 'failed', error_message = $2 WHERE id = $1",
-                            shot_id, "FramePack V2V refinement returned no output",
-                        )
-                        continue
-
-                    video_path = refined
-                    logger.info(f"Shot {shot_id}: reference_v2v done in {gen_time:.0f}s → {Path(refined).name}")
-
-                    # Post-process: interpolation + color grade only (no upscale — already 544x704)
-                    try:
-                        from .video_postprocess import postprocess_wan_video
-                        _color_style = "anime"
-                        if style_anchor and "anthro" in style_anchor:
-                            _color_style = "anthro"
-                        elif style_anchor and "photorealistic" in style_anchor:
-                            _color_style = "photorealistic"
-                        processed = await postprocess_wan_video(
-                            video_path,
-                            upscale=False,
-                            interpolate=True,
-                            color_grade=True,
-                            target_fps=30,
-                            color_style=_color_style,
-                        )
-                        if processed:
-                            video_path = processed
-                            logger.info(f"Shot {shot_id}: post-processed → {Path(processed).name}")
-                    except Exception as e:
-                        logger.warning(f"Shot {shot_id}: post-processing failed: {e}, using raw output")
-
-                    last_frame = await extract_last_frame(video_path)
-
-                    completed_count += 1
-                    completed_videos.append(video_path)
-                    prev_last_frame = last_frame
-                    prev_character = character_slug
-
-                    if auto_approve:
-                        _review = 'approved'
-                    else:
-                        _review, _qc_score = await _run_vision_qc(conn, shot_id, video_path, shot_dict)
-                    await conn.execute("""
-                        UPDATE shots SET status = 'completed', output_video_path = $2,
-                               last_frame_path = $3, generation_time_seconds = $4,
-                               review_status = $5
-                        WHERE id = $1
-                    """, shot_id, video_path, last_frame, gen_time, _review)
-
-                    if character_slug and last_frame and project_id:
-                        try:
-                            await _save_continuity_frame(
-                                conn, project_id, character_slug,
-                                scene_id, shot_id, last_frame,
-                                scene_number=scene_number,
-                                shot_number=shot_dict.get("shot_number"),
-                            )
-                        except Exception as e:
-                            logger.warning(f"Shot {shot_id}: failed to save continuity frame: {e}")
-
-                    logger.info(f"Shot {shot_id}: generated in {gen_time:.0f}s → {_review}")
-
-                    await event_bus.emit(SHOT_GENERATED, {
-                        "shot_id": str(shot_id),
-                        "scene_id": str(scene_id),
-                        "project_id": project_id,
-                        "video_engine": shot_engine,
-                        "video_path": video_path,
-                        "last_frame_path": last_frame,
-                        "generation_time_seconds": gen_time,
-                        "auto_approve": auto_approve,
-                    })
                     continue
 
-                elif shot_engine == "wan22":
-                    _wan22_cfg = get_engine_defaults("wan22_14b")
-                    fps = _wan22_cfg.get("fps", 16)
-                    num_frames = max(9, int(shot_seconds * fps) + 1)
-                    import hashlib as _hashlib
-                    if not shot_seed:
-                        _scene_seed_bytes = _hashlib.sha256(str(scene_id).encode()).digest()
-                        _scene_base_seed = int.from_bytes(_scene_seed_bytes[:8], "big") % (2**63)
-                        shot_seed = _scene_base_seed + (shot_dict.get("shot_number", 0) or 0)
-                    wan_cfg = max(shot_guidance, 7.5)  # higher CFG keeps prompt control over LoRA
-                    wan_w = _wan22_cfg.get("width", 480)
-                    wan_h = _wan22_cfg.get("height", 720)
-                    if _project_width and _project_height and _project_width > _project_height:
-                        wan_w, wan_h = 768, 512
-                    # Get LoRA from engine selector (set by _find_wan_lora)
-                    _wan22_lora = engine_sel.lora_name
-                    _wan22_lora_str = engine_sel.lora_strength
-                    # I2V mode: pass ref_image if we have a source image
-                    _wan22_ref = image_filename if image_filename else None
-                    logger.info(
-                        f"Shot {shot_id}: Wan22 dims={wan_w}x{wan_h} lora={_wan22_lora} "
-                        f"ref_image={_wan22_ref is not None} seed={shot_seed} cfg={wan_cfg} frames={num_frames}"
+                # Dispatch to video engine via engine_dispatch module
+                from .engine_dispatch import get_dispatcher
+                _dispatcher = get_dispatcher(shot_engine)
+                if not _dispatcher:
+                    logger.error(f"Shot {shot_id}: no dispatcher for engine '{shot_engine}'")
+                    await conn.execute(
+                        "UPDATE shots SET status = 'failed', error_message = $2 WHERE id = $1",
+                        shot_id, f"No dispatcher for engine '{shot_engine}'",
                     )
-                    workflow, prefix = build_wan22_workflow(
-                        prompt_text=current_prompt, num_frames=num_frames, fps=fps,
-                        steps=shot_steps, seed=shot_seed, cfg=wan_cfg,
-                        width=wan_w, height=wan_h,
-                        negative_text=current_negative,
-                        output_prefix=_file_prefix,
-                        lora_name=_wan22_lora,
-                        lora_strength=_wan22_lora_str,
-                        ref_image=_wan22_ref,
-                    )
-                    comfyui_prompt_id = _submit_wan_workflow(workflow)
-                elif shot_engine == "wan22_14b":
-                    # Wan 2.2 14B I2V — highest quality, requires source image
-                    if not image_filename:
-                        logger.error(f"Shot {shot_id}: wan22_14b requires a source image but none available")
-                        await conn.execute(
-                            "UPDATE shots SET status = 'failed', error_message = $2 WHERE id = $1",
-                            shot_id, "wan22_14b requires a source image (I2V only)",
-                        )
-                        continue
-                    _14b_cfg = get_engine_defaults("wan22_14b")
-                    fps = _14b_cfg.get("fps", 16)
-                    num_frames = max(9, int(shot_seconds * fps) + 1)
-                    import hashlib as _hashlib
-                    if not shot_seed:
-                        _scene_seed_bytes = _hashlib.sha256(str(scene_id).encode()).digest()
-                        _scene_base_seed = int.from_bytes(_scene_seed_bytes[:8], "big") % (2**63)
-                        shot_seed = _scene_base_seed + (shot_dict.get("shot_number", 0) or 0)
-                    wan_w = _14b_cfg.get("width", 480)
-                    wan_h = _14b_cfg.get("height", 720)
-                    if _project_width and _project_height and _project_width > _project_height:
-                        wan_w, wan_h = wan_h, wan_w
-                    # Get motion LoRA — prefer engine selector, fall back to catalog matcher
-                    _14b_motion_lora = engine_sel.motion_loras[0] if engine_sel.motion_loras else None
-                    _14b_motion_str = 0.8
-                    if not _14b_motion_lora:
-                        from .motion_lora_matcher import match_motion_lora
-                        _ml_prompt = motion_prompt or ""
-                        _ml_desc = shot_dict.get("scene_description") or shot_dict.get("description") or ""
-                        _ml_rating = (scene_row.get("content_rating") if scene_row else None) or "R"
-                        _14b_motion_lora, _14b_motion_str = match_motion_lora(
-                            motion_prompt=_ml_prompt, description=_ml_desc, content_rating=_ml_rating
-                        )
-                    # Resolve content LoRA HIGH/LOW pair from shot or project
-                    # Skip project fallback for trailer intros/interactions —
-                    # they test character fidelity, not content LoRAs
-                    _shot_lora = shot_dict.get("lora_name")
-                    _trailer_role = shot_dict.get("trailer_role") or ""
-                    _skip_project_lora = _trailer_role in ("character_intro", "interaction")
-                    _14b_clh, _14b_cll, _14b_cl_str = _resolve_content_lora_pair(
-                        _shot_lora, None if _skip_project_lora else project_video_lora
-                    )
-                    if _14b_clh or _14b_cll:
-                        logger.info(
-                            f"Shot {shot_id}: content LoRA HIGH={_14b_clh} LOW={_14b_cll} "
-                            f"str={_14b_cl_str} (from {'shot' if _shot_lora else 'project'})"
-                        )
-                    # Dynamic motion intensity — classify shot and apply params
-                    _motion_tier = classify_motion_intensity(shot_dict)
-                    _motion_params = get_motion_params(_motion_tier)
-                    _14b_use_lightx2v = _motion_params.use_lightx2v
-                    _14b_steps = _motion_params.total_steps
-                    _14b_split = _motion_params.split_steps
-                    _14b_cfg = _motion_params.cfg
-                    _14b_cl_str = _motion_params.content_lora_strength
-                    # Override with learned effectiveness data if available
-                    if _14b_clh:
-                        _eff_lora_key = _14b_clh.split("/")[-1].replace(".safetensors", "")
-                        import re as _re
-                        _eff_lora_key = _re.sub(r"_(HIGH|LOW)$", "", _eff_lora_key, flags=_re.IGNORECASE)
-                        try:
-                            from .lora_effectiveness import recommended_params as _eff_params
-                            _eff = await _eff_params(_eff_lora_key, character_slug)
-                            if _eff and _eff.get("sample_count", 0) >= 2:
-                                if _eff.get("best_lora_strength"):
-                                    _14b_cl_str = _eff["best_lora_strength"]
-                                if _eff.get("best_motion_tier") and not shot_dict.get("motion_tier"):
-                                    _motion_tier = _eff["best_motion_tier"]
-                                    _motion_params = get_motion_params(_motion_tier)
-                                    _14b_use_lightx2v = _motion_params.use_lightx2v
-                                    _14b_steps = _motion_params.total_steps
-                                    _14b_split = _motion_params.split_steps
-                                    _14b_cfg = _motion_params.cfg
-                                logger.info(
-                                    f"Shot {shot_id}: LoRA effectiveness override — "
-                                    f"key={_eff_lora_key} str={_14b_cl_str} "
-                                    f"tier={_motion_tier} avg_q={_eff.get('avg_quality', '?')} "
-                                    f"samples={_eff['sample_count']}"
-                                )
-                        except Exception as _eff_err:
-                            logger.debug(f"Shot {shot_id}: LoRA effectiveness lookup failed: {_eff_err}")
-                    # Inject counter-motion cues into prompt if available
-                    _counter_motion = get_counter_motion(_shot_lora)
-                    if _counter_motion and _counter_motion not in current_prompt:
-                        current_prompt = f"{current_prompt}, {_counter_motion}"
-                        logger.info(f"Shot {shot_id}: counter-motion injected: {_counter_motion[:60]}")
+                    continue
 
-                    # --- LoRA motion description injection ---
-                    # Append explicit motion cues from catalog so WAN knows
-                    # what motion the LoRA is supposed to produce
-                    from .motion_intensity import get_motion_description
-                    _motion_desc = get_motion_description(_shot_lora) if _shot_lora else None
-                    if not _motion_desc and _14b_clh:
-                        _motion_desc = get_motion_description(_14b_clh)
-                    if _motion_desc and _motion_desc not in current_prompt:
-                        current_prompt = f"{current_prompt}, {_motion_desc}"
-                        logger.info(f"Shot {shot_id}: motion_description injected: {_motion_desc[:80]}")
+                _project_rating = (scene_row.get("content_rating") if scene_row else None) or "R"
+                _dispatch_result = await _dispatcher.build_and_submit(
+                    conn=conn,
+                    shot_dict=shot_dict,
+                    shot_id=shot_id,
+                    scene_id=scene_id,
+                    project_id=project_id,
+                    current_prompt=current_prompt,
+                    current_negative=current_negative,
+                    image_filename=image_filename,
+                    first_frame_path=first_frame_path,
+                    file_prefix=_file_prefix,
+                    shot_seconds=shot_seconds,
+                    shot_steps=shot_steps,
+                    shot_guidance=shot_guidance,
+                    shot_seed=shot_seed,
+                    shot_use_f1=shot_use_f1,
+                    engine_sel=engine_sel,
+                    project_video_lora=_project_wan_lora,
+                    project_rating=_project_rating,
+                    project_width=_project_width,
+                    project_height=_project_height,
+                    style_anchor=style_anchor,
+                    auto_approve=auto_approve,
+                    character_slug=character_slug,
+                    motion_prompt=motion_prompt,
+                )
 
-                    # --- LoRA type enforcement ---
-                    # Cap content LoRA strength when character has a trained LoRA
-                    # to prevent content/pose LoRAs from overriding character identity
-                    from .motion_intensity import get_lora_type, cap_content_strength
-                    _has_char_lora = False
-                    if character_slug:
-                        from pathlib import Path as _LP
-                        for _suf in ("_ill_lora", "_xl_lora", "_lora"):
-                            if (_LP(f"/opt/ComfyUI/models/loras/{character_slug}{_suf}.safetensors").exists()):
-                                _has_char_lora = True
-                                break
-                    _content_lora_type = get_lora_type(_14b_clh) if _14b_clh else None
-                    _motion_lora_type = get_lora_type(_14b_motion_lora) if _14b_motion_lora else None
-                    _has_pose = _content_lora_type == "pose"
-                    if _14b_clh and _has_char_lora:
-                        _14b_cl_str = cap_content_strength(
-                            _14b_clh, _14b_cl_str,
-                            has_character_lora=True,
-                            has_pose_lora=_has_pose,
-                        )
-                    # Log the type-aware decision
-                    if _content_lora_type or _motion_lora_type:
-                        logger.info(
-                            f"Shot {shot_id}: lora_types content={_content_lora_type} "
-                            f"motion={_motion_lora_type} char_lora={_has_char_lora} "
-                            f"final_str={_14b_cl_str}"
-                        )
+                if _dispatch_result is None:
+                    # Dispatcher handled the failure (marked shot as failed or skipped)
+                    continue
 
-                    logger.info(
-                        f"Shot {shot_id}: motion_tier={_motion_tier} "
-                        f"steps={_14b_steps} split={_14b_split} cfg={_14b_cfg} "
-                        f"lora_str={_14b_cl_str} lightx2v={_14b_use_lightx2v}"
-                    )
-                    _WAN_SEGMENT_SECONDS = 5.0
-                    if shot_seconds > _WAN_SEGMENT_SECONDS:
-                        # Pattern C: roll-forward for long shots
-                        logger.info(
-                            f"Shot {shot_id}: Wan22-14B ROLL-FORWARD {shot_seconds}s "
-                            f"({int(shot_seconds / _WAN_SEGMENT_SECONDS + 0.5)} segments) "
-                            f"dims={wan_w}x{wan_h} ref={image_filename}"
-                        )
-                        rf_result = await roll_forward_wan_shot(
-                            prompt_text=current_prompt,
-                            ref_image=image_filename,
-                            target_seconds=shot_seconds,
-                            negative_text=current_negative,
-                            segment_seconds=_WAN_SEGMENT_SECONDS,
-                            crossfade_seconds=0.3,
-                            width=wan_w, height=wan_h,
-                            fps=fps, steps=_14b_steps,
-                            split_steps=_14b_split, cfg=_14b_cfg,
-                            seed=shot_seed,
-                            output_prefix=_file_prefix,
-                            use_lightx2v=_14b_use_lightx2v,
-                            motion_lora=_14b_motion_lora,
-                            motion_lora_strength=_14b_motion_str,
-                            content_lora_high=_14b_clh,
-                            content_lora_low=_14b_cll,
-                            content_lora_strength=_14b_cl_str,
-                        )
-                        if rf_result["video_path"]:
-                            # Skip normal ComfyUI poll — roll-forward handles it internally
-                            video_path = rf_result["video_path"]
-                            # Post-process the stitched video (upscale + color grade)
-                            try:
-                                from .video_postprocess import postprocess_wan_video
-                                _color_style = "anime"
-                                if style_anchor and "anthro" in style_anchor:
-                                    _color_style = "anthro"
-                                elif style_anchor and "photorealistic" in style_anchor:
-                                    _color_style = "photorealistic"
-                                _pp = await postprocess_wan_video(
-                                    video_path, upscale=True, interpolate=True,
-                                    color_grade=True, scale_factor=2, target_fps=30,
-                                    color_style=_color_style,
-                                )
-                                if _pp:
-                                    video_path = _pp
-                                    logger.info(f"Shot {shot_id}: roll-forward post-processed → {Path(_pp).name}")
-                            except Exception as _pp_err:
-                                logger.warning(f"Shot {shot_id}: roll-forward postprocess failed: {_pp_err}")
-                            last_frame = await extract_last_frame(video_path)
-                            gen_time = _time_inner.time() - attempt_start
-                            logger.info(
-                                f"Shot {shot_id}: roll-forward done, "
-                                f"{rf_result['segment_count']} segs, "
-                                f"{rf_result['total_duration']:.1f}s"
-                            )
-                            # Jump past the normal poll/output block
-                            completed_count += 1
-                            completed_videos.append(video_path)
-                            prev_last_frame = last_frame
-                            prev_character = character_slug
-                            if auto_approve:
-                                _review = 'approved'
-                            else:
-                                _review, _qc_score = await _run_vision_qc(conn, shot_id, video_path, shot_dict)
-                            await conn.execute("""
-                                UPDATE shots SET status = 'completed', output_video_path = $2,
-                                       last_frame_path = $3, generation_time_seconds = $4,
-                                       review_status = $5,
-                                       motion_tier = $6, guidance_scale = $7, steps = $8,
-                                       gen_split_steps = $9, gen_lightx2v = $10,
-                                       content_lora_high = $11, content_lora_low = $12
-                                WHERE id = $1
-                            """, shot_id, video_path, last_frame, gen_time, _review,
-                                _motion_tier, _14b_cfg, _14b_steps,
-                                _14b_split, _14b_use_lightx2v,
-                                _14b_clh, _14b_cll)
-                            if character_slug and last_frame and project_id:
-                                try:
-                                    await _save_continuity_frame(
-                                        conn, project_id, character_slug,
-                                        scene_id, shot_id, last_frame,
-                                        scene_number=scene_number,
-                                        shot_number=shot_dict.get("shot_number"),
-                                    )
-                                except Exception as e:
-                                    logger.warning(f"Shot {shot_id}: continuity save failed: {e}")
-                            continue
-                        else:
-                            await conn.execute(
-                                "UPDATE shots SET status = 'failed', error_message = $2 WHERE id = $1",
-                                shot_id, "Roll-forward failed — no segments completed",
-                            )
-                            continue
-                    logger.info(
-                        f"Shot {shot_id}: Wan22-14B I2V dims={wan_w}x{wan_h} "
-                        f"ref_image={image_filename} motion_lora={_14b_motion_lora} "
-                        f"content_high={_14b_clh} content_low={_14b_cll} "
-                        f"seed={shot_seed} steps={_14b_steps} cfg={_14b_cfg} "
-                        f"tier={_motion_tier} frames={num_frames}"
-                    )
-                    workflow, prefix = build_wan22_14b_i2v_workflow(
-                        prompt_text=current_prompt,
-                        ref_image=image_filename,
-                        width=wan_w, height=wan_h,
-                        num_frames=num_frames, fps=fps,
-                        total_steps=_14b_steps,
-                        split_steps=_14b_split,
-                        cfg=_14b_cfg,
-                        seed=shot_seed,
-                        negative_text=current_negative,
-                        output_prefix=_file_prefix,
-                        use_lightx2v=_14b_use_lightx2v,
-                        motion_lora=_14b_motion_lora,
-                        motion_lora_strength=_14b_motion_str,
-                        content_lora_high=_14b_clh,
-                        content_lora_low=_14b_cll,
-                        content_lora_strength=_14b_cl_str,
-                    )
-                    # Dedup: skip if this source image is already in ComfyUI queue
-                    from .scene_comfyui import is_source_already_queued
-                    _existing = is_source_already_queued(image_filename) if image_filename else None
-                    if _existing:
-                        logger.warning(f"Shot {shot_id}: source {image_filename} already queued (prompt={_existing}), skipping duplicate")
-                        continue
-                    comfyui_prompt_id = _submit_wan_workflow(workflow)
-                elif shot_engine == "dasiwa":
-                    # DaSiWa TastySin v8 — pre-baked distillation, 4 steps, no lightx2v needed
-                    if not image_filename:
-                        logger.error(f"Shot {shot_id}: dasiwa requires a source image (I2V only)")
-                        await conn.execute(
-                            "UPDATE shots SET status = 'failed', error_message = $2 WHERE id = $1",
-                            shot_id, "dasiwa requires a source image (I2V only)",
-                        )
-                        continue
-                    _dasi_ok, _dasi_msg = check_dasiwa_ready()
-                    if not _dasi_ok:
-                        logger.warning(f"Shot {shot_id}: {_dasi_msg}, falling back to wan22_14b")
-                        shot_engine = "wan22_14b"
-                        # Fall through to wan22_14b branch on next iteration
-                        # For now, just use wan22_14b directly
-                        _14b_cfg_d = get_engine_defaults("wan22_14b_dasiwa")
-                        fps = _14b_cfg_d.get("fps", 16)
-                        num_frames = max(9, int(shot_seconds * fps) + 1)
-                        wan_w = _14b_cfg_d.get("width", 480)
-                        wan_h = _14b_cfg_d.get("height", 720)
-                        if _project_width and _project_height and _project_width > _project_height:
-                            wan_w, wan_h = wan_h, wan_w
-                        workflow, prefix = build_wan22_14b_i2v_workflow(
-                            prompt_text=current_prompt, ref_image=image_filename,
-                            width=wan_w, height=wan_h, num_frames=num_frames, fps=fps,
-                            total_steps=6, split_steps=3, cfg=3.5, seed=shot_seed,
-                            negative_text=current_negative, output_prefix=_file_prefix,
-                            use_lightx2v=False,
-                        )
-                        comfyui_prompt_id = _submit_wan_workflow(workflow)
-                    else:
-                        _dasi_cfg = get_engine_defaults("wan22_14b_dasiwa")
-                        fps = _dasi_cfg.get("fps", 16)
-                        num_frames = max(9, int(shot_seconds * fps) + 1)
-                        wan_w = _dasi_cfg.get("width", 480)
-                        wan_h = _dasi_cfg.get("height", 720)
-                        if _project_width and _project_height and _project_width > _project_height:
-                            wan_w, wan_h = wan_h, wan_w
-                        import hashlib as _hashlib
-                        if not shot_seed:
-                            _scene_seed_bytes = _hashlib.sha256(str(scene_id).encode()).digest()
-                            _scene_base_seed = int.from_bytes(_scene_seed_bytes[:8], "big") % (2**63)
-                            shot_seed = _scene_base_seed + (shot_dict.get("shot_number", 0) or 0)
-                        _shot_lora = shot_dict.get("lora_name")
-                        _dasi_clh, _dasi_cll, _dasi_cl_str = _resolve_content_lora_pair(
-                            _shot_lora, project_video_lora
-                        )
-                        _14b_motion_lora = engine_sel.motion_loras[0] if engine_sel.motion_loras else None
-                        if not _14b_motion_lora:
-                            from .motion_lora_matcher import match_motion_lora
-                            _ml_prompt = motion_prompt or ""
-                            _ml_desc = shot_dict.get("scene_description") or shot_dict.get("description") or ""
-                            _ml_rating = (scene_row.get("content_rating") if scene_row else None) or "R"
-                            _14b_motion_lora, _14b_motion_str_dasi = match_motion_lora(
-                                motion_prompt=_ml_prompt, description=_ml_desc, content_rating=_ml_rating
-                            )
-                        logger.info(
-                            f"Shot {shot_id}: DaSiWa I2V dims={wan_w}x{wan_h} "
-                            f"ref={image_filename} content_high={_dasi_clh} "
-                            f"content_low={_dasi_cll} motion={_14b_motion_lora}"
-                        )
-                        workflow, prefix = build_dasiwa_i2v_workflow(
-                            prompt_text=current_prompt,
-                            ref_image=image_filename,
-                            width=wan_w, height=wan_h,
-                            num_frames=num_frames, fps=fps,
-                            seed=shot_seed,
-                            negative_text=current_negative,
-                            output_prefix=_file_prefix,
-                            motion_lora=_14b_motion_lora,
-                            content_lora_high=_dasi_clh,
-                            content_lora_low=_dasi_cll,
-                            content_lora_strength=min(_dasi_cl_str, 0.6),
-                        )
-                        comfyui_prompt_id = _submit_wan_workflow(workflow)
-                elif shot_engine == "wan":
-                    fps = 16
-                    num_frames = max(9, int(shot_seconds * fps) + 1)
-                    # Use scene-level seed for style consistency across shots
-                    # Derive per-shot seed: scene_seed + shot_number
-                    import hashlib as _hashlib
-                    if not shot_seed:
-                        _scene_seed_bytes = _hashlib.sha256(str(scene_id).encode()).digest()
-                        _scene_base_seed = int.from_bytes(_scene_seed_bytes[:8], "big") % (2**63)
-                        shot_seed = _scene_base_seed + (shot_dict.get("shot_number", 0) or 0)
-                    # Higher CFG for better style compliance
-                    wan_cfg = max(shot_guidance, 7.5)
-                    # Map project resolution to Wan-safe dims (must be multiples of 16)
-                    # Wan native is 480x720; scale proportionally for landscape/portrait
-                    wan_w, wan_h = 480, 720  # default portrait
-                    if _project_width and _project_height and _project_width > _project_height:
-                        wan_w, wan_h = 720, 480  # landscape
-                    logger.info(f"Shot {shot_id}: Wan dims={wan_w}x{wan_h} (project={_project_width}x{_project_height})")
-                    workflow, prefix = build_wan_t2v_workflow(
-                        prompt_text=current_prompt, num_frames=num_frames, fps=fps,
-                        steps=shot_steps, seed=shot_seed, cfg=wan_cfg,
-                        width=wan_w, height=wan_h,
-                        use_gguf=True,
-                        negative_text=current_negative,
-                        output_prefix=_file_prefix,
-                    )
-                    logger.info(f"Shot {shot_id}: Wan seed={shot_seed} cfg={wan_cfg} frames={num_frames}")
-                    comfyui_prompt_id = _submit_wan_workflow(workflow)
-                elif shot_engine == "ltx_long":
-                    # LTXVLoopingSampler — Pattern 3 long-shot engine (30-60s+)
-                    _ltx_cfg = get_engine_defaults("ltx_long")
-                    fps = _ltx_cfg.get("fps", 24)
-                    num_frames = max(25, int(shot_seconds * fps) + 1)
-                    _ltx_tile_size = _ltx_cfg.get("temporal_tile_size", 80)
-                    _ltx_overlap = _ltx_cfg.get("temporal_overlap", 24)
-                    _ltx_overlap_cond = _ltx_cfg.get("temporal_overlap_cond_strength", 0.5)
-                    _ltx_guiding = _ltx_cfg.get("guiding_strength", 1.0)
-                    _ltx_cond_img = _ltx_cfg.get("cond_image_strength", 1.0)
-                    _ltx_adain = _ltx_cfg.get("adain_factor", 0.0)
-                    wan_w, wan_h = 512, 320
-                    if _project_width and _project_height and _project_width > _project_height:
-                        wan_w, wan_h = 512, 320  # LTX landscape
-                    else:
-                        wan_w, wan_h = 320, 512  # LTX portrait
-                    logger.info(
-                        f"Shot {shot_id}: LTX_LONG dims={wan_w}x{wan_h} "
-                        f"tile_size={_ltx_tile_size} overlap={_ltx_overlap} "
-                        f"frames={num_frames} (~{num_frames/fps:.1f}s @ {fps}fps)"
-                    )
-                    workflow, prefix = build_ltxv_looping_workflow(
-                        prompt_text=current_prompt,
-                        width=wan_w, height=wan_h,
-                        num_frames=num_frames, fps=fps,
-                        steps=shot_steps, seed=shot_seed,
-                        negative_text=current_negative,
-                        image_path=image_filename if image_filename else None,
-                        lora_name=shot_dict.get("lora_name"),
-                        lora_strength=shot_dict.get("lora_strength", 0.8),
-                        output_prefix=_file_prefix,
-                        temporal_tile_size=_ltx_tile_size,
-                        temporal_overlap=_ltx_overlap,
-                        temporal_overlap_cond_strength=_ltx_overlap_cond,
-                        guiding_strength=_ltx_guiding,
-                        cond_image_strength=_ltx_cond_img,
-                        adain_factor=_ltx_adain,
-                    )
-                    comfyui_prompt_id = _submit_ltx_workflow(workflow)
-                elif shot_engine == "ltx":
-                    fps = 24
-                    num_frames = max(9, int(shot_seconds * fps) + 1)
-                    # Use LoRA from engine selector (e.g. rina_suzuki_ltx.safetensors)
-                    _ltx_lora = engine_sel.lora_name
-                    _ltx_lora_str = engine_sel.lora_strength
-                    logger.info(f"Shot {shot_id}: LTX lora={_ltx_lora} strength={_ltx_lora_str}")
-                    workflow, prefix = build_ltx_workflow(
-                        prompt_text=current_prompt,
-                        image_path=image_filename if image_filename else None,
-                        num_frames=num_frames, fps=fps, steps=shot_steps,
-                        seed=shot_seed,
-                        lora_name=_ltx_lora,
-                        lora_strength=_ltx_lora_str,
-                    )
-                    comfyui_prompt_id = _submit_ltx_workflow(workflow)
-                else:
-                    # Dedup: skip if this source image is already in ComfyUI queue
-                    from .scene_comfyui import is_source_already_queued
-                    _existing = is_source_already_queued(image_filename) if image_filename else None
-                    if _existing:
-                        logger.warning(f"Shot {shot_id}: source {image_filename} already queued (prompt={_existing}), skipping duplicate")
-                        continue
+                if _dispatch_result.get("skip_poll"):
+                    # Engine handled polling, postprocessing, and completion internally
+                    _completion = _dispatch_result.get("completion", {})
+                    video_path = _dispatch_result.get("video_path")
+                    if video_path:
+                        completed_count += 1
+                        completed_videos.append(video_path)
+                        prev_last_frame = _completion.get("last_frame")
+                        prev_character = character_slug
+                    continue
 
-                    use_f1 = shot_engine == "framepack_f1" or shot_use_f1
-                    workflow_data, sampler_node_id, prefix = build_framepack_workflow(
-                        prompt_text=current_prompt, image_path=image_filename,
-                        total_seconds=shot_seconds, steps=shot_steps, use_f1=use_f1,
-                        seed=shot_seed, negative_text=current_negative,
-                        gpu_memory_preservation=6.0, guidance_scale=shot_guidance,
-                        output_prefix=_file_prefix,
-                    )
-                    comfyui_prompt_id = _submit_comfyui_workflow(workflow_data["prompt"])
+                # Standard path: poll ComfyUI, postprocess, complete
+                comfyui_prompt_id = _dispatch_result["prompt_id"]
 
                 await conn.execute(
                     "UPDATE shots SET comfyui_prompt_id = $2, first_frame_path = $3 WHERE id = $1",
@@ -1887,8 +1326,8 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                 video_filename = result["output_files"][0]
                 video_path = str(COMFYUI_OUTPUT_DIR / video_filename)
 
-                # FramePack V2V refinement for Wan shots (2.1 and 2.2)
-                # DISABLED: doubles GPU time per shot and floods ComfyUI queue
+                # FramePack V2V refinement — now handled by video_refinement
+                # orchestrator phase (work_video_refinement). Inline disabled.
                 if False and shot_engine in ("wan", "wan22") and video_path:
                     try:
                         from .framepack_refine import refine_wan_video
@@ -1928,32 +1367,11 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                         logger.warning(f"Shot {shot_id}: V2V refinement failed: {e}, using raw Wan output")
 
                 # Post-process all video outputs: interpolation + upscale + color grade
-                # Wan gets upscale (512→1024), FramePack gets interpolation + color only
-                try:
-                    from .video_postprocess import postprocess_wan_video
-                    do_upscale = shot_engine in ("wan", "wan22", "wan22_14b")  # Wan is 512p, needs upscale
-                    # Style-aware color grading based on checkpoint
-                    _color_style = "anime"
-                    if style_anchor and "anthro" in style_anchor:
-                        _color_style = "anthro"
-                    elif style_anchor and "photorealistic" in style_anchor:
-                        _color_style = "photorealistic"
-                    processed = await postprocess_wan_video(
-                        video_path,
-                        upscale=do_upscale,
-                        interpolate=True,
-                        color_grade=True,
-                        scale_factor=2,
-                        target_fps=30,
-                        color_style=_color_style,
-                    )
-                    if processed:
-                        video_path = processed
-                        logger.info(f"Shot {shot_id}: post-processed → {Path(processed).name}")
-                except Exception as e:
-                    logger.warning(f"Shot {shot_id}: post-processing failed: {e}, using raw output")
-
-                last_frame = await extract_last_frame(video_path)
+                # Wan gets upscale (512->1024), FramePack gets interpolation + color only
+                video_path = await postprocess_video(
+                    video_path, shot_engine, style_anchor,
+                    interpolate=True, color_grade=True, scale_factor=2, target_fps=30,
+                )
 
                 # Record source image effectiveness for the feedback loop
                 source_path = shot_dict.get("source_image_path")
@@ -1970,68 +1388,18 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                         except Exception:
                             pass
 
+                # Persist generation params including motion tier from dispatcher
+                _motion_ctx = _dispatch_result.get("motion_ctx")
+                _completion = await complete_shot(
+                    conn, shot_id, video_path, scene_id, project_id,
+                    current_prompt, current_negative, gen_time,
+                    shot_dict, auto_approve=auto_approve,
+                    motion_ctx=_motion_ctx,
+                )
                 completed_count += 1
                 completed_videos.append(video_path)
-                prev_last_frame = last_frame
+                prev_last_frame = _completion["last_frame"]
                 prev_character = character_slug
-
-                if auto_approve:
-                    _review = 'approved'
-                else:
-                    _review, _qc_score = await _run_vision_qc(conn, shot_id, video_path, shot_dict)
-                # Persist generation params including motion tier
-                _motion_ctx = {
-                    "tier": locals().get("_motion_tier"),
-                    "cfg": locals().get("_14b_cfg"),
-                    "steps": locals().get("_14b_steps"),
-                    "split": locals().get("_14b_split"),
-                    "lightx2v": locals().get("_14b_use_lightx2v"),
-                    "clh": locals().get("_14b_clh"),
-                    "cll": locals().get("_14b_cll"),
-                }
-                await conn.execute("""
-                    UPDATE shots SET status = 'completed', output_video_path = $2,
-                           last_frame_path = $3, generation_time_seconds = $4,
-                           review_status = $5,
-                           motion_tier = $6, guidance_scale = $7, steps = $8,
-                           gen_split_steps = $9, gen_lightx2v = $10,
-                           content_lora_high = $11, content_lora_low = $12
-                    WHERE id = $1
-                """, shot_id, video_path, last_frame, gen_time, _review,
-                    _motion_ctx["tier"], _motion_ctx["cfg"], _motion_ctx["steps"],
-                    _motion_ctx["split"], _motion_ctx["lightx2v"],
-                    _motion_ctx["clh"], _motion_ctx["cll"])
-
-                # Save continuity frame for cross-scene reuse
-                if character_slug and last_frame and project_id:
-                    try:
-                        await _save_continuity_frame(
-                            conn, project_id, character_slug,
-                            scene_id, shot_id, last_frame,
-                            scene_number=scene_number,
-                            shot_number=shot_dict.get("shot_number"),
-                        )
-                        logger.info(
-                            f"Shot {shot_id}: saved continuity frame for '{character_slug}' "
-                            f"(scene {scene_number})"
-                        )
-                    except Exception as e:
-                        logger.warning(f"Shot {shot_id}: failed to save continuity frame: {e}")
-
-                logger.info(f"Shot {shot_id}: generated in {gen_time:.0f}s → {_review}")
-
-                await event_bus.emit(SHOT_GENERATED, {
-                    "shot_id": str(shot_id),
-                    "scene_id": str(scene_id),
-                    "project_id": project_id,
-                    "character_slug": character_slug,
-                    "video_engine": shot_engine,
-                    "generation_time": gen_time,
-                    "video_path": video_path,
-                    "last_frame_path": last_frame,
-                    "motion_tier": _motion_ctx.get("tier") if isinstance(locals().get("_motion_ctx"), dict) else None,
-                    "lora_name": shot_dict.get("lora_name"),
-                })
 
             except Exception as e:
                 logger.error(f"Shot {shot_id} generation failed: {e}")
