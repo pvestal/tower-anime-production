@@ -65,9 +65,11 @@ class QCMeasurements:
 QUALITY_GOOD = 0.70
 QUALITY_BORDERLINE = 0.55
 
-# Identity
-IDENTITY_OK = 0.90
-IDENTITY_BORDERLINE = 0.80
+# Identity — calibrated for illustrated/anime faces via ArcFace (photo-trained).
+# Reference keyframes score 0.79-0.88 against averaged embedding.
+# Video frames score 0.45-0.64 due to motion blur and angle changes.
+IDENTITY_OK = 0.55
+IDENTITY_BORDERLINE = 0.45
 
 # Pose
 POSE_OK = 0.85
