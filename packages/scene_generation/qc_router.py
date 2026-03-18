@@ -192,6 +192,10 @@ def decide_qc_action(
         else:
             return QCAction.MANUAL_REVIEW, reasons
 
+    # Identity bad (< 0.80) with retries left → retry with identity-preserving adjustments
+    if identity_bad and m.num_retries < m.max_retries:
+        return QCAction.RETRY_ADJUST_CONFIG, [RetryReason.IDENTITY_LOW]
+
     # Temporal issues only → retry same config (different seed may fix jitter)
     if temporal_bad:
         if m.num_retries < m.max_retries:
@@ -202,6 +206,10 @@ def decide_qc_action(
     # Identity borderline with retries left
     if identity_borderline and m.num_retries < m.max_retries:
         return QCAction.RETRY_ADJUST_CONFIG, [RetryReason.IDENTITY_LOW]
+
+    # Identity bad, retries exhausted → refinement before manual review
+    if identity_bad and m.num_retries >= m.max_retries:
+        return QCAction.SEND_TO_REFINEMENT, [RetryReason.IDENTITY_LOW]
 
     # Fallback
     return QCAction.MANUAL_REVIEW, reasons or [RetryReason.MULTI_ISSUE]
