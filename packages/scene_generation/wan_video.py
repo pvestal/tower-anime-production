@@ -1219,3 +1219,353 @@ async def generate_wan22_14b_roll_forward(
         "target_seconds": target_seconds,
         "resolution": f"{width}x{height}",
     }
+def build_dasiwa_i2v_workflow(
+    prompt_text: str,
+    ref_image: str,
+    width: int = 480,
+    height: int = 720,
+    num_frames: int = 81,
+    fps: int = 16,
+    total_steps: int = 4,
+    split_steps: int = 2,
+    cfg: float = 1.0,
+    seed: int | None = None,
+    negative_text: str = "low quality, blurry, distorted, watermark, text, ugly",
+    output_prefix: str | None = None,
+    motion_lora: str | None = None,
+    motion_lora_strength: float = 0.6,
+    content_lora_high: str | None = None,
+    content_lora_low: str | None = None,
+    content_lora_strength: float = 0.6,
+    skip_junk_frames: int = 6,
+) -> tuple[dict, str]:
+    """Build a DaSiWa TastySin v8 I2V workflow.
+
+    Same dual-model architecture as vanilla Wan 2.2 14B but with pre-baked
+    lightx2v distillation — no speed LoRA needed. Uses lower LoRA strengths
+    (0.3-0.6) since the merge already bakes in quality improvements.
+
+    Key differences from build_wan22_14b_i2v_workflow:
+    - No lightx2v LoRA (distillation is baked in)
+    - No DR34ML4Y style LoRA (TastySin has its own style baked in)
+    - Lower LoRA strengths recommended (0.3-0.6 vs 0.8-1.0)
+    - CFG=1 always, 4 steps always
+    - Optional junk frame stripping (first N frames are often garbage)
+    """
+    import random as _random
+    if seed is None:
+        seed = _random.randint(0, 2**63 - 1)
+
+    workflow = {}
+    nid = 1
+
+    # --- Load dual DaSiWa models ---
+
+    high_unet_node = str(nid)
+    workflow[high_unet_node] = {
+        "class_type": "UnetLoaderGGUF",
+        "inputs": {"unet_name": DASIWA_MODELS["unet_high"]},
+    }
+    nid += 1
+
+    low_unet_node = str(nid)
+    workflow[low_unet_node] = {
+        "class_type": "UnetLoaderGGUF",
+        "inputs": {"unet_name": DASIWA_MODELS["unet_low"]},
+    }
+    nid += 1
+
+    high_model_node, high_model_slot = high_unet_node, 0
+    low_model_node, low_model_slot = low_unet_node, 0
+
+    # --- Optional: motion/camera LoRA (high noise model only, 0.3-0.6) ---
+
+    if motion_lora:
+        motion_lora_node = str(nid)
+        workflow[motion_lora_node] = {
+            "class_type": "LoraLoaderModelOnly",
+            "inputs": {
+                "model": [high_model_node, high_model_slot],
+                "lora_name": motion_lora,
+                "strength_model": min(motion_lora_strength, 0.6),
+            },
+        }
+        high_model_node, high_model_slot = motion_lora_node, 0
+        nid += 1
+
+    # --- Optional: content LoRA pair (lower strength for DaSiWa) ---
+
+    from pathlib import Path as _P
+
+    # General NSFW LoRA stack (if content LoRA is present and isn't already the general NSFW LoRA)
+    _nsfw_general_high = _P("/opt/ComfyUI/models/loras/wan22_nsfw/wan22_general_nsfw_v08_HIGH.safetensors")
+    _nsfw_general_low = _P("/opt/ComfyUI/models/loras/wan22_nsfw/wan22_general_nsfw_v08_LOW.safetensors")
+    _content_is_general = content_lora_high and "general_nsfw" in (content_lora_high or "")
+    if content_lora_high and not _content_is_general and _nsfw_general_high.exists():
+        _ngh_node = str(nid)
+        workflow[_ngh_node] = {
+            "class_type": "LoraLoaderModelOnly",
+            "inputs": {
+                "model": [high_model_node, high_model_slot],
+                "lora_name": "wan22_nsfw/wan22_general_nsfw_v08_HIGH.safetensors",
+                "strength_model": 0.35,
+            },
+        }
+        high_model_node, high_model_slot = _ngh_node, 0
+        nid += 1
+        if _nsfw_general_low.exists():
+            _ngl_node = str(nid)
+            workflow[_ngl_node] = {
+                "class_type": "LoraLoaderModelOnly",
+                "inputs": {
+                    "model": [low_model_node, low_model_slot],
+                    "lora_name": "wan22_nsfw/wan22_general_nsfw_v08_LOW.safetensors",
+                    "strength_model": 0.35,
+                },
+            }
+            low_model_node, low_model_slot = _ngl_node, 0
+            nid += 1
+
+    if content_lora_high:
+        _clh_path = _P(f"/opt/ComfyUI/models/loras/{content_lora_high}")
+        if not _clh_path.exists():
+            _clh_path = _P(f"/opt/ComfyUI/models/loras/wan22_nsfw/{content_lora_high}")
+        if _clh_path.exists():
+            _clh_name = str(_clh_path.relative_to(_P("/opt/ComfyUI/models/loras")))
+            _clh_node = str(nid)
+            workflow[_clh_node] = {
+                "class_type": "LoraLoaderModelOnly",
+                "inputs": {
+                    "model": [high_model_node, high_model_slot],
+                    "lora_name": _clh_name,
+                    "strength_model": min(content_lora_strength, 0.6),
+                },
+            }
+            high_model_node, high_model_slot = _clh_node, 0
+            nid += 1
+            logger.info(f"DaSiWa: content LoRA HIGH '{_clh_name}' @ {min(content_lora_strength, 0.6)}")
+
+    if content_lora_low:
+        _cll_path = _P(f"/opt/ComfyUI/models/loras/{content_lora_low}")
+        if not _cll_path.exists():
+            _cll_path = _P(f"/opt/ComfyUI/models/loras/wan22_nsfw/{content_lora_low}")
+        if _cll_path.exists():
+            _cll_name = str(_cll_path.relative_to(_P("/opt/ComfyUI/models/loras")))
+            _cll_node = str(nid)
+            workflow[_cll_node] = {
+                "class_type": "LoraLoaderModelOnly",
+                "inputs": {
+                    "model": [low_model_node, low_model_slot],
+                    "lora_name": _cll_name,
+                    "strength_model": min(content_lora_strength, 0.6),
+                },
+            }
+            low_model_node, low_model_slot = _cll_node, 0
+            nid += 1
+
+    # --- ModelSamplingSD3 ---
+
+    high_sampling_node = str(nid)
+    workflow[high_sampling_node] = {
+        "class_type": "ModelSamplingSD3",
+        "inputs": {"model": [high_model_node, high_model_slot], "shift": 8},
+    }
+    nid += 1
+
+    low_sampling_node = str(nid)
+    workflow[low_sampling_node] = {
+        "class_type": "ModelSamplingSD3",
+        "inputs": {"model": [low_model_node, low_model_slot], "shift": 8},
+    }
+    nid += 1
+
+    # --- Text encoding ---
+
+    clip_node = str(nid)
+    workflow[clip_node] = {
+        "class_type": "CLIPLoader",
+        "inputs": {"clip_name": WAN22_14B_MODELS["text_encoder"], "type": "wan"},
+    }
+    nid += 1
+
+    pos_node = str(nid)
+    workflow[pos_node] = {
+        "class_type": "CLIPTextEncode",
+        "inputs": {"text": prompt_text, "clip": [clip_node, 0]},
+    }
+    nid += 1
+
+    neg_node = str(nid)
+    workflow[neg_node] = {
+        "class_type": "CLIPTextEncode",
+        "inputs": {"text": negative_text, "clip": [clip_node, 0]},
+    }
+    nid += 1
+
+    # --- CLIP Vision ---
+
+    clip_vision_node = str(nid)
+    workflow[clip_vision_node] = {
+        "class_type": "CLIPVisionLoader",
+        "inputs": {"clip_name": WAN22_14B_MODELS["clip_vision"]},
+    }
+    nid += 1
+
+    load_img_node = str(nid)
+    workflow[load_img_node] = {
+        "class_type": "LoadImage",
+        "inputs": {"image": ref_image},
+    }
+    nid += 1
+
+    clip_vision_encode_node = str(nid)
+    workflow[clip_vision_encode_node] = {
+        "class_type": "CLIPVisionEncode",
+        "inputs": {
+            "clip_vision": [clip_vision_node, 0],
+            "image": [load_img_node, 0],
+            "crop": "center",
+        },
+    }
+    nid += 1
+
+    # --- VAE (16-channel, same as Wan 2.1) ---
+
+    vae_node = str(nid)
+    workflow[vae_node] = {
+        "class_type": "VAELoader",
+        "inputs": {"vae_name": WAN22_14B_MODELS["vae"]},
+    }
+    nid += 1
+
+    # --- WanImageToVideo ---
+
+    i2v_node = str(nid)
+    workflow[i2v_node] = {
+        "class_type": "WanImageToVideo",
+        "inputs": {
+            "positive": [pos_node, 0],
+            "negative": [neg_node, 0],
+            "vae": [vae_node, 0],
+            "width": width,
+            "height": height,
+            "length": num_frames + skip_junk_frames,
+            "batch_size": 1,
+            "clip_vision_output": [clip_vision_encode_node, 0],
+            "start_image": [load_img_node, 0],
+        },
+    }
+    nid += 1
+
+    # --- Dual KSamplerAdvanced ---
+
+    sampler_high_node = str(nid)
+    workflow[sampler_high_node] = {
+        "class_type": "KSamplerAdvanced",
+        "inputs": {
+            "model": [high_sampling_node, 0],
+            "positive": [i2v_node, 0],
+            "negative": [i2v_node, 1],
+            "latent_image": [i2v_node, 2],
+            "seed": seed,
+            "steps": total_steps,
+            "cfg": cfg,
+            "sampler_name": "euler",
+            "scheduler": "simple",
+            "start_at_step": 0,
+            "end_at_step": split_steps,
+            "add_noise": "enable",
+            "return_with_leftover_noise": "enable",
+            "noise_seed": seed,
+        },
+    }
+    nid += 1
+
+    sampler_low_node = str(nid)
+    workflow[sampler_low_node] = {
+        "class_type": "KSamplerAdvanced",
+        "inputs": {
+            "model": [low_sampling_node, 0],
+            "positive": [i2v_node, 0],
+            "negative": [i2v_node, 1],
+            "latent_image": [sampler_high_node, 0],
+            "seed": seed,
+            "steps": total_steps,
+            "cfg": cfg,
+            "sampler_name": "euler",
+            "scheduler": "simple",
+            "start_at_step": split_steps,
+            "end_at_step": total_steps,
+            "add_noise": "disable",
+            "return_with_leftover_noise": "disable",
+            "noise_seed": seed,
+        },
+    }
+    nid += 1
+
+    # --- Decode ---
+
+    decode_node = str(nid)
+    workflow[decode_node] = {
+        "class_type": "VAEDecode",
+        "inputs": {
+            "samples": [sampler_low_node, 0],
+            "vae": [vae_node, 0],
+        },
+    }
+    nid += 1
+
+    # --- Strip junk frames (first N frames are often garbage with distilled models) ---
+
+    images_source = decode_node
+    if skip_junk_frames > 0:
+        trim_node = str(nid)
+        workflow[trim_node] = {
+            "class_type": "VHS_SplitImages",
+            "inputs": {
+                "images": [decode_node, 0],
+                "split_index": skip_junk_frames,
+            },
+        }
+        images_source = trim_node
+        nid += 1
+
+    # --- Output ---
+
+    ts = int(time.time())
+    prefix = output_prefix or f"dasiwa_{ts}"
+    output_node = str(nid)
+    workflow[output_node] = {
+        "class_type": "VHS_VideoCombine",
+        "inputs": {
+            "images": [images_source, 2 if skip_junk_frames > 0 else 0],
+            "frame_rate": fps,
+            "loop_count": 0,
+            "filename_prefix": prefix,
+            "format": "video/h264-mp4",
+            "pix_fmt": "yuv420p",
+            "crf": 19,
+            "save_metadata": True,
+            "trim_to_audio": False,
+            "pingpong": False,
+            "save_output": True,
+        },
+    }
+
+    return workflow, prefix
+
+
+def check_dasiwa_ready() -> tuple[bool, str]:
+    """Check if DaSiWa TastySin v8 models are available."""
+    from pathlib import Path
+    base = Path("/opt/ComfyUI/models/unet")
+    missing = []
+    for key, fname in DASIWA_MODELS.items():
+        if not (base / fname).exists():
+            missing.append(f"{key}: {fname}")
+    if missing:
+        return False, f"Missing DaSiWa models: {', '.join(missing)}"
+    return True, "DaSiWa TastySin v8 ready"
+
+
+

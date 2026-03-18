@@ -23,9 +23,11 @@ default_nsfw:
       - "Yeah..."
       - "Mmm..."
 
-# Default for SFW / non-NSFW shots (no foley, optional ambient voice)
+# Default for SFW / non-NSFW shots (ambient sounds)
 default_sfw:
-  sfx: []
+  sfx:
+    - { category: ambient_wind, weight: 0.2 }
+    - { category: cloth_rustle, weight: 0.1 }
   voice_lines: {}
 
 # Same-sex defaults (applied when all characters share a gender)
@@ -102,7 +104,9 @@ camera_actions:
     sfx: []
     voice_lines: {}
   catwalk:
-    sfx: []
+    sfx:
+      - { category: footstep_heels, weight: 0.4 }
+      - { category: cloth_rustle, weight: 0.2 }
     voice_lines: {}
   retro_90s:
     sfx: []
@@ -471,6 +475,45 @@ mappings:
     voice_lines:
       male:
         - "Mmm..."
+
+  # --- Affection / interaction ---
+  embrace:
+    sfx:
+      - { category: kissing, weight: 0.5, gender: female }
+      - { category: breathing, weight: 0.3, gender: female }
+      - { category: cloth_rustle, weight: 0.2 }
+    voice_lines:
+      female:
+        - "Mmm... come closer..."
+        - "Hold me..."
+        - "I've wanted this..."
+      male:
+        - "You're so beautiful..."
+        - "Come here..."
+
+  kiss:
+    sfx:
+      - { category: kissing, weight: 0.6, gender: female }
+      - { category: breathing, weight: 0.2, gender: female }
+    voice_lines:
+      female:
+        - "Mmm..."
+      male:
+        - "Mmm..."
+
+  # --- SFW motion ---
+  idle:
+    sfx:
+      - { category: ambient_wind, weight: 0.3 }
+      - { category: breathing, weight: 0.1, gender: female }
+      - { category: cloth_rustle, weight: 0.1 }
+    voice_lines: {}
+
+  walk:
+    sfx:
+      - { category: footstep_soft, weight: 0.5 }
+      - { category: cloth_rustle, weight: 0.2 }
+    voice_lines: {}
 
   # --- Climax variants ---
   climax:

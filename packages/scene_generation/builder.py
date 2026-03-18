@@ -372,7 +372,7 @@ async def recover_interrupted_generations():
         await conn.close()
 
 
-async def generate_scene(scene_id: str, auto_approve: bool = False):
+async def generate_scene(scene_id: str, auto_approve: bool = False, skip_postprocess: bool = False):
     """Background task: generate all shots sequentially with continuity chaining.
 
     Uses _scene_generation_lock to ensure only one scene generates at a time,
@@ -383,6 +383,7 @@ async def generate_scene(scene_id: str, auto_approve: bool = False):
         auto_approve: If True, shots are auto-approved after generation so the
             full downstream pipeline (voice → music → assembly) fires without
             manual review. Also enabled by project metadata auto_approve_shots=true.
+        skip_postprocess: If True, skip upscale/interpolation/color grading — raw video only.
     """
     acquired = await acquire_scene_lock()
     if not acquired:
@@ -390,7 +391,7 @@ async def generate_scene(scene_id: str, auto_approve: bool = False):
         return
     try:
         clear_cancel()  # Reset cancel signal for this run
-        await _generate_scene_impl(scene_id, auto_approve=auto_approve)
+        await _generate_scene_impl(scene_id, auto_approve=auto_approve, skip_postprocess=skip_postprocess)
     finally:
         _scene_generation_lock.release()
 
@@ -548,7 +549,7 @@ async def roll_forward_wan_shot(
     }
 
 
-async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
+async def _generate_scene_impl(scene_id: str, auto_approve: bool = False, skip_postprocess: bool = False):
     """Inner implementation — do not call directly, use generate_scene().
 
     Args:
@@ -1288,6 +1289,7 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
                     auto_approve=auto_approve,
                     character_slug=character_slug,
                     motion_prompt=motion_prompt,
+                    skip_postprocess=skip_postprocess,
                 )
 
                 if _dispatch_result is None:
@@ -1368,10 +1370,13 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False):
 
                 # Post-process all video outputs: interpolation + upscale + color grade
                 # Wan gets upscale (512->1024), FramePack gets interpolation + color only
-                video_path = await postprocess_video(
-                    video_path, shot_engine, style_anchor,
-                    interpolate=True, color_grade=True, scale_factor=2, target_fps=30,
-                )
+                if not skip_postprocess:
+                    video_path = await postprocess_video(
+                        video_path, shot_engine, style_anchor,
+                        interpolate=True, color_grade=True, scale_factor=2, target_fps=30,
+                    )
+                else:
+                    logger.info(f"Shot {shot_id}: skipping postprocess (raw video mode)")
 
                 # Record source image effectiveness for the feedback loop
                 source_path = shot_dict.get("source_image_path")

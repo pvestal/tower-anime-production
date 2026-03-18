@@ -124,10 +124,20 @@ async def keyframe_blitz(conn, scene_id: str, skip_existing: bool = True,
                 extra_loras=_extra_loras or None,
             )
             if kf_path and kf_path.exists():
+                # Update source image AND reset any queued (not yet generating) video job
+                # so it picks up the new keyframe instead of the stale one.
+                old_status = shot.get("status")
                 await conn.execute(
-                    "UPDATE shots SET source_image_path = $2 WHERE id = $1",
+                    "UPDATE shots SET source_image_path = $2, "
+                    "comfyui_prompt_id = CASE WHEN status IN ('pending','queued') THEN NULL ELSE comfyui_prompt_id END "
+                    "WHERE id = $1",
                     shot["id"], str(kf_path),
                 )
+                if old_status == 'generating':
+                    logger.warning(
+                        f"Shot {shot_id[:8]}: keyframe updated while video is generating — "
+                        f"current video will use OLD keyframe. Re-queue after completion."
+                    )
                 generated += 1
                 shot_result = {
                     "shot_id": shot_id, "shot_number": shot["shot_number"],

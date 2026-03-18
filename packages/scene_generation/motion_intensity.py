@@ -67,6 +67,40 @@ MOTION_TIERS: dict[str, MotionParams] = {
     ),
 }
 
+# DaSiWa-specific tiers (different step/cfg ranges than WAN22)
+DASIWA_MOTION_TIERS: dict[str, MotionParams] = {
+    "low": MotionParams(
+        tier="low",
+        total_steps=4, split_steps=2, cfg=1.0,
+        content_lora_strength=0.6, use_lightx2v=False,
+        description="DaSiWa gentle — idle, slow sensual",
+    ),
+    "medium": MotionParams(
+        tier="medium",
+        total_steps=4, split_steps=2, cfg=1.0,
+        content_lora_strength=0.6, use_lightx2v=False,
+        description="DaSiWa moderate — positions, rhythmic",
+    ),
+    "high": MotionParams(
+        tier="high",
+        total_steps=6, split_steps=3, cfg=1.5,
+        content_lora_strength=0.6, use_lightx2v=False,
+        description="DaSiWa strong — positions, action",
+    ),
+    "extreme": MotionParams(
+        tier="extreme",
+        total_steps=8, split_steps=4, cfg=3.5,
+        content_lora_strength=0.6, use_lightx2v=False,
+        description="DaSiWa maximum — fast action, intense",
+    ),
+}
+
+
+def get_dasiwa_motion_params(tier: str) -> MotionParams:
+    """Get DaSiWa-specific generation params for a motion tier."""
+    return DASIWA_MOTION_TIERS.get(tier, DASIWA_MOTION_TIERS["medium"])
+
+
 # --- Keyword-based classification rules ---
 # Matched against LoRA filename (lowered, no extension) and prompt text
 

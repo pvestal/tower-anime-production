@@ -1821,7 +1821,7 @@ async def source_image_stats(project_id: int):
 
 
 @router.post("/scenes/generate-all")
-async def generate_all_scenes(project_id: int, auto_approve: bool = False):
+async def generate_all_scenes(project_id: int, auto_approve: bool = False, skip_postprocess: bool = False):
     """Queue generation for all scenes that have shots but no final video.
 
     Scenes are generated sequentially in episode order (episode_number, then
@@ -1875,14 +1875,30 @@ async def generate_all_scenes(project_id: int, auto_approve: bool = False):
                    "scene_number": r["scene_number"],
                    "shot_count": r["shot_count"]} for r in eligible]
 
-        async def _sequential_pipeline(ordered_scene_ids, _auto_approve):
+        async def _flush_comfyui_vram():
+            """Free VRAM between shots to prevent model pile-up."""
+            import aiohttp
+            try:
+                async with aiohttp.ClientSession() as sess:
+                    async with sess.post(
+                        "http://127.0.0.1:8188/free",
+                        json={"unload_models": True, "free_memory": True},
+                        timeout=aiohttp.ClientTimeout(total=10),
+                    ) as resp:
+                        if resp.status == 200:
+                            logger.info("generate-all: VRAM flushed between shots")
+            except Exception as e:
+                logger.debug(f"generate-all: VRAM flush failed (non-fatal): {e}")
+
+        async def _sequential_pipeline(ordered_scene_ids, _auto_approve, _skip_pp):
             """Generate scenes one at a time in order."""
             for sid in ordered_scene_ids:
                 scene_id_str = str(sid)
                 try:
+                    await _flush_comfyui_vram()
                     async with _scene_gen_semaphore:
                         logger.info(f"generate-all: starting scene {scene_id_str}")
-                        await generate_scene(sid, auto_approve=_auto_approve)
+                        await generate_scene(sid, auto_approve=_auto_approve, skip_postprocess=_skip_pp)
                         logger.info(f"generate-all: completed scene {scene_id_str}")
                 except Exception as e:
                     logger.error(f"generate-all: scene {scene_id_str} failed: {e}")
@@ -1891,7 +1907,7 @@ async def generate_all_scenes(project_id: int, auto_approve: bool = False):
             _scene_generation_tasks.pop(pipeline_key, None)
             logger.info(f"generate-all: pipeline finished for project {project_id}")
 
-        task = asyncio.create_task(_sequential_pipeline(scene_ids, auto_approve))
+        task = asyncio.create_task(_sequential_pipeline(scene_ids, auto_approve, skip_postprocess))
         _scene_generation_tasks[pipeline_key] = task
 
         return {
