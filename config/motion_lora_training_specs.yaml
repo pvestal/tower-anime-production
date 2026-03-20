@@ -355,3 +355,337 @@ footage_sources:
 #     video_lora: walk_cycle
 #     video_lora_strength: 0.7
 #     video_engine: wan22_14b
+
+  # ── MOTORCYCLE CAMERA PACK (Grid Runners #64) ──
+  # Custom LoRAs for motorcycle-specific cinematography.
+  # No existing LoRAs cover these angles — must be trained from reference footage.
+  # Primary source: Akira (1988) film extracts + MotoGP/track day footage + stock.
+
+  moto_rider_pov:
+    label: "Motorcycle Rider POV"
+    priority: 1
+    description: >
+      First-person rider perspective — handlebars, gauge cluster, gloved hands on clip-ons,
+      road rushing below, wind buffet, peripheral speed blur. The camera IS the rider's eyes.
+      Captures the intimate tunnel-vision focus of riding at speed where the instruments,
+      the tank between your knees, and the vanishing point ahead are the entire world.
+    dataset:
+      clip_count: 25-40
+      clip_length_s: 3-6
+      framing: "helmet-mount or chest-mount, forward facing, handlebars visible in lower frame"
+      environments:
+        - mountain canyon road (daylight, golden hour)
+        - neon-lit city street at night (wet preferred)
+        - racetrack (day and dusk)
+        - highway with streaking lights
+        - tunnel with overhead strip lights
+      avoid:
+        - stationary or parked footage
+        - excessive head bob or gopro jello
+        - other vehicles blocking more than 30% of frame
+        - footage without visible handlebars/instruments
+      sources:
+        - "Akira (1988) film — Kaneda POV chase frames (ingested to Grid Runners)"
+        - "MotoGP onboard highlights (YouTube: MotoGP, Dorna)"
+        - "GoPro motorcycle POV compilations (chin-mount preferred)"
+        - "Night city ride POV footage (search: Tokyo midnight ride, Shuto expressway)"
+        - "Track day onboard — Brands Hatch, Phillip Island, Mugello"
+    captions:
+      template: "first person motorcycle rider POV, {details}, {speed_cue}, {atmosphere}"
+      examples:
+        - "first person motorcycle rider POV, digital gauge cluster glowing blue, gloved hands on clip-on handlebars, wet neon road ahead, speed blur on periphery"
+        - "first person sportbike rider POV, leaning into corner, knee visible at frame edge, canyon road, motion blur, golden hour light"
+        - "first person motorcycle rider POV through tunnel, overhead lights streaking, instruments illuminated, engine vibration visible on mirrors"
+    training:
+      rank: 24
+      lr: 8e-5
+      steps: 2500
+      checkpoint_every: 350
+      notes: "Ensure handlebars/instruments visible in every clip. Trim so forward motion starts within 0.5s. Bias toward high_noise timesteps for motion emphasis."
+    output_files:
+      single: wan22_camera/moto_rider_pov.safetensors
+    tags: [camera, pov, motorcycle, rider, handlebars, first_person, cockpit]
+
+  moto_low_chase:
+    label: "Low Rear Chase Camera"
+    priority: 1
+    description: >
+      Camera at rear axle height, tracking behind the bike. Rear tire fills the lower third,
+      spinning rubber dominates foreground. Chain and sprocket visible above. Road surface
+      blurs beneath. Exhaust heat shimmer warps everything behind. This is the camera angle
+      that says "you are the road watching the machine devour you."
+    dataset:
+      clip_count: 20-30
+      clip_length_s: 3-5
+      framing: "low angle rear, tire fills bottom 30-40% of frame, road surface visible beneath"
+      environments:
+        - racetrack rear-camera footage
+        - expressway tunnel with neon overhead
+        - wet street with reflections
+        - canyon road with cliff walls
+      avoid:
+        - front-facing footage
+        - high-angle or drone shots
+        - static parked bikes
+        - footage where tire isn't prominent
+      sources:
+        - "Akira (1988) — rear chase angles from bike sequences"
+        - "MotoGP rear wheel camera compilations"
+        - "Motorcycle review channels with follow-car low shots"
+        - "Stock footage: motorcycle rear tracking shot"
+    captions:
+      template: "low angle rear tracking shot of motorcycle, {tire_detail}, {background}, {atmosphere}"
+      examples:
+        - "low angle rear tracking shot of sportbike, rear tire spinning filling lower frame, chain visible above, exhaust heat shimmer, tunnel neon streaking overhead"
+        - "rear axle-height chase camera behind motorcycle, rubber tire in foreground, wet road surface blurring beneath, neon reflections"
+    training:
+      rank: 24
+      lr: 8e-5
+      steps: 2500
+      checkpoint_every: 350
+      notes: "Tire must be prominently visible in every clip. Prefer clips with visible chain/sprocket. Include exhaust shimmer clips where available."
+    output_files:
+      single: wan22_camera/moto_low_chase.safetensors
+    tags: [camera, chase, low_angle, rear, motorcycle, tire, axle]
+
+  moto_tire_closeup:
+    label: "Tire Contact Patch Extreme Close-up"
+    priority: 1
+    description: >
+      Extreme macro of tire meeting road. Rubber deformation visible at the contact edge.
+      Tread blocks compress and release. Water sprays from rain grooves. Heat shimmer
+      rises from the shoulder. This is the most intimate possible view of grip — the
+      molecular negotiation between rubber compound and asphalt aggregate that decides
+      whether you ride home or slide into the barrier.
+    dataset:
+      clip_count: 15-25
+      clip_length_s: 2-4
+      framing: "extreme close-up, tire surface fills 60%+ of frame, contact patch visible"
+      environments:
+        - dry track surface (visible rubber buildup)
+        - wet surface with water channeling
+        - tire warmers removal revealing heat
+        - burnout/launch with smoke
+      avoid:
+        - full motorcycle visible
+        - tire not in motion
+        - low resolution footage where rubber texture is invisible
+      sources:
+        - "Slow-mo motorcycle tire footage (Warped Perception, Smarter Every Day channels)"
+        - "MotoGP slow-motion tire camera (Dorna broadcast B-roll)"
+        - "Tire manufacturer promo videos (Pirelli, Michelin Power GP)"
+        - "Burnout/wheelie tire smoke compilations (close-up only)"
+        - "Rain tire spray footage from wet races"
+    captions:
+      template: "extreme close-up motorcycle tire {state}, {rubber_detail}, {surface_condition}"
+      examples:
+        - "extreme close-up motorcycle rear tire leaning into corner, rubber tread blocks deforming under lateral load, hot asphalt, heat shimmer"
+        - "macro shot motorcycle tire in rain, water spraying from tread grooves, wet asphalt reflection, rubber surface glistening"
+        - "extreme close-up tire burnout, rubber smoke billowing, tire spinning on asphalt, melting rubber visible at contact patch"
+    training:
+      rank: 16
+      lr: 7e-5
+      steps: 2000
+      checkpoint_every: 300
+      notes: "Short clips, maximum texture detail. Include both dry and wet conditions. Tire must be IN MOTION in every clip — no static tire shots."
+    output_files:
+      single: wan22_camera/moto_tire_closeup.safetensors
+    tags: [camera, macro, tire, rubber, contact_patch, close_up, grip]
+
+  moto_lean_tracking:
+    label: "Side Tracking at Lean Angle"
+    priority: 2
+    description: >
+      Side-on tracking camera matched to bike speed during cornering. The bike appears
+      frozen in its extreme lean while background smears. Knee slider sparking, elbow
+      near ground, rear tire visibly working at the edge. The camera is a painter's eye
+      — capturing the frozen geometry of a human-machine pendulum at 58 degrees of lean,
+      the most beautiful angle in motorcycling.
+    dataset:
+      clip_count: 20-30
+      clip_length_s: 3-5
+      framing: "side profile, full bike visible at lean, background motion-blurred"
+      environments:
+        - racetrack corners (various tracks)
+        - canyon roads with rock walls
+        - city street curves with neon (night)
+      avoid:
+        - upright riding (must be at lean)
+        - front or rear angles
+        - overhead/drone shots
+        - low-speed maneuvering
+      sources:
+        - "MotoGP broadcast cornering compilations (trackside camera)"
+        - "WSBK side tracking shots"
+        - "Akira (1988) — side tracking during chase"
+        - "Track day photographer video compilations"
+    captions:
+      template: "side tracking shot motorcycle at extreme lean angle, {rider_detail}, {sparks_tire}, {background}"
+      examples:
+        - "side tracking sportbike at extreme lean, knee slider showering sparks on tarmac, elbow near ground, motion-blurred grandstands"
+        - "side tracking motorcycle cornering at night, lean angle 55 degrees, neon reflections on wet road, tire edge gripping at limit"
+    training:
+      rank: 24
+      lr: 8e-5
+      steps: 2500
+      checkpoint_every: 350
+    output_files:
+      single: wan22_camera/moto_lean_tracking.safetensors
+    tags: [camera, tracking, lean, cornering, side, motorcycle, knee_down]
+
+  moto_flyby:
+    label: "Motorcycle Flyby — Stationary Camera"
+    priority: 2
+    description: >
+      Camera is planted. The bike screams through frame in 1-2 seconds. The world is
+      still and the machine is a violent interruption of silence — blur streak, wind
+      impact on foliage/papers, exhaust crack echoing off walls. Before: anticipation.
+      During: controlled chaos. After: settling dust and ringing ears.
+    dataset:
+      clip_count: 15-25
+      clip_length_s: 2-4
+      framing: "stationary camera, bike enters and exits frame, environment visible"
+      environments:
+        - roadside (eye-level, gravel shoulder)
+        - pit wall (track level)
+        - bridge overpass (below, looking up)
+        - urban alley (confined space amplifies effect)
+      avoid:
+        - tracking/following shots (camera must be STATIC)
+        - slow passes (must be at speed)
+        - multiple vehicles
+      sources:
+        - "MotoGP flyby compilations (pit wall cameras)"
+        - "Street racing flyby footage (roadside static)"
+        - "Drag strip flyby from spectator angle"
+        - "Stock footage: motorcycle passes camera at speed"
+    captions:
+      template: "stationary camera motorcycle flyby, {speed_cue}, {aftermath}, {environment}"
+      examples:
+        - "stationary camera motorcycle screaming past at speed, motion blur streak, wind blowing debris after pass, urban alley"
+        - "static roadside camera, sportbike flyby, exhaust crack, dust kicked up in wake, countryside road"
+    training:
+      rank: 16
+      lr: 7e-5
+      steps: 2000
+      checkpoint_every: 300
+    output_files:
+      single: wan22_camera/moto_flyby.safetensors
+    tags: [camera, flyby, static, motorcycle, speed, blur, pass]
+
+  moto_exhaust_detail:
+    label: "Exhaust Detail — Flame and Heat"
+    priority: 2
+    description: >
+      Slow push-in or static macro on exhaust tips. Blue backfire flame on deceleration,
+      heat distortion above endcans, carbon fiber texture rendered at pore level. The
+      exhaust is where chemistry becomes sound, where combustion gases paint the air
+      behind the bike with invisible heat sculpture.
+    dataset:
+      clip_count: 15-20
+      clip_length_s: 2-5
+      framing: "close-up to extreme close-up, exhaust tips fill 40-70% of frame"
+      environments:
+        - dyno room with dark background
+        - night alley (exhaust flames visible)
+        - pit garage during warmup
+        - track exit with overrun pops
+      avoid:
+        - full motorcycle visible
+        - daytime bright footage where flames invisible
+        - footage without flame or heat effect visible
+      sources:
+        - "Motorcycle dyno exhaust flame compilations (SC-Project, Akrapovic, Austin Racing)"
+        - "MotoGP pit lane exhaust flames on startup"
+        - "Night ride exhaust flame compilations"
+        - "Akira (1988) — exhaust glow frames from bike details"
+    captions:
+      template: "close-up motorcycle exhaust {action}, {flame_detail}, {material}, {atmosphere}"
+      examples:
+        - "close-up motorcycle twin exhaust tips, blue backfire flame on deceleration, carbon fiber endcan weave visible, heat shimmer above"
+        - "extreme close-up exhaust outlet, cherry red inner walls, flame forming in throat, dark background"
+    training:
+      rank: 16
+      lr: 7e-5
+      steps: 2000
+      checkpoint_every: 300
+    output_files:
+      single: wan22_camera/moto_exhaust_detail.safetensors
+    tags: [camera, exhaust, flame, heat, detail, motorcycle, macro]
+
+  moto_wheelie_rear:
+    label: "Wheelie from Behind/Below"
+    priority: 3
+    description: >
+      Camera behind and below the bike during a wheelie. Front wheel lifting skyward,
+      chain under maximum tension, rear tire the only contact with earth. Smoke optional
+      but welcome. This angle captures the defiance — gravity says stay, the throttle
+      says otherwise, and for a moment the machine is a rocket balanced on a rubber fulcrum.
+    dataset:
+      clip_count: 15-20
+      clip_length_s: 2-4
+      framing: "low rear angle, front wheel visible lifting, chain/sprocket visible"
+      environments:
+        - straight road or runway
+        - empty parking lot
+        - drag strip launch area
+      avoid:
+        - side-on wheelie shots (must be rear/below angle)
+        - bicycle wheelies
+        - low speed balance-point wheelies without drama
+      sources:
+        - "Supermoto/stunt compilation (rear camera angle)"
+        - "Drag strip motorcycle launch rear view"
+        - "Wheelie competition footage"
+    captions:
+      template: "low angle rear shot motorcycle wheelie, {front_wheel}, {chain_detail}, {smoke}"
+      examples:
+        - "low angle rear shot motorcycle wheelie, front wheel high, chain pulled taut, rear tire smoking, neon underglow"
+    training:
+      rank: 16
+      lr: 7e-5
+      steps: 2000
+      checkpoint_every: 300
+    output_files:
+      single: wan22_camera/moto_wheelie_rear.safetensors
+    tags: [camera, wheelie, rear, low_angle, motorcycle, stunt]
+
+  moto_garage_orbit:
+    label: "Motorcycle Garage Detail Orbit"
+    priority: 3
+    description: >
+      Slow reverent orbit around a stationary motorcycle in a workshop environment.
+      Product-shot cinematography applied to a machine — light raking across bodywork
+      reveals every curve, every machined surface, every fastener. This is the turntable
+      for things too beautiful to see from just one angle.
+    dataset:
+      clip_count: 15-25
+      clip_length_s: 4-8
+      framing: "medium orbit, full or partial bike visible, workshop/studio environment"
+      environments:
+        - clean workshop with pendant lights
+        - photography studio with dark background
+        - showroom floor with spot lighting
+      avoid:
+        - outdoor shots
+        - bike in motion
+        - cluttered messy backgrounds
+        - wide environmental shots where bike is small
+      sources:
+        - "Motorcycle review turntable shots (RevZilla, FortNine)"
+        - "Manufacturer reveal videos (Ducati, BMW Motorrad)"
+        - "Custom motorcycle build reveal videos (bike on turntable)"
+        - "Akira Kaneda bike CG turntable renders"
+    captions:
+      template: "slow orbit around {bike_type} in {environment}, {light_detail}, {surface_detail}"
+      examples:
+        - "slow orbit around red sportbike on workshop stand, warm pendant light catching polished bodywork, CNC aluminum details visible"
+        - "product-style orbit around motorcycle in dark studio, single key light revealing curves and machined surfaces progressively"
+    training:
+      rank: 24
+      lr: 8e-5
+      steps: 2500
+      checkpoint_every: 350
+    output_files:
+      single: wan22_camera/moto_garage_orbit.safetensors
+    tags: [camera, orbit, garage, workshop, product, motorcycle, detail, turntable]

@@ -1,5 +1,5 @@
 # Video LoRA Pairs — pose type
-# 26 entries
+# 37 entries
 video_lora_pairs:
   cowgirl:
     label: Cowgirl
@@ -440,3 +440,155 @@ video_lora_pairs:
       reactor: left
     actor_motion: initiating position change
     reactor_motion: body adjusting to new position, mutual repositioning
+  assisted_handjob:
+    label: Assisted Handjob
+    lora_type: pose
+    tier: explicit
+    motion_tier: medium
+    high: wan22_nsfw/assisted_handjob_HIGH.safetensors
+    low: null
+    tags:
+    - handjob
+    - manual
+    - foreplay
+    counter_motion: subtle hip motion, pleasure expression, body tensing
+  orgasmic_contractions:
+    label: Orgasmic Contractions
+    lora_type: pose
+    tier: explicit
+    motion_tier: high
+    high: wan22_nsfw/orgasmic_contractions_HIGH.safetensors
+    low: wan22_nsfw/orgasmic_contractions_LOW.safetensors
+    tags:
+    - orgasm
+    - contractions
+    - reaction
+    - climax
+    - finish
+    counter_motion: body tensing, back arching, grip tightening, involuntary spasms
+  perfect_insertion_back:
+    label: Perfect Insertion (Back View)
+    lora_type: pose
+    tier: explicit
+    motion_tier: high
+    high: wan22_nsfw/perfect_insertion_back_HIGH.safetensors
+    low: null
+    tags:
+    - insertion
+    - penetration
+    - back_view
+    - position
+    counter_motion: body rocking forward, reactive hip motion, back arching
+  fucking_machine:
+    label: Fucking Machine
+    lora_type: pose
+    tier: explicit
+    motion_tier: high
+    high: wan22_nsfw/wan22_fucking_machine_v2_HIGH.safetensors
+    low: wan22_nsfw/wan22_fucking_machine_v2_LOW.safetensors
+    tags:
+    - machine
+    - mechanical
+    - toy
+    - solo
+    counter_motion: body rocking from mechanical thrusts, involuntary bouncing
+  cumshot:
+    label: Cumshot / Male Finish
+    lora_type: pose
+    tier: explicit
+    motion_tier: high
+    high: wan22_nsfw/wan22_cumshot_HIGH.safetensors
+    low: wan22_nsfw/wan22_cumshot_LOW.safetensors
+    tags:
+    - cumshot
+    - ejaculation
+    - finish
+    - male
+    counter_motion: flinching, reactive body movement, receiving
+  bondage_tied_up:
+    label: All Tied Up / Bondage
+    lora_type: pose
+    tier: explicit
+    motion_tier: low
+    high: wan22_nsfw/wan22_all_tied_up.safetensors
+    low: null
+    tags:
+    - bondage
+    - tied
+    - rope
+    - restraint
+    counter_motion: struggling against restraints, subtle writhing
+  bbc_rough_cowgirl:
+    label: BBC Rough Cowgirl
+    lora_type: pose
+    tier: explicit
+    motion_tier: extreme
+    high: wan22_nsfw/bbc_rough_cowgirl_HIGH.safetensors
+    low: null
+    tags:
+    - cowgirl
+    - rough
+    - bbc
+    - riding
+    - position
+    - interracial
+    counter_motion: aggressive upward thrusts, gripping hips, body impact
+  reverse_squatting_front:
+    label: Reverse Squatting (Front View)
+    lora_type: pose
+    tier: explicit
+    motion_tier: high
+    high: wan22_nsfw/reverse_squatting_front_HIGH.safetensors
+    low: null
+    tags:
+    - squatting
+    - reverse
+    - front_view
+    - riding
+    - position
+    counter_motion: reactive upward thrusts, gripping thighs, mutual bouncing
+  closeup_facial_cumshot:
+    label: Close-up Facial Cumshot
+    lora_type: pose
+    tier: explicit
+    motion_tier: high
+    high: wan22_nsfw/wan22_closeup_facial_cumshot_HIGH.safetensors
+    low: wan22_nsfw/wan22_closeup_facial_cumshot_LOW.safetensors
+    tags:
+    - facial
+    - cumshot
+    - closeup
+    - finish
+    counter_motion: flinching, eyes closing, mouth opening, reactive head turn
+  sidefuck:
+    label: Side Fuck
+    lora_type: pose
+    tier: explicit
+    motion_tier: high
+    high: wan22_nsfw/wan22_sidefuck_HIGH.safetensors
+    low: null
+    tags:
+    - side
+    - rough
+    - position
+    counter_motion: body rocking from lateral thrusts, leg gripping, reactive hip motion
+    layout: halves
+    roles:
+      actor: right
+      reactor: left
+    actor_motion: aggressive lateral thrusting, holding leg up
+    reactor_motion: body rocking from thrusts, gripping surface
+  gangbang_bukkake:
+    label: Gangbang Facial Bukkake
+    lora_type: pose
+    tier: explicit
+    motion_tier: high
+    high: wan22_nsfw/wan22_gangbang_bukkake_HIGH.safetensors
+    low: wan22_nsfw/wan22_gangbang_bukkake_LOW.safetensors
+    tags:
+    - gangbang
+    - bukkake
+    - group
+    - facial
+    - finish
+    counter_motion: flinching, turning head, reactive body movement, eyes closing

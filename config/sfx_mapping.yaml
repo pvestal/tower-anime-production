@@ -26,8 +26,9 @@ default_nsfw:
 # Default for SFW / non-NSFW shots (ambient sounds)
 default_sfw:
   sfx:
-    - { category: ambient_wind, weight: 0.2 }
-    - { category: cloth_rustle, weight: 0.1 }
+    - { category: ambient_wind, weight: 0.15 }
+    - { category: cloth_rustle, weight: 0.08 }
+    - { category: indoor_room_tone, weight: 0.1 }
   voice_lines: {}
 
 # Same-sex defaults (applied when all characters share a gender)
@@ -81,22 +82,28 @@ camera_actions:
     sfx: []
     voice_lines: {}
   explosion:
-    sfx: []
+    sfx:
+      - { category: explosion, weight: 0.7 }
+      - { category: glass_break, weight: 0.3 }
     voice_lines:
       female: ["What the—!", "Get down!", "No!"]
       male: ["Take cover!", "Move!", "Holy—!"]
   fight:
-    sfx: []
+    sfx:
+      - { category: fight_impact, weight: 0.6 }
+      - { category: grunt, weight: 0.4, gender: male }
     voice_lines:
       female: ["Hyah!", "Take this!", "You'll pay for that!"]
       male: ["Come on!", "Is that all you got?", "Rragh!"]
   slap:
-    sfx: []
+    sfx:
+      - { category: skin_slap, weight: 0.6 }
     voice_lines:
       female: ["How dare you!", "Don't touch me!", "Stop!"]
       male: ["What the—!", "Hey!"]
   transformation:
-    sfx: []
+    sfx:
+      - { category: energy_burst, weight: 0.5 }
     voice_lines:
       female: ["What's happening to me?!", "I can feel it... changing!", "This power...!"]
       male: ["Aarrgh!", "I can feel the power!", "It's... transforming!"]
@@ -118,7 +125,8 @@ camera_actions:
     sfx: []
     voice_lines: {}
   anguish:
-    sfx: []
+    sfx:
+      - { category: breathing, weight: 0.3 }
     voice_lines:
       female: ["Why... why is this happening?", "I can't take this anymore...", "Please... stop..."]
       male: ["Damn it all...", "This can't be happening...", "No... not like this..."]

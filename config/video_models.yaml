@@ -196,19 +196,24 @@ motion_presets:
     shot_types: [medium, wide]
 
 # --- Default generation parameters per engine ---
+# Engine defaults — verified by benchmark 2026-03-20 (Soraya test suite)
+# GPU routing: AMD 9070 XT (:8189) = I2V video, NVIDIA 3060 (:8188) = keyframes + Wan 2.1 T2V
 engine_defaults:
   wan22_14b:
-    steps: 6
-    split_steps: 3
-    cfg: 3.5
+    # Standard quality — 20 steps, ~960s on AMD 9070 XT. Use for hero/quality shots.
+    steps: 20
+    split_steps: 10
+    cfg: 6.0
     sampler: euler
     scheduler: simple
     fps: 16
     num_frames: 81
     width: 480
     height: 720
+    gpu: amd  # MUST run on AMD 9070 XT (:8189)
 
   wan22_14b_lightx2v:
+    # Fast mode — 4 steps, ~479s on AMD 9070 XT. Good balance of speed/quality.
     steps: 4
     split_steps: 2
     cfg: 1.0
@@ -218,8 +223,10 @@ engine_defaults:
     num_frames: 81
     width: 480
     height: 720
+    gpu: amd
 
   wan22_14b_dasiwa:
+    # Fastest I2V — 4 steps, ~198s on AMD 9070 XT. Best for bulk generation.
     steps: 4
     split_steps: 2
     cfg: 1.0
@@ -229,39 +236,42 @@ engine_defaults:
     num_frames: 81
     width: 480
     height: 720
-    notes: "No extra speed LoRAs — distillation baked in"
+    gpu: amd
+    notes: "No extra speed LoRAs — distillation baked in. 2.4x faster than lightx2v."
 
   framepack:
-    steps: 25
+    # I2V on NVIDIA 3060 — slow (~420s for 1s). Only use when AMD is busy.
+    steps: 20
     cfg: 1.0
     fps: 30
-    num_frames: 49  # ~1.6s at 30fps
+    total_seconds: 1.0
     width: 544
     height: 704
+    gpu: nvidia
+    notes: "F1 model OOMs on 3060. Std model only. Very slow — prefer AMD engines."
 
   wan21_t2v:
-    steps: 30
+    # T2V establishing shots on NVIDIA 3060 — 84s at reduced resolution.
+    steps: 20
     cfg: 6.0
     sampler: uni_pc
     scheduler: simple
     fps: 16
-    num_frames: 81
-    width: 480
-    height: 720
+    num_frames: 49
+    width: 320
+    height: 480
+    gpu: nvidia
+    notes: "Max 320x480 on 3060 12GB. OOMs at 480x720."
 
-  ltx_long:
-    steps: 20
-    cfg: 1.0
-    sampler: euler
-    scheduler: ltxv
-    fps: 24
-    num_frames: 241   # ~10s at 24fps
-    width: 1024
-    height: 576
-    temporal_tile_size: 80
-    temporal_overlap: 24
-    temporal_overlap_cond_strength: 0.5
-    guiding_strength: 1.0
-    cond_image_strength: 1.0
-    adain_factor: 0.0
+  # LTX-Video — DISABLED until correct v1 VAE is downloaded
+  # All VAE files on disk (ltx_vae, ltx2_vae, ltx2_vae_fixed) are v2 format.
+  # ltx_long:
+  #   steps: 20
+  #   cfg: 1.0
+  #   sampler: euler
+  #   scheduler: ltxv
+  #   fps: 24
+  #   num_frames: 241
+  #   width: 1024
+  #   height: 576
     notes: "LTXVLoopingSampler temporal tiling. Pattern 3 long-shot engine (30-60s+)."

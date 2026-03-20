@@ -1,5 +1,5 @@
 # Video LoRA Pairs — quality type
-# 4 entries
+# 6 entries
 video_lora_pairs:
   nsfw_group_girls:
     label: Group (Girls)
@@ -45,3 +45,30 @@ video_lora_pairs:
     - quality
     - enhancer
     - general
+  male_ejaculation:
+    label: Male Ejaculation Enhancer
+    lora_type: quality
+    tier: explicit
+    motion_tier: low
+    high: wan22_nsfw/maleejac2_high_noise.safetensors
+    low: wan22_nsfw/maleejac2_low_noise.safetensors
+    tags:
+    - ejaculation
+    - male
+    - anatomy
+    - enhancer
+    - finish
+  general_nsfw_v08:
+    label: WAN General NSFW v0.8a
+    lora_type: quality
+    tier: explicit
+    motion_tier: low
+    high: wan22_nsfw/wan22_general_nsfw_v08_HIGH.safetensors
+    low: wan22_nsfw/wan22_general_nsfw_v08_LOW.safetensors
+    tags:
+    - nsfw
+    - quality
+    - enhancer
+    - general
+    - experimental
+    notes: "Newer version of general_nsfw. Trigger word: nsfwsks. Strength 0.9 recommended. 480p I2V only."

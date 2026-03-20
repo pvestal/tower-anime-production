@@ -899,6 +899,90 @@ video_motion_loras:
     tags: [vehicle, chase, car, pursuit, driving, race, speed, crash]
     description: "Vehicle chase motion — fast tracking, swerving, speed effects"
 
+  # --- MOTORCYCLE CAMERA LORAS (Grid Runners — pending training) ---
+  # Musubi-tuner single-file format (dual-branch HIGH+LOW in one .safetensors)
+  # Use 'single:' key — builder.py _resolve_content_lora_pair() handles this.
+
+  moto_rider_pov:
+    label: "Motorcycle Rider POV"
+    lora_type: camera
+    tier: universal
+    motion_tier: medium
+    single: wan22_camera/moto_rider_pov.safetensors
+    strength: 0.8
+    tags: [camera, pov, motorcycle, rider, handlebars, first_person, cockpit]
+    description: "First-person rider view — handlebars, gauge cluster, road ahead, speed blur"
+
+  moto_low_chase:
+    label: "Low Rear Chase Camera"
+    lora_type: camera
+    tier: universal
+    motion_tier: high
+    single: wan22_camera/moto_low_chase.safetensors
+    strength: 0.8
+    tags: [camera, chase, low_angle, rear, motorcycle, tire, axle]
+    description: "Axle-height rear tracking — tire fills lower frame, chain visible, exhaust shimmer"
+
+  moto_tire_closeup:
+    label: "Tire Contact Patch Close-up"
+    lora_type: camera
+    tier: universal
+    motion_tier: low
+    single: wan22_camera/moto_tire_closeup.safetensors
+    strength: 0.75
+    tags: [camera, macro, tire, rubber, contact_patch, close_up, grip]
+    description: "Extreme macro tire on asphalt — rubber deformation, water spray, heat shimmer"
+
+  moto_lean_tracking:
+    label: "Side Tracking at Lean"
+    lora_type: camera
+    tier: universal
+    motion_tier: high
+    single: wan22_camera/moto_lean_tracking.safetensors
+    strength: 0.8
+    tags: [camera, tracking, lean, cornering, side, motorcycle, knee_down]
+    description: "Side-on tracking during cornering — bike frozen in lean, background smeared"
+
+  moto_flyby:
+    label: "Motorcycle Flyby"
+    lora_type: camera
+    tier: universal
+    motion_tier: extreme
+    single: wan22_camera/moto_flyby.safetensors
+    strength: 0.85
+    tags: [camera, flyby, static, motorcycle, speed, blur, pass]
+    description: "Static camera, bike screams through frame — blur streak, wind effect"
+
+  moto_exhaust_detail:
+    label: "Exhaust Flame Detail"
+    lora_type: camera
+    tier: universal
+    motion_tier: low
+    single: wan22_camera/moto_exhaust_detail.safetensors
+    strength: 0.75
+    tags: [camera, exhaust, flame, heat, detail, motorcycle, macro]
+    description: "Close-up exhaust tips — blue backfire flame, heat distortion, carbon fiber"
+
+  moto_wheelie_rear:
+    label: "Wheelie from Behind"
+    lora_type: camera
+    tier: universal
+    motion_tier: high
+    single: wan22_camera/moto_wheelie_rear.safetensors
+    strength: 0.8
+    tags: [camera, wheelie, rear, low_angle, motorcycle, stunt]
+    description: "Low rear angle during wheelie — front wheel lifting, chain taut, tire smoke"
+
+  moto_garage_orbit:
+    label: "Motorcycle Garage Orbit"
+    lora_type: camera
+    tier: universal
+    motion_tier: low
+    single: wan22_camera/moto_garage_orbit.safetensors
+    strength: 0.75
+    tags: [camera, orbit, garage, workshop, product, motorcycle, detail, turntable]
+    description: "Slow reverent orbit around stationary bike in workshop — product cinematography"
+
 # ---- IMAGE LORA CATEGORIES ----
 image_lora_categories:
   # Explicit positions (Illustrious)

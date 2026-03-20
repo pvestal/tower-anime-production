@@ -154,3 +154,23 @@ video_lora_pairs:
     low: null
     tags: [outfit, costume, change, transformation]
     motion_description: "clothing rapidly changing in place, fabric dissolving and reforming into new outfit, magical wardrobe transition, colors and textures shifting across body"
+
+  mmd_dance:
+    label: MMD Hip Sway Dance
+    lora_type: action
+    tier: explicit
+    motion_tier: medium
+    high: null
+    low: wan22_nsfw/mmd_dance_hip_sway_LOW.safetensors
+    tags: [dance, mmd, anime, hip_sway, iwara]
+    motion_description: "anime-style MMD hip swaying dance, rhythmic side-to-side motion, exaggerated hip movement, idol-style choreography"
+
+  super_strength:
+    label: Super Strength
+    lora_type: action
+    tier: mature
+    motion_tier: high
+    high: wan22_action/super_strength_HIGH.safetensors
+    low: wan22_action/super_strength_LOW.safetensors
+    tags: [strength, bending, crushing, deforming, action, superhero, power]
+    motion_description: "character bending, crushing, or deforming objects with superhuman force, metal warping under grip, concrete cracking, objects yielding to physical power"

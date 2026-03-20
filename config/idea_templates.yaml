@@ -1,0 +1,221 @@
+# Idea Factory v2 — prompt variety templates + creative intelligence config
+#
+# Reloaded every tick. Edit live — no restart needed.
+
+compositions:
+  - "close-up portrait, detailed face, eye-level"
+  - "full body, centered frame"
+  - "three-quarter view, slight angle"
+  - "side profile, looking into distance"
+  - "over-the-shoulder, looking back at camera"
+  - "dutch angle, dramatic tilt"
+  - "low angle, looking up at character"
+  - "high angle, looking down at character"
+  - "medium shot, waist up"
+  - "extreme close-up, eyes and expression"
+  - "wide shot, character small in frame"
+  - "upper body, arms visible"
+  - "back view, head turned slightly"
+  - "two-thirds framing, off-center"
+  - "symmetrical centered pose, frontal"
+
+lighting:
+  - "golden hour, warm rim light"
+  - "dramatic side lighting, deep shadows"
+  - "soft diffused light, overcast"
+  - "neon glow, cyberpunk lighting"
+  - "backlit silhouette, halo effect"
+  - "studio lighting, even and clean"
+  - "moonlit, cool blue tones"
+  - "candlelight, warm intimate glow"
+  - "harsh midday sun, strong contrast"
+  - "volumetric light rays, atmospheric"
+  - "sunset, orange and pink sky"
+  - "foggy, muted and ethereal"
+
+moods:
+  - "contemplative, thoughtful expression"
+  - "action ready, dynamic energy"
+  - "casual and relaxed, natural pose"
+  - "joyful, genuine smile"
+  - "melancholic, wistful gaze"
+  - "determined, fierce expression"
+  - "playful, mischievous grin"
+  - "serene, peaceful calm"
+  - "intense, focused stare"
+  - "surprised, wide eyes"
+  - "confident, power pose"
+  - "mysterious, partially obscured"
+
+settings:
+  - "outdoor urban street, city background"
+  - "indoor cozy room, warm atmosphere"
+  - "nature scene, trees and foliage"
+  - "simple gradient background"
+  - "rooftop, sky visible"
+  - "beach, ocean in background"
+  - "library or study, bookshelves"
+  - "rainy scene, wet surfaces"
+  - "snow-covered landscape, winter"
+  - "garden, flowers blooming"
+  - "industrial setting, metal and concrete"
+  - "night sky, stars visible"
+
+checkpoint_experiments:
+  enabled: true
+  probability: 0.15
+  alternatives:
+    - "waiIllustrious_v160.safetensors"
+    - "illustrijEVO_lvl3.safetensors"
+
+# ═══════════════════════════════════════════════════════════════
+# NARRATIVE PRESSURE — external creative seeds
+# ═══════════════════════════════════════════════════════════════
+# Each tick, one narrative seed is selected and biases the generation.
+# These inject foreign creative pressure beyond what exists in the project graph.
+
+narrative_seeds:
+  # Jungian archetypes — universal character situations
+  archetypes:
+    - theme: "the threshold"
+      mood: "standing at a doorway, liminal space, moment of decision"
+      bias_mood: "determined"
+    - theme: "the shadow"
+      mood: "confronting a dark reflection, inner demon, duality"
+      bias_mood: "intense"
+    - theme: "the mentor"
+      mood: "wise posture, teaching gesture, experienced gaze"
+      bias_mood: "serene"
+    - theme: "the trickster"
+      mood: "breaking rules, chaotic energy, gleeful disruption"
+      bias_mood: "playful"
+    - theme: "the exile"
+      mood: "alone in unfamiliar territory, displaced, longing for home"
+      bias_mood: "melancholic"
+    - theme: "the descent"
+      mood: "falling, underground, submerged in water, going deeper"
+      bias_mood: "mysterious"
+    - theme: "the rebirth"
+      mood: "emerging from darkness, first light, new beginning"
+      bias_mood: "joyful"
+    - theme: "the lover"
+      mood: "vulnerability, tenderness, exposed emotion, reaching out"
+      bias_mood: "contemplative"
+
+  # Genre tropes — narrative situations that create instant context
+  genre_tropes:
+    - "heist moment, looking at a prize through glass, calculating"
+    - "the standoff, two forces facing each other, tension before action"
+    - "escape sequence, urgency, wind in hair, looking back"
+    - "homecoming, seeing a familiar place after long absence, emotional weight"
+    - "the betrayal, shock and hurt, a knife in the back metaphor"
+    - "forbidden knowledge, reading something dangerous, glowing text"
+    - "the sacrifice, arms spread, accepting fate, divine light"
+    - "first contact, encountering something alien and wondrous"
+    - "the coronation, assuming power, weight of responsibility"
+    - "the last stand, wounded but defiant, surrounded"
+    - "the confession, raw honesty, tears, relief"
+    - "the transformation, body changing, cocoon breaking, metamorphosis"
+
+  # Art history movements — visual DNA from real art
+  art_movements:
+    - "chiaroscuro, Caravaggio lighting, extreme light and shadow contrast"
+    - "art nouveau, organic flowing lines, decorative natural forms"
+    - "ukiyo-e influence, flat color planes, woodblock print aesthetic"
+    - "baroque drama, rich textures, theatrical excess, gold and velvet"
+    - "impressionist light, dappled color, visible brushwork feeling"
+    - "film noir, venetian blind shadows, high contrast black and white mood"
+    - "pop art, bold outlines, saturated flat colors, halftone dots"
+    - "romanticism, sublime nature, tiny figure against vast landscape"
+    - "cyberpunk neo-tokyo, holographic rain, chrome and neon"
+    - "art deco geometry, gold and black, symmetrical elegance"
+
+  # Seasonal/temporal — time-locked aesthetics
+  seasonal:
+    - "cherry blossom season, petals falling, pink and white, spring"
+    - "midsummer heat, sweat glistening, cicadas, haze"
+    - "autumn leaves, amber and crimson, melancholy beauty"
+    - "first snowfall, quiet wonder, breath visible in cold air"
+    - "twilight hour, neither day nor night, purple sky"
+    - "witching hour, 3am, alone and awake, eerie quiet"
+    - "festival night, lanterns, fireworks, crowd energy"
+    - "morning after, messy room, soft dawn light, aftermath"
+
+  # Emotional incongruity — deliberately wrong tonal pairings for creative friction
+  incongruity:
+    - mood_clash: "tender"
+      setting_clash: "industrial wasteland, rust and decay"
+      note: "softness in a hard world"
+    - mood_clash: "joyful celebration"
+      setting_clash: "courtroom, judgment, institutional"
+      note: "absurd triumph"
+    - mood_clash: "peaceful meditation"
+      setting_clash: "battlefield aftermath, smoke and debris"
+      note: "calm in chaos"
+    - mood_clash: "predatory, hunting"
+      setting_clash: "children's playground, bright colors"
+      note: "threat in innocence"
+    - mood_clash: "romantic, intimate"
+      setting_clash: "sterile laboratory, clinical white"
+      note: "warmth in cold space"
+    - mood_clash: "grieving, loss"
+      setting_clash: "carnival, bright lights, cotton candy"
+      note: "sadness surrounded by joy"
+
+# ═══════════════════════════════════════════════════════════════
+# CHARACTER RELATIONSHIPS — cross-project affinity/tension
+# ═══════════════════════════════════════════════════════════════
+# Defines dramatic pairings for scene_remix and world_crossover.
+# "affinity" = characters that would harmonize visually/thematically.
+# "tension" = characters that create interesting contrast/conflict.
+# Higher weight = more likely to be selected as a pairing.
+
+character_relationships:
+  # Power dynamics — characters who both deal with control/submission
+  power_axis:
+    - pair: ["soraya", "yuki_tanaka"]
+      type: "affinity"
+      weight: 3
+      note: "Both navigate power through sexuality in different cultural frames"
+    - pair: ["takeshi_sato", "sultan"]
+      type: "tension"
+      weight: 2
+      note: "Two different flavors of male authority — modern yakuza vs ancient royalty"
+    - pair: ["dr_elara_voss", "soraya"]
+      type: "tension"
+      weight: 2
+      note: "Clinical control vs sensual control — science vs art of power"
+
+  # Outsider axis — characters displaced or between worlds
+  outsider_axis:
+    - pair: ["rosa", "gem"]
+      type: "affinity"
+      weight: 2
+      note: "Both femmes fatales operating in hostile environments"
+    - pair: ["luna", "mira"]
+      type: "affinity"
+      weight: 3
+      note: "Both anthropomorphic, both gentle — rabbit meets bunny"
+    - pair: ["roxy", "rina_suzuki"]
+      type: "tension"
+      weight: 2
+      note: "Anthro street fighter vs human party girl — chaos meets chaos"
+    - pair: ["fawn", "mei_kobayashi"]
+      type: "affinity"
+      weight: 2
+      note: "Both nurturing, both caught in violent worlds"
+
+  # Visual contrast — characters that would look striking together
+  visual_contrast:
+    - pair: ["buck", "beth"]
+      type: "tension"
+      weight: 2
+      note: "Massive anthro stallion vs petite human — scale contrast"
+    - pair: ["venom_queen", "concubine_leyla"]
+      type: "tension"
+      weight: 2
+      note: "Sci-fi alien queen vs Persian concubine — aesthetic collision"
+    - pair: ["wolf", "marcus_cole"]
+      type: "tension"
+      weight: 1
+      note: "Feral vs civilized — nature vs technology"
