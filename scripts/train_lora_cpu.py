@@ -59,6 +59,8 @@ class CharacterDataset(Dataset):
             for fname, info in approvals.items():
                 if isinstance(info, dict) and info.get('status') == 'approved':
                     approved_set.add(fname)
+                elif isinstance(info, str) and info == 'approved':
+                    approved_set.add(fname)
 
         # Collect image files — if no approval file, use all images
         self.samples = []
