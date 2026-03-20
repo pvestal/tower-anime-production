@@ -109,17 +109,33 @@ def _get_amd_info_sysfs() -> dict | None:
 
 
 def get_ollama_models() -> list[dict]:
-    """Query Ollama for currently loaded models and VRAM usage."""
+    """Query Ollama for currently loaded models, VRAM usage, and GPU assignment."""
     try:
         req = urllib.request.Request(f"{OLLAMA_URL}/api/ps")
         resp = urllib.request.urlopen(req, timeout=5)
         data = json.loads(resp.read())
         models = []
         for m in data.get("models", []):
+            size_total = m.get("size", 0)
+            size_vram = m.get("size_vram", 0)
+            size_cpu = size_total - size_vram
+
+            # Determine GPU assignment from VRAM usage
+            # With HIP_VISIBLE_DEVICES=-1, Ollama can only see NVIDIA
+            # If vram > 0, it's on NVIDIA. If vram == 0 or == size, it's CPU-only.
+            if size_vram == 0:
+                gpu = "cpu"
+            elif size_vram < size_total * 0.5:
+                gpu = "nvidia_partial"  # Partially offloaded to NVIDIA
+            else:
+                gpu = "nvidia"
+
             models.append({
                 "name": m.get("name", "unknown"),
-                "size_mb": m.get("size", 0) // (1024 * 1024),
-                "vram_mb": m.get("size_vram", 0) // (1024 * 1024),
+                "size_mb": size_total // (1024 * 1024),
+                "vram_mb": size_vram // (1024 * 1024),
+                "cpu_mb": size_cpu // (1024 * 1024),
+                "gpu": gpu,
             })
         return models
     except Exception as e:

@@ -19,9 +19,27 @@ MOVIES_DIR = BASE_PATH / "_movies"
 MOVIES_DIR.mkdir(parents=True, exist_ok=True)
 
 # ComfyUI endpoints & paths
+# 3060 (8188) = Keyframes (SDXL txt2img)
+# 9070 XT (8189) = Video (WAN 2.2 14B / DaSiWa, 16GB VRAM)
 COMFYUI_URL = "http://127.0.0.1:8188"
+COMFYUI_VIDEO_URL = os.getenv("COMFYUI_VIDEO_URL", "http://127.0.0.1:8189")
 COMFYUI_OUTPUT_DIR = Path("/opt/ComfyUI/output")
 COMFYUI_INPUT_DIR = Path("/opt/ComfyUI/input")
+
+
+def get_comfyui_url(task_type: str = "video", gpu_preference: str | None = None) -> str:
+    """Return ComfyUI URL by task type. Keyframes→3060, Video→9070 XT.
+
+    Args:
+        task_type: "keyframe" or "video".
+        gpu_preference: "nvidia" to force 3060 (:8188), "amd" for 9070 XT (:8189).
+            Only applies when task_type is "video".
+    """
+    if task_type == "keyframe":
+        return COMFYUI_URL
+    if gpu_preference == "nvidia":
+        return COMFYUI_URL  # :8188 in video mode
+    return COMFYUI_VIDEO_URL
 
 # Default vision model for all VLM tasks
 VISION_MODEL = "gemma3:12b"
@@ -95,4 +113,4 @@ async def load_config():
     """Async config initialization hook for app startup."""
     logger.info(f"Config loaded: DB={DB_CONFIG['database']}@{DB_CONFIG['host']}")
     logger.info(f"Datasets: {BASE_PATH}")
-    logger.info(f"ComfyUI: {COMFYUI_URL}")
+    logger.info(f"ComfyUI keyframes: {COMFYUI_URL}, video: {COMFYUI_VIDEO_URL}")

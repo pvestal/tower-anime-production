@@ -121,7 +121,7 @@ async def sync_projects(conn: asyncpg.Connection | None = None) -> int:
             await _cypher(conn, query)
             count += 1
 
-        logger.info(f"graph_sync: synced {count} projects")
+        logger.debug(f"graph_sync: synced {count} projects")
         return count
     finally:
         if close_conn:
@@ -183,7 +183,7 @@ async def sync_characters(conn: asyncpg.Connection | None = None) -> int:
             await _cypher(conn, query)
             count += 1
 
-        logger.info(f"graph_sync: synced {count} characters")
+        logger.debug(f"graph_sync: synced {count} characters")
         return count
     finally:
         if close_conn:
@@ -234,7 +234,7 @@ async def sync_checkpoints(conn: asyncpg.Connection | None = None) -> int:
 
             count += 1
 
-        logger.info(f"graph_sync: synced {count} checkpoints")
+        logger.debug(f"graph_sync: synced {count} checkpoints")
         return count
     finally:
         if close_conn:
@@ -321,7 +321,7 @@ async def sync_generation_history(conn: asyncpg.Connection | None = None) -> int
 
             count += 1
 
-        logger.info(f"graph_sync: synced {count} generation history images")
+        logger.debug(f"graph_sync: synced {count} generation history images")
         return count
     finally:
         if close_conn:
@@ -424,7 +424,7 @@ async def sync_scenes(conn: asyncpg.Connection | None = None) -> int:
             except Exception:
                 pass  # episode vertex may not exist yet
 
-        logger.info(f"graph_sync: synced {scene_count} scenes, {shot_count} shots")
+        logger.debug(f"graph_sync: synced {scene_count} scenes, {shot_count} shots")
         return scene_count + shot_count
     finally:
         if close_conn:
@@ -457,7 +457,7 @@ async def sync_episodes(conn: asyncpg.Connection | None = None) -> int:
             await _cypher(conn, query)
             count += 1
 
-        logger.info(f"graph_sync: synced {count} episodes")
+        logger.debug(f"graph_sync: synced {count} episodes")
         return count
     finally:
         if close_conn:
@@ -505,7 +505,7 @@ async def sync_feedback(conn: asyncpg.Connection | None = None) -> int:
 
             count += 1
 
-        logger.info(f"graph_sync: synced {count} feedback records")
+        logger.debug(f"graph_sync: synced {count} feedback records")
         return count
     finally:
         if close_conn:
@@ -608,7 +608,7 @@ async def sync_approvals_rejections(conn: asyncpg.Connection | None = None) -> i
 
             count += 1
 
-        logger.info(f"graph_sync: synced {count} approval/rejection images")
+        logger.debug(f"graph_sync: synced {count} approval/rejection images")
         return count
     finally:
         if close_conn:
@@ -772,7 +772,7 @@ async def sync_video_generations(conn: asyncpg.Connection | None = None) -> int:
 
             count += 1
 
-        logger.info(f"graph_sync: synced {count} video generations")
+        logger.debug(f"graph_sync: synced {count} video generations")
         return count
     finally:
         if close_conn:
