@@ -1,22 +1,11 @@
 <template>
   <footer class="production-footer">
     <div class="footer-left">
-      <template v-if="gpuStatus">
-        <span class="gpu-chip" :class="nvidiaBusy ? 'gpu-busy' : 'gpu-free'"
-              :title="`NVIDIA ${gpuStatus.nvidia?.gpu_name || 'N/A'} — ${gpuStatus.nvidia ? gpuStatus.nvidia.used_mb + '/' + gpuStatus.nvidia.total_mb + 'MB' : 'offline'}`">
-          NVIDIA {{ nvidiaBusy ? 'Busy' : gpuStatus.nvidia ? gpuStatus.nvidia.free_mb + 'MB' : 'off' }}
-        </span>
-        <span class="gpu-chip gpu-free"
-              :title="`AMD ${gpuStatus.amd?.gpu_name || 'N/A'} — Ollama${ollamaModels.length ? ': ' + ollamaModels.join(', ') : ''}`">
-          AMD {{ gpuStatus.amd ? gpuStatus.amd.free_mb + 'MB' : 'N/A' }}
-        </span>
-        <span v-if="comfyQueue.queue_running > 0 || comfyQueue.queue_pending > 0" class="gpu-chip gpu-busy">
-          ComfyUI {{ comfyQueue.queue_running }}R / {{ comfyQueue.queue_pending }}Q
-        </span>
-      </template>
+      <span v-if="comfyQueue.queue_running > 0 || comfyQueue.queue_pending > 0" class="gpu-chip gpu-busy">
+        ComfyUI {{ comfyQueue.queue_running }}R / {{ comfyQueue.queue_pending }}Q
+      </span>
     </div>
     <div class="footer-right">
-      <!-- Quick filter badges could go here in a future update -->
     </div>
   </footer>
 </template>
@@ -24,7 +13,7 @@
 <script setup lang="ts">
 import { useGpuStatus } from '@/composables/useGpuStatus'
 
-const { gpuStatus, nvidiaBusy, comfyQueue, ollamaModels } = useGpuStatus()
+const { comfyQueue } = useGpuStatus()
 </script>
 
 <style scoped>

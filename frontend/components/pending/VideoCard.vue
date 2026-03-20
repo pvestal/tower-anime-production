@@ -18,12 +18,12 @@
     <div class="video-container">
       <video
         v-if="isVisible"
+        ref="videoRef"
         :src="videoUrl"
         controls
         preload="metadata"
-        muted
         loop
-        @mouseenter="($event.target as HTMLVideoElement)?.play()"
+        @mouseenter="handleMouseEnter"
         @mouseleave="handleMouseLeave"
       />
       <div v-else class="video-placeholder" />
@@ -163,6 +163,7 @@ const props = defineProps<{
 }>()
 
 const cardRef = ref<HTMLElement | null>(null)
+const videoRef = ref<HTMLVideoElement | null>(null)
 const isVisible = ref(false)
 const isPlayingAudio = ref(false)
 const showFeedback = ref(false)
@@ -262,6 +263,12 @@ function catColor(val: number): string {
   return 'var(--status-error)'
 }
 
+function handleMouseEnter(e: Event) {
+  const vid = e.target as HTMLVideoElement
+  vid.muted = true  // muted required for autoplay on hover
+  vid.play()
+}
+
 function handleMouseLeave(e: Event) {
   const vid = e.target as HTMLVideoElement
   vid.pause()
@@ -269,31 +276,24 @@ function handleMouseLeave(e: Event) {
 }
 
 function toggleAudio() {
+  const vid = videoRef.value || cardRef.value?.querySelector('video') as HTMLVideoElement | null
+  if (!vid) return
+
   if (isPlayingAudio.value) {
-    audioElement?.pause()
+    vid.muted = true
+    vid.pause()
     isPlayingAudio.value = false
     return
   }
-  if (!audioUrl.value) return
 
-  // Play the mixed audio version (has video+voice+foley)
-  // Mute the preview video and sync with audio track
-  const videoEl = cardRef.value?.querySelector('video') as HTMLVideoElement | null
-
-  if (!audioElement) {
-    audioElement = new Audio(audioUrl.value)
-    audioElement.addEventListener('ended', () => { isPlayingAudio.value = false })
-  }
-
-  // Sync: mute original video, play audio version alongside
-  if (videoEl) {
-    videoEl.currentTime = 0
-    videoEl.muted = true
-    videoEl.play()
-  }
-  audioElement.currentTime = 0
-  audioElement.play()
+  // Unmute and play — the backend now serves audio-mixed video directly
+  vid.muted = false
+  vid.currentTime = 0
+  vid.play()
   isPlayingAudio.value = true
+
+  // Reset flag when video ends
+  vid.onended = () => { isPlayingAudio.value = false; vid.muted = true }
 }
 </script>
 

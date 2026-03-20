@@ -13,6 +13,8 @@ export interface GalleryItem {
   project_name?: string
   checkpoint_model?: string
   character_slug?: string
+  source?: string
+  media_type?: 'image' | 'video'
 }
 
 export interface GalleryFilters {
@@ -20,6 +22,7 @@ export interface GalleryFilters {
   characters: string[]
   character_slugs: string[]
   checkpoints: string[]
+  sources: string[]
 }
 
 const PAGE_SIZE = 60
@@ -38,6 +41,8 @@ export const useGalleryStore = defineStore('gallery', () => {
   const selectedCharacter = ref('')
   const selectedCheckpoint = ref('')
   const selectedPose = ref('')
+  const selectedSource = ref('')
+  const selectedMediaType = ref('')
 
   // Filter options (lazy loaded from DB)
   const filters = ref<GalleryFilters | null>(null)
@@ -50,6 +55,8 @@ export const useGalleryStore = defineStore('gallery', () => {
     if (selectedCharacter.value) c++
     if (selectedCheckpoint.value) c++
     if (selectedPose.value) c++
+    if (selectedSource.value) c++
+    if (selectedMediaType.value) c++
     return c
   })
 
@@ -87,6 +94,8 @@ export const useGalleryStore = defineStore('gallery', () => {
         project: selectedProject.value,
         checkpoint: selectedCheckpoint.value,
         pose: selectedPose.value,
+        source: selectedSource.value,
+        media_type: selectedMediaType.value,
       })
 
       if (append) {
@@ -136,11 +145,23 @@ export const useGalleryStore = defineStore('gallery', () => {
     resetAndLoad()
   }
 
+  function setSource(s: string) {
+    selectedSource.value = selectedSource.value === s ? '' : s
+    resetAndLoad()
+  }
+
+  function setMediaType(t: string) {
+    selectedMediaType.value = selectedMediaType.value === t ? '' : t
+    resetAndLoad()
+  }
+
   function clearFilters() {
     selectedProject.value = ''
     selectedCharacter.value = ''
     selectedCheckpoint.value = ''
     selectedPose.value = ''
+    selectedSource.value = ''
+    selectedMediaType.value = ''
     search.value = ''
     resetAndLoad()
   }
@@ -157,6 +178,8 @@ export const useGalleryStore = defineStore('gallery', () => {
     selectedCharacter,
     selectedCheckpoint,
     selectedPose,
+    selectedSource,
+    selectedMediaType,
     filters,
     filtersLoading,
     filtersLoaded,
@@ -170,6 +193,8 @@ export const useGalleryStore = defineStore('gallery', () => {
     setCharacter,
     setCheckpoint,
     setPose,
+    setSource,
+    setMediaType,
     clearFilters,
   }
 })

@@ -1317,6 +1317,15 @@ export interface GpuStatus {
   ollama: { loaded_models: Array<{ name: string; size_mb: number; vram_mb: number }>; total_vram_mb: number }
   comfyui: { queue_running: number; queue_pending: number }
   host?: { cpu_percent: number; cpu_count: number; ram_total_mb: number; ram_used_mb: number; ram_free_mb: number; ram_percent: number }
+  arbiter?: {
+    amd_vram_free_mb: number | null
+    initialized: boolean
+    embed_model: { name: string; pinned: boolean; loaded: boolean; vram_mb: number }
+    vision_model: { name: string; warm: boolean; loaded: boolean; vram_mb: number }
+    comfyui_rocm: { busy: boolean; url: string }
+    ollama: { loaded_models: string[]; total_vram_mb: number }
+    claims: Record<string, { type: string; caller: string; claimed_at: string; estimated_duration_s: number }>
+  }
 }
 
 export interface ProjectSummary {

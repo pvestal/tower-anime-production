@@ -1,7 +1,7 @@
 <template>
   <div class="gallery-root">
-    <!-- Search + filter toggle -->
-    <div class="gallery-toolbar">
+    <!-- Floating toolbar — sticks to top on scroll, snaps when scrolling stops -->
+    <div ref="toolbarRef" class="gallery-toolbar" :class="{ 'toolbar-floating': isFloating }">
       <div class="search-box">
         <input
           v-model="searchInput"
@@ -16,12 +16,14 @@
         {{ filtersOpen ? 'Hide Filters' : 'Filters' }}
         <span v-if="store.activeFilterCount > 0" class="filter-count">{{ store.activeFilterCount }}</span>
       </button>
-      <span class="result-count">{{ store.total.toLocaleString() }} images</span>
+      <span class="result-count">{{ store.total.toLocaleString() }} {{ store.selectedMediaType === 'video' ? 'videos' : store.selectedMediaType === 'image' ? 'images' : 'media' }}</span>
     </div>
+    <!-- Spacer when toolbar is floating to prevent content jump -->
+    <div v-if="isFloating" :style="{ height: toolbarHeight + 'px' }"></div>
 
-    <!-- Collapsible filters -->
+    <!-- Collapsible filters (also floats with toolbar) -->
     <Transition name="collapse">
-      <div v-if="filtersOpen" class="filter-panel">
+      <div v-if="filtersOpen" class="filter-panel" :class="{ 'filters-floating': isFloating }">
         <div v-if="store.filtersLoading" class="filter-loading">Loading filters...</div>
         <template v-else-if="store.filters">
           <!-- Project -->
@@ -66,6 +68,43 @@
               >{{ shortCheckpoint(ckpt) }}</button>
             </div>
           </div>
+          <!-- Source -->
+          <div v-if="store.filters?.sources?.length" class="filter-row">
+            <span class="filter-label">Source</span>
+            <div class="filter-chips">
+              <button class="chip" :class="{ active: !store.selectedSource }" @click="store.setSource?.('')">All</button>
+              <button
+                v-for="src in store.filters.sources"
+                :key="src"
+                class="chip chip-small"
+                :class="{ active: store.selectedSource === src }"
+                @click="store.setSource?.(src)"
+              >{{ src }}</button>
+            </div>
+          </div>
+          <!-- Media type -->
+          <div class="filter-row">
+            <span class="filter-label">Media</span>
+            <div class="filter-chips">
+              <button class="chip" :class="{ active: !store.selectedMediaType }" @click="store.setMediaType('')">All</button>
+              <button class="chip" :class="{ active: store.selectedMediaType === 'image' }" @click="store.setMediaType('image')">Images</button>
+              <button class="chip" :class="{ active: store.selectedMediaType === 'video' }" @click="store.setMediaType('video')">Videos</button>
+            </div>
+          </div>
+          <!-- Source -->
+          <div v-if="store.filters?.sources?.length" class="filter-row">
+            <span class="filter-label">Source</span>
+            <div class="filter-chips">
+              <button class="chip" :class="{ active: !store.selectedSource }" @click="store.setSource('')">All</button>
+              <button
+                v-for="src in store.filters.sources"
+                :key="src"
+                class="chip chip-small"
+                :class="{ active: store.selectedSource === src }"
+                @click="store.setSource(src)"
+              >{{ src }}</button>
+            </div>
+          </div>
           <!-- Quick filters -->
           <div class="filter-row">
             <span class="filter-label">Quick</span>
@@ -80,25 +119,46 @@
       </div>
     </Transition>
 
-    <!-- Masonry grid -->
+    <!-- Masonry grid — true staggered layout via CSS columns -->
     <div class="masonry-grid" :style="{ columnCount: columns }">
       <div
         v-for="img in store.images"
         :key="img.filename"
         class="masonry-item"
+        :class="{ 'masonry-video': img.media_type === 'video' }"
         @click="openLightbox(img)"
+        @mouseenter="img.media_type === 'video' && playVideo($event)"
+        @mouseleave="img.media_type === 'video' && pauseVideo($event)"
       >
-        <img
-          :src="galleryImageUrl(img.filename)"
-          :alt="img.filename"
-          loading="lazy"
-          class="masonry-img"
-          @load="($event.target as HTMLImageElement).parentElement?.classList.add('loaded')"
-        />
+        <!-- Video -->
+        <template v-if="img.media_type === 'video'">
+          <video
+            :src="galleryImageUrl(img.filename)"
+            :alt="img.filename"
+            class="masonry-img"
+            muted
+            loop
+            playsinline
+            preload="metadata"
+            @loadeddata="($event.target as HTMLVideoElement).parentElement?.classList.add('loaded')"
+          />
+          <div class="video-badge">VIDEO</div>
+        </template>
+        <!-- Image -->
+        <template v-else>
+          <img
+            :src="galleryImageUrl(img.filename)"
+            :alt="img.filename"
+            loading="lazy"
+            class="masonry-img"
+            @load="($event.target as HTMLImageElement).parentElement?.classList.add('loaded')"
+          />
+        </template>
         <div class="masonry-overlay">
           <div class="masonry-meta-left">
             <span class="masonry-name">{{ formatName(img.filename) }}</span>
             <span v-if="img.project_name" class="masonry-project">{{ img.project_name }}</span>
+            <span v-if="img.source && img.source !== 'manual'" class="masonry-source">{{ img.source }}</span>
           </div>
           <div class="masonry-meta-right">
             <span v-if="img.checkpoint_model" class="masonry-ckpt">{{ shortCheckpoint(img.checkpoint_model) }}</span>
@@ -118,7 +178,7 @@
       Loading more...
     </div>
     <div v-else-if="store.images.length === 0" class="empty-state">
-      No images found{{ store.search || store.activeFilterCount ? ' for current filters' : '' }}.
+      No media found{{ store.search || store.activeFilterCount ? ' for current filters' : '' }}.
     </div>
 
     <!-- Infinite scroll sentinel -->
@@ -130,7 +190,8 @@
         <div v-if="lightboxImage" class="lightbox-overlay" @click.self="lightboxImage = null">
           <div class="lightbox-content">
             <button class="lightbox-close" @click="lightboxImage = null">&#215;</button>
-            <img :src="galleryImageUrl(lightboxImage.filename)" :alt="lightboxImage.filename" class="lightbox-img" />
+            <video v-if="lightboxImage.media_type === 'video'" :src="galleryImageUrl(lightboxImage.filename)" class="lightbox-img" controls autoplay loop playsinline />
+            <img v-else :src="galleryImageUrl(lightboxImage.filename)" :alt="lightboxImage.filename" class="lightbox-img" />
             <div class="lightbox-info">
               <span class="lightbox-name">{{ lightboxImage.filename }}</span>
               <span v-if="lightboxImage.project_name" class="lightbox-detail">{{ lightboxImage.project_name }}</span>
@@ -158,15 +219,47 @@ const filtersOpen = ref(false)
 const lightboxImage = ref<GalleryItem | null>(null)
 const lightboxIndex = ref(0)
 const sentinelRef = ref<HTMLElement | null>(null)
+const toolbarRef = ref<HTMLElement | null>(null)
 let observer: IntersectionObserver | null = null
 
+// ── Floating toolbar state ──
+const isFloating = ref(false)
+const toolbarHeight = ref(0)
+let scrollTimeout: ReturnType<typeof setTimeout> | null = null
+let toolbarOffsetTop = 0
+
+function onScroll() {
+  if (!toolbarRef.value) return
+
+  // Float when scrolled past toolbar's original position
+  const scrollY = window.scrollY
+  if (scrollY > toolbarOffsetTop) {
+    if (!isFloating.value) {
+      toolbarHeight.value = toolbarRef.value.offsetHeight
+      isFloating.value = true
+    }
+  } else {
+    isFloating.value = false
+  }
+
+  // Snap: hide while actively scrolling, show when stopped
+  toolbarRef.value.classList.add('toolbar-scrolling')
+  if (scrollTimeout) clearTimeout(scrollTimeout)
+  scrollTimeout = setTimeout(() => {
+    toolbarRef.value?.classList.remove('toolbar-scrolling')
+  }, 150)
+}
+
+// ── Responsive columns ──
+const windowWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1440)
 const columns = computed(() => {
-  if (typeof window === 'undefined') return 4
-  const w = window.innerWidth
+  const w = windowWidth.value
   if (w < 640) return 2
   if (w < 1024) return 3
   if (w < 1440) return 4
-  return 5
+  if (w < 1920) return 5
+  if (w < 2560) return 6
+  return 7
 })
 
 function galleryImageUrl(filename: string): string {
@@ -178,7 +271,17 @@ function shortCheckpoint(ckpt: string): string {
 }
 
 function formatName(filename: string): string {
-  return filename.replace(/(_\d{10,}_\d+_\.png|\.png|\.jpg)$/i, '').replace(/_/g, ' ')
+  return filename.replace(/(_\d{10,}_\d+_\.(png|jpg|mp4)|\.png|\.jpg|\.mp4)$/i, '').replace(/_/g, ' ')
+}
+
+function playVideo(e: MouseEvent) {
+  const video = (e.currentTarget as HTMLElement).querySelector('video')
+  video?.play().catch(() => {})
+}
+
+function pauseVideo(e: MouseEvent) {
+  const video = (e.currentTarget as HTMLElement).querySelector('video')
+  if (video) { video.pause(); video.currentTime = 0 }
 }
 
 function relativeTime(iso: string): string {
@@ -220,14 +323,22 @@ function onKeydown(e: KeyboardEvent) {
   if (e.key === 'ArrowRight') navLightbox(1)
 }
 
+function onResize() { windowWidth.value = window.innerWidth }
+
 onMounted(() => {
-  // Only load if store is empty (first visit or cleared)
   if (store.images.length === 0) {
     store.loadImages()
   }
   window.addEventListener('keydown', onKeydown)
+  window.addEventListener('resize', onResize)
+  window.addEventListener('scroll', onScroll, { passive: true })
 
+  // Capture toolbar's original offset for float detection
   nextTick(() => {
+    if (toolbarRef.value) {
+      toolbarOffsetTop = toolbarRef.value.offsetTop
+    }
+
     if (sentinelRef.value) {
       observer = new IntersectionObserver(
         (entries) => {
@@ -244,7 +355,10 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown)
+  window.removeEventListener('resize', onResize)
+  window.removeEventListener('scroll', onScroll)
   observer?.disconnect()
+  if (scrollTimeout) clearTimeout(scrollTimeout)
 })
 </script>
 
@@ -254,14 +368,46 @@ onUnmounted(() => {
   flex-direction: column;
 }
 
-/* Toolbar */
+/* ── Floating toolbar ── */
 .gallery-toolbar {
   display: flex;
   gap: 10px;
   align-items: center;
   margin-bottom: 12px;
   flex-wrap: wrap;
+  transition: opacity 200ms ease, transform 200ms ease;
 }
+.gallery-toolbar.toolbar-floating {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-primary);
+  padding: 10px 24px;
+  margin-bottom: 0;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+}
+.gallery-toolbar.toolbar-floating.toolbar-scrolling {
+  opacity: 0.3;
+  transform: translateY(-2px);
+  pointer-events: none;
+}
+.filter-panel.filters-floating {
+  position: fixed;
+  top: 52px;
+  left: 0;
+  right: 0;
+  z-index: 99;
+  margin: 0;
+  border-radius: 0;
+  border-left: none;
+  border-right: none;
+  padding: 12px 24px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
 .search-box {
   flex: 1;
   min-width: 200px;
@@ -350,8 +496,13 @@ onUnmounted(() => {
 .collapse-enter-from, .collapse-leave-to { opacity: 0; max-height: 0; padding-top: 0; padding-bottom: 0; margin-bottom: 0; }
 .collapse-enter-to, .collapse-leave-from { max-height: 400px; }
 
-/* Masonry grid */
-.masonry-grid { column-gap: 10px; column-fill: auto; }
+/* ── Masonry grid — true staggered Pinterest-style layout ──
+   CSS columns naturally stagger because each image has a different
+   aspect ratio / height. Items flow top-to-bottom per column,
+   creating the uneven brick-wall effect. */
+.masonry-grid {
+  column-gap: 10px;
+}
 .masonry-item {
   break-inside: avoid;
   margin-bottom: 10px;
@@ -367,6 +518,21 @@ onUnmounted(() => {
 .masonry-item:not(.loaded) { min-height: 200px; }
 .masonry-img { width: 100%; display: block; opacity: 0; transition: opacity 300ms ease; }
 .masonry-item.loaded .masonry-img { opacity: 1; }
+.video-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: rgba(220, 50, 50, 0.85);
+  color: #fff;
+  letter-spacing: 0.5px;
+  pointer-events: none;
+  z-index: 2;
+}
+.masonry-video video { object-fit: cover; }
 .masonry-overlay {
   position: absolute;
   bottom: 0;
@@ -385,6 +551,7 @@ onUnmounted(() => {
 .masonry-meta-right { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
 .masonry-name { font-size: 10px; color: #e0e0e0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .masonry-project { font-size: 9px; color: rgba(122, 162, 247, 0.9); }
+.masonry-source { font-size: 8px; color: rgba(160, 200, 120, 0.8); }
 .masonry-ckpt { font-size: 8px; color: rgba(255,255,255,0.5); white-space: nowrap; }
 .masonry-time { font-size: 9px; color: rgba(255,255,255,0.5); white-space: nowrap; }
 

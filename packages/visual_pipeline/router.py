@@ -203,8 +203,13 @@ async def get_gallery(
     project: str = "",
     checkpoint: str = "",
     pose: str = "",
+    source: str = "",
+    media_type: str = "",
 ):
-    """Get images from ComfyUI output enriched with DB metadata. Supports infinite scroll."""
+    """Get images from ComfyUI output enriched with DB metadata. Supports infinite scroll.
+
+    source filter: "idea_factory", "manual", "replenishment", "orchestrator", "auto_regen"
+    """
     from packages.core.db import get_pool
 
     if not COMFYUI_OUTPUT_DIR.exists():
@@ -214,18 +219,29 @@ async def get_gallery(
     pool = await get_pool()
     rows = await pool.fetch("""
         SELECT DISTINCT ON (character_slug)
-            character_slug, project_name, checkpoint_model
+            character_slug, project_name, checkpoint_model, source
         FROM generation_history
         WHERE character_slug IS NOT NULL
         ORDER BY character_slug, created_at DESC
     """)
-    # slug → {project_name, checkpoint_model}
+    # slug → {project_name, checkpoint_model, source}
     char_meta: dict[str, dict] = {}
     for r in rows:
         char_meta[r["character_slug"]] = {
             "project_name": r["project_name"] or "",
             "checkpoint_model": r["checkpoint_model"] or "",
+            "source": r["source"] or "manual",
         }
+
+    # If source filter is active, build set of slugs from generation_history
+    # that have at least one generation from that source
+    source_slugs: set[str] | None = None
+    if source:
+        source_rows = await pool.fetch("""
+            SELECT DISTINCT character_slug FROM generation_history
+            WHERE source = $1 AND character_slug IS NOT NULL
+        """, source)
+        source_slugs = {r["character_slug"] for r in source_rows}
 
     # Also build reverse map: project_name → set of slugs (for project filter)
     project_slugs: dict[str, set[str]] = {}
@@ -234,9 +250,18 @@ async def get_gallery(
         if pn:
             project_slugs.setdefault(pn, set()).add(slug)
 
-    # Scan files
+    # Scan files — include videos when requested
+    image_exts = ("*.png", "*.jpg")
+    video_exts = ("*.mp4",)
+    if media_type == "video":
+        scan_exts = video_exts
+    elif media_type == "image":
+        scan_exts = image_exts
+    else:
+        scan_exts = image_exts + video_exts
+
     image_files = []
-    for ext in ("*.png", "*.jpg"):
+    for ext in scan_exts:
         image_files.extend(COMFYUI_OUTPUT_DIR.glob(ext))
     image_files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
 
@@ -296,6 +321,11 @@ async def get_gallery(
             if _normalize(pose) not in fl:
                 return False, slug
 
+        # Source filter — only show images from a specific generation source
+        if source_slugs is not None:
+            if not slug or slug not in source_slugs:
+                return False, slug
+
         return True, slug
 
     # Filter and enrich
@@ -311,15 +341,18 @@ async def get_gallery(
     results = []
     for img, slug in page:
         meta = char_meta.get(slug) if slug else None
+        is_video = img.suffix.lower() in (".mp4", ".webm")
         entry = {
             "filename": img.name,
             "created_at": datetime.fromtimestamp(img.stat().st_mtime).isoformat(),
             "size_kb": round(img.stat().st_size / 1024, 1),
+            "media_type": "video" if is_video else "image",
         }
         if meta:
             entry["project_name"] = meta["project_name"]
             entry["checkpoint_model"] = meta["checkpoint_model"]
             entry["character_slug"] = slug
+            entry["source"] = meta.get("source", "manual")
         results.append(entry)
 
     return {
@@ -348,19 +381,26 @@ async def get_gallery_filters():
         SELECT DISTINCT checkpoint_model FROM generation_history
         WHERE checkpoint_model IS NOT NULL ORDER BY checkpoint_model
     """)
+    sources = await pool.fetch("""
+        SELECT DISTINCT source FROM generation_history
+        WHERE source IS NOT NULL ORDER BY source
+    """)
 
     return {
         "projects": [r["project_name"] for r in projects],
         "characters": [r["character_slug"].replace("_", " ").title() for r in characters],
         "character_slugs": [r["character_slug"] for r in characters],
         "checkpoints": [r["checkpoint_model"] for r in checkpoints],
+        "sources": [r["source"] for r in sources],
     }
 
 
 @router.get("/gallery/image/{filename}")
 async def get_gallery_image(filename: str):
-    """Serve a gallery image from ComfyUI output."""
-    image_path = COMFYUI_OUTPUT_DIR / filename
-    if not image_path.exists():
-        raise HTTPException(status_code=404, detail="Image not found")
-    return FileResponse(image_path)
+    """Serve a gallery image or video from ComfyUI output."""
+    file_path = COMFYUI_OUTPUT_DIR / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+    media_types = {".mp4": "video/mp4", ".webm": "video/webm", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg"}
+    mt = media_types.get(file_path.suffix.lower(), "application/octet-stream")
+    return FileResponse(file_path, media_type=mt)

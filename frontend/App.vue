@@ -129,11 +129,18 @@ const showChrome = computed(() => {
 })
 
 const isSceneEditor = computed(() => route.name === 'ScriptScenes')
+const isFullWidth = computed(() => {
+  const name = route.name as string
+  return name?.startsWith('Review') || name === 'PublishLibrary'
+})
 
 const mainStyle = computed(() => {
   if (!showChrome.value) return ''
   if (isSceneEditor.value) {
     return 'flex: 1; overflow: hidden;'
+  }
+  if (isFullWidth.value) {
+    return 'width: 100%; padding: 24px;'
   }
   return 'max-width: 1400px; margin: 0 auto; padding: 24px;'
 })

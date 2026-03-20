@@ -11,18 +11,19 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+import tempfile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
 from packages.core.config import BASE_PATH, OLLAMA_URL
 from packages.core.db import get_char_project_map
-from packages.core.models import VisionReviewRequest
+from packages.core.models import VisionReviewRequest, DirectVisionReviewRequest
 from packages.lora_training.feedback import record_rejection, queue_regeneration, REJECTION_NEGATIVE_MAP
 from packages.core.audit import log_decision, log_rejection, log_approval
 from packages.core.events import event_bus, IMAGE_REJECTED, IMAGE_APPROVED, REGENERATION_QUEUED
 
 from packages.core.model_profiles import get_model_profile, adjust_thresholds
 
-from .vision import vision_review_image, vision_issues_to_categories
+from .vision import vision_review_image, vision_issues_to_categories, vision_describe_image
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -150,8 +151,22 @@ async def _vision_review_worker(
     task = _vision_tasks[task_id]
     slugs_needing_regen: set[str] = set()
     consecutive_errors = 0
+    claim_id = None
 
     try:
+        # GPU Arbiter: claim AMD GPU and warm vision model before batch
+        from packages.core import gpu_arbiter
+        granted, claim_result = await gpu_arbiter.claim_gpu(
+            claim_type=gpu_arbiter.ClaimType.VISION_REVIEW,
+            caller=f"vision_review_{task_id}",
+            estimated_duration_s=body.max_images * 10,
+        )
+        if granted:
+            claim_id = claim_result
+            await gpu_arbiter.warm_vision_model(keep_alive="30m")
+        else:
+            logger.warning(f"[{task_id}] GPU claim denied: {claim_result}. Proceeding anyway.")
+
         for slug in target_slugs:
             if task["cancelled"]:
                 break
@@ -393,6 +408,14 @@ async def _vision_review_worker(
         task["error_message"] = str(e)
 
     finally:
+        # GPU Arbiter: release claim and unload vision model
+        try:
+            if claim_id:
+                await gpu_arbiter.release_gpu(claim_id)
+            await gpu_arbiter.release_vision_model()
+        except Exception:
+            pass  # Don't let arbiter cleanup crash the worker
+
         task["finished_at"] = datetime.now().isoformat()
         task["current_image"] = None
         logger.info(
@@ -400,3 +423,127 @@ async def _vision_review_worker(
             f"reviewed={task['reviewed']}, approved={task['auto_approved']}, "
             f"rejected={task['auto_rejected']}, errors={task['errors']}"
         )
+
+
+@router.post("/vision-review-direct")
+async def vision_review_direct(body: DirectVisionReviewRequest):
+    """Run a single synchronous vision review for interactive QC inspection.
+
+    Two modes:
+    1. character_slug + image_name → reviews an existing dataset image
+    2. image_path → reviews any image on disk (requires character_name + design_prompt)
+
+    Returns the full vision review dict with scores, issues, caption, etc.
+    """
+    char_map = await get_char_project_map()
+    image_path = None
+    character_name = body.character_name or "Unknown"
+    design_prompt = body.design_prompt or ""
+    appearance_data = None
+    checkpoint = "unknown"
+
+    if body.character_slug and body.image_name:
+        # Mode 1: existing dataset image
+        if body.character_slug not in char_map:
+            raise HTTPException(status_code=404, detail=f"Character '{body.character_slug}' not found")
+        db_info = char_map[body.character_slug]
+        character_name = body.character_name or db_info["name"]
+        design_prompt = body.design_prompt or db_info.get("design_prompt", "")
+        appearance_data = db_info.get("appearance_data")
+        checkpoint = db_info.get("checkpoint_model", "unknown")
+        image_path = BASE_PATH / body.character_slug / "images" / body.image_name
+    elif body.image_path:
+        # Mode 2: arbitrary filesystem path
+        image_path = Path(body.image_path)
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="Provide (character_slug + image_name) or image_path",
+        )
+
+    if not image_path.exists():
+        raise HTTPException(status_code=404, detail=f"Image not found: {image_path}")
+
+    profile = get_model_profile(checkpoint)
+
+    try:
+        review = await asyncio.to_thread(
+            vision_review_image,
+            image_path,
+            character_name=character_name,
+            design_prompt=design_prompt,
+            model=body.model,
+            appearance_data=appearance_data,
+            model_profile=profile,
+        )
+    except Exception as e:
+        logger.error(f"Direct vision review failed for {image_path}: {e}")
+        raise HTTPException(status_code=500, detail=f"Vision review failed: {e}")
+
+    quality_score = round(
+        (review["character_match"] + review["clarity"] + review["training_value"]) / 30, 2
+    )
+    categories = vision_issues_to_categories(review)
+
+    return {
+        "image_path": str(image_path),
+        "character_name": character_name,
+        "design_prompt": design_prompt,
+        "quality_score": quality_score,
+        "review": review,
+        "categories": categories,
+    }
+
+
+@router.post("/vision-review-upload")
+async def vision_review_upload(
+    file: UploadFile = File(...),
+    character_name: str = Form("Unknown"),
+    design_prompt: str = Form(""),
+    model: str | None = Form(None),
+):
+    """Upload an image and run vision QC on it directly."""
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="File must be an image")
+
+    contents = await file.read()
+    if len(contents) > 20 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Image must be under 20MB")
+
+    suffix = Path(file.filename or "upload.png").suffix or ".png"
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        tmp.write(contents)
+        tmp_path = Path(tmp.name)
+
+    profile = get_model_profile("unknown")
+
+    try:
+        review = await asyncio.to_thread(
+            vision_review_image,
+            tmp_path,
+            character_name=character_name,
+            design_prompt=design_prompt,
+            model=model or None,
+            appearance_data=None,
+            model_profile=profile,
+        )
+    except Exception as e:
+        tmp_path.unlink(missing_ok=True)
+        logger.error(f"Vision review upload failed for {tmp_path}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Vision review failed: {e}")
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+    quality_score = round(
+        (review["character_match"] + review["clarity"] + review["training_value"]) / 30, 2
+    )
+    categories = vision_issues_to_categories(review)
+
+    return {
+        "image_path": file.filename,
+        "character_name": character_name,
+        "design_prompt": design_prompt,
+        "quality_score": quality_score,
+        "review": review,
+        "categories": categories,
+    }

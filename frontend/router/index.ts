@@ -123,6 +123,11 @@ const routes = [
         name: 'ReviewGallery',
         component: () => import('@/components/GalleryTab.vue'),
       },
+      {
+        path: 'vision',
+        name: 'ReviewVision',
+        component: () => import('@/components/VisionReviewTool.vue'),
+      },
     ],
   },
   {

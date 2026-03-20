@@ -52,6 +52,14 @@
           <button class="chip" :class="{ active: !selectedSlug }" @click="selectedSlug = ''">All ({{ filteredApproved }})</button>
           <button v-for="ch in filteredCharacterList" :key="ch.slug" class="chip" :class="{ active: selectedSlug === ch.slug }" @click="selectedSlug = ch.slug">{{ ch.name }} ({{ ch.approved }})</button>
         </div>
+        <!-- Media type -->
+        <div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center;">
+          <span class="filter-label">Type</span>
+          <button class="chip" :class="{ active: !selectedMediaType }" @click="selectedMediaType = ''">All</button>
+          <button class="chip" :class="{ active: selectedMediaType === 'keyframe' }" @click="selectedMediaType = selectedMediaType === 'keyframe' ? '' : 'keyframe'">Keyframes</button>
+          <button class="chip" :class="{ active: selectedMediaType === 'video' }" @click="selectedMediaType = selectedMediaType === 'video' ? '' : 'video'">Videos</button>
+          <button class="chip" :class="{ active: selectedMediaType === 'video_audio' }" @click="selectedMediaType = selectedMediaType === 'video_audio' ? '' : 'video_audio'">Videos w/ Audio</button>
+        </div>
       </div>
     </Transition>
 
@@ -63,7 +71,20 @@
         class="masonry-card"
         @click="openDetail(img)"
       >
+        <video
+          v-if="isVideo(img.name)"
+          :src="imageUrl(img.slug, img.name)"
+          class="masonry-card-img"
+          muted
+          loop
+          playsinline
+          preload="metadata"
+          @loadeddata="($event.target as HTMLVideoElement).parentElement?.classList.add('loaded')"
+          @mouseenter="($event.target as HTMLVideoElement)?.play()"
+          @mouseleave="(e: Event) => { const v = e.target as HTMLVideoElement; v.pause(); v.currentTime = 0 }"
+        />
         <img
+          v-else
           :src="imageUrl(img.slug, img.name)"
           :alt="img.name"
           class="masonry-card-img"
@@ -90,6 +111,13 @@
             @click="quickSetRef(img)"
           >
             Ref
+          </button>
+          <button
+            class="hover-btn"
+            title="Copy file path + metadata for terminal"
+            @click="copyReference(img)"
+          >
+            Copy
           </button>
           <button
             class="hover-btn hover-btn-reject"
@@ -128,9 +156,19 @@
               <button class="btn" style="font-size: 14px; padding: 4px 10px;" @click="detailImage = null">Close</button>
             </div>
 
-            <!-- Image -->
+            <!-- Image or Video -->
             <div style="text-align: center; margin-bottom: 16px; background: var(--bg-primary); border-radius: 4px; padding: 8px;">
+              <video
+                v-if="isVideo(detailImage.name)"
+                :src="imageUrl(detailImage.slug, detailImage.name)"
+                controls
+                autoplay
+                loop
+                playsinline
+                style="max-width: 100%; max-height: 400px; border-radius: 3px;"
+              />
               <img
+                v-else
                 :src="imageUrl(detailImage.slug, detailImage.name)"
                 :alt="detailImage.name"
                 style="max-width: 100%; max-height: 400px; border-radius: 3px;"
@@ -354,6 +392,7 @@ const quickGenerating = ref('')
 const rejecting = ref(false)
 const searchText = ref('')
 const libFiltersOpen = ref(false)
+const selectedMediaType = ref('')
 
 const libColumns = computed(() => {
   if (typeof window === 'undefined') return 4
@@ -361,13 +400,16 @@ const libColumns = computed(() => {
   if (w < 640) return 2
   if (w < 1024) return 3
   if (w < 1440) return 4
-  return 5
+  if (w < 1920) return 5
+  if (w < 2560) return 6
+  return 7
 })
 const libActiveFilterCount = computed(() => {
   let c = 0
   if (selectedProject.value) c++
   if (selectedModel.value) c++
   if (selectedSlug.value) c++
+  if (selectedMediaType.value) c++
   return c
 })
 
@@ -409,6 +451,13 @@ const displayImages = computed(() => {
   }
   if (selectedSlug.value) {
     imgs = imgs.filter(img => img.slug === selectedSlug.value)
+  }
+  if (selectedMediaType.value) {
+    if (selectedMediaType.value === 'video' || selectedMediaType.value === 'video_audio') {
+      imgs = imgs.filter(img => isVideo(img.name))
+    } else if (selectedMediaType.value === 'keyframe') {
+      imgs = imgs.filter(img => !isVideo(img.name))
+    }
   }
   if (searchText.value) {
     const q = searchText.value.toLowerCase()
@@ -462,6 +511,10 @@ async function refresh() {
   } finally {
     loading.value = false
   }
+}
+
+function isVideo(name: string): boolean {
+  return /\.(mp4|webm|mov)$/i.test(name)
 }
 
 function imageUrl(slug: string, name: string): string {
@@ -558,6 +611,24 @@ async function quickReject(img: LibraryImage) {
   } catch { /* swallow */ }
 }
 
+async function copyReference(img: LibraryImage) {
+  const filePath = `/opt/anime-studio/datasets/${img.slug}/approved/${img.name}`
+  const meta = [
+    `File: ${filePath}`,
+    `Character: ${img.characterName} (${img.slug})`,
+    `Project: ${img.project_name}`,
+    `Checkpoint: ${img.checkpoint_model}`,
+    img.seed ? `Seed: ${img.seed}` : '',
+    img.qualityScore ? `Quality: ${img.qualityScore}` : '',
+  ].filter(Boolean).join('\n')
+  try {
+    await navigator.clipboard.writeText(meta)
+    toast.value = { type: 'success', text: 'Copied to clipboard' }
+  } catch {
+    prompt('Copy this reference:', meta)
+  }
+}
+
 async function rejectFromLibrary() {
   if (!detailImage.value) return
   rejecting.value = true
@@ -607,7 +678,7 @@ async function setAsReference() {
 /* Masonry grid */
 .lib-masonry {
   column-gap: 10px;
-  column-fill: auto;
+  column-fill: balance;
 }
 .masonry-card {
   break-inside: avoid;

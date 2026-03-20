@@ -19,6 +19,9 @@
       <RouterLink to="/review/gallery" class="review-subtab" active-class="" exact-active-class="active">
         Gallery
       </RouterLink>
+      <RouterLink to="/review/vision" class="review-subtab" active-class="" exact-active-class="active">
+        Vision QC
+      </RouterLink>
     </div>
 
     <RouterView />
