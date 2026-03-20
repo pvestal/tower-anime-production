@@ -335,6 +335,21 @@ def _build_prompt(
     return prompt, negative, chars_present, video_lora, image_lora
 
 
+async def _use_converged_clips(conn, project_id: int, character_slug: str) -> list[dict]:
+    """Query converged_clips for pre-validated image+video combos.
+
+    Returns list of {lora_name, keyframe_path, video_path, video_score} for
+    this character in this project that are eligible for trailer use.
+    """
+    rows = await conn.fetch("""
+        SELECT lora_name, keyframe_path, video_path, image_score, video_score, motion_prompt
+        FROM converged_clips
+        WHERE project_id = $1 AND character_slug = $2 AND eligible_for_trailer = TRUE
+        ORDER BY video_score DESC NULLS LAST
+    """, project_id, character_slug)
+    return [dict(r) for r in rows]
+
+
 async def create_trailer(project_id: int, title: str | None = None) -> dict:
     """Create a trailer with auto-generated shots from template.
 
@@ -394,6 +409,15 @@ async def create_trailer(project_id: int, title: str | None = None) -> dict:
             _json_dumps([{"name": c["name"], "lora": c.get("lora_path")} for c in characters]),
         )
 
+        # Pre-load converged clips for all featured characters
+        converged_by_char = {}  # slug -> {lora_name -> clip_info}
+        for char in characters:
+            slug = char.get("slug", char["name"].lower().replace(" ", "_"))
+            clips = await _use_converged_clips(conn, project_id, slug)
+            if clips:
+                converged_by_char[slug] = {c["lora_name"]: c for c in clips}
+                logger.info(f"Trailer: {len(clips)} converged clips for {slug}")
+
         # Build and insert shots from dynamic template
         shots = []
         for i, tmpl in enumerate(trailer_template):
@@ -407,15 +431,34 @@ async def create_trailer(project_id: int, title: str | None = None) -> dict:
 
             motion_tier = tmpl.get("motion_tier")
             shot_id = uuid.uuid4()
+
+            # Check for converged clip match (character × video_lora)
+            conv_clip = None
+            shot_status = "pending"
+            source_image = None
+            output_video = None
+            if video_lora and chars_present:
+                for slug in chars_present:
+                    char_clips = converged_by_char.get(slug, {})
+                    if video_lora in char_clips:
+                        conv_clip = char_clips[video_lora]
+                        source_image = conv_clip["keyframe_path"]
+                        output_video = conv_clip["video_path"]
+                        shot_status = "completed"
+                        logger.info(f"  Shot {i+1}: using converged clip for {slug}×{video_lora}")
+                        break
+
             await conn.execute("""
                 INSERT INTO shots (id, scene_id, shot_number, shot_type, camera_angle,
                                    duration_seconds, generation_prompt, generation_negative,
                                    characters_present, lora_name, image_lora, trailer_role,
-                                   video_engine, motion_tier, status)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'wan22_14b', $13, 'pending')
+                                   video_engine, motion_tier, status,
+                                   source_image_path, output_video_path)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'wan22_14b', $13, $14, $15, $16)
             """, shot_id, scene_id, i + 1, tmpl["shot_type"], tmpl["camera_angle"],
                 tmpl["duration"], prompt, negative, chars_present or [],
-                video_lora, image_lora, tmpl["role"], motion_tier)
+                video_lora, image_lora, tmpl["role"], motion_tier, shot_status,
+                source_image, output_video)
 
             shots.append({
                 "shot_id": str(shot_id),
@@ -428,6 +471,7 @@ async def create_trailer(project_id: int, title: str | None = None) -> dict:
                 "motion_tier": motion_tier,
                 "description": tmpl.get("description", ""),
                 "prompt": prompt,
+                "pre_completed": conv_clip is not None,
             })
 
         logger.info(

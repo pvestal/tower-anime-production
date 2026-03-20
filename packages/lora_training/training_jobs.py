@@ -68,7 +68,7 @@ async def start_training(training: TrainingRequest):
                     if s == "approved" or (isinstance(s, dict) and s.get("status") == "approved")
                 )
 
-        MIN_TRAINING_IMAGES = 100
+        MIN_TRAINING_IMAGES = 10
         if approved_count < MIN_TRAINING_IMAGES:
             raise HTTPException(
                 status_code=400,

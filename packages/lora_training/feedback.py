@@ -125,7 +125,19 @@ def record_rejection(character_slug: str, image_name: str, feedback: str, edited
         for cat in rej.get("categories", []):
             if cat in REJECTION_NEGATIVE_MAP:
                 neg_terms.add(REJECTION_NEGATIVE_MAP[cat])
-    data["negative_additions"] = list(neg_terms)
+        # Auto-extract negatives from free-text feedback
+        # Supports: "Add negative: cat ears, animal ears" anywhere in text
+        fb_text = rej.get("feedback", "")
+        for marker in ("Add negative:", "add negative:", "ADD NEGATIVE:"):
+            if marker in fb_text:
+                after = fb_text.split(marker, 1)[1].strip()
+                # Take until end of line or next sentence
+                after = after.split(".")[0].split("\n")[0].strip()
+                for term in after.split(","):
+                    term = term.strip().lower()
+                    if term and len(term) < 40:
+                        neg_terms.add(term)
+    data["negative_additions"] = sorted(neg_terms)
 
     # Keep only last 50 rejections to prevent unbounded growth
     if len(data["rejections"]) > 50:
@@ -268,7 +280,7 @@ def queue_regeneration(character_slug: str):
     from packages.core.generation import generate_batch
     try:
         loop = asyncio.get_running_loop()
-        loop.create_task(generate_batch(character_slug=character_slug, count=1))
+        loop.create_task(generate_batch(character_slug=character_slug, count=1, source="auto_regen"))
         logger.info(f"Queued regeneration for {character_slug}")
     except RuntimeError:
         logger.warning(f"No running event loop for queue_regeneration of {character_slug}")
