@@ -290,33 +290,35 @@ def build_composite_workflow(
     return workflow, output_prefix
 
 
-def is_comfyui_queue_busy(max_pending: int = 20) -> bool:
+def is_comfyui_queue_busy(max_pending: int = 20, comfyui_url: str | None = None) -> bool:
     """Check if ComfyUI queue is too deep to accept new work.
 
     Returns True only when pending queue exceeds max_pending threshold.
     Keyframes are fast (~18s) so we allow them to queue behind each other.
     Only block when the queue is deep (likely a long FramePack job + backlog).
     """
+    url = comfyui_url or COMFYUI_URL
     try:
-        req = urllib.request.Request(f"{COMFYUI_URL}/queue")
+        req = urllib.request.Request(f"{url}/queue")
         resp = urllib.request.urlopen(req, timeout=5)
         data = json.loads(resp.read())
         running = len(data.get("queue_running", []))
         pending = len(data.get("queue_pending", []))
-        logger.info(f"ComfyUI queue: {running} running, {pending} pending")
+        logger.info(f"ComfyUI queue ({url}): {running} running, {pending} pending")
         if pending >= max_pending:
             return True
         return False
     except Exception as e:
-        logger.warning(f"Failed to check ComfyUI queue: {e}")
+        logger.warning(f"Failed to check ComfyUI queue ({url}): {e}")
         return True  # Assume busy if we can't check
 
 
-def submit_workflow(workflow: dict) -> str:
+def submit_workflow(workflow: dict, comfyui_url: str | None = None) -> str:
     """Submit a workflow to ComfyUI and return the prompt_id."""
+    url = comfyui_url or COMFYUI_URL
     payload = json.dumps({"prompt": workflow}).encode()
     req = urllib.request.Request(
-        f"{COMFYUI_URL}/prompt",
+        f"{url}/prompt",
         data=payload,
         headers={"Content-Type": "application/json"},
     )
@@ -325,12 +327,13 @@ def submit_workflow(workflow: dict) -> str:
     return result.get("prompt_id", "")
 
 
-def poll_completion(prompt_id: str, timeout: int = 300) -> Path | None:
+def poll_completion(prompt_id: str, timeout: int = 300, comfyui_url: str | None = None) -> Path | None:
     """Poll ComfyUI until the prompt completes. Return the output image path."""
+    _base = comfyui_url or COMFYUI_URL
     start = time.time()
     while time.time() - start < timeout:
         try:
-            url = f"{COMFYUI_URL}/history/{prompt_id}"
+            url = f"{_base}/history/{prompt_id}"
             req = urllib.request.Request(url)
             resp = urllib.request.urlopen(req, timeout=10)
             history = json.loads(resp.read())
@@ -362,6 +365,7 @@ async def generate_composite_source(
     characters: list[str],
     scene_prompt: str,
     checkpoint_model: str = "waiIllustriousSDXL_v160.safetensors",
+    comfyui_url: str | None = None,
 ) -> Path | None:
     """Generate a composite image with multiple characters for use as FramePack source.
 
@@ -424,18 +428,26 @@ async def generate_composite_source(
         output_prefix=prefix,
     )
 
-    if is_comfyui_queue_busy():
+    _comp_url = comfyui_url
+    if not _comp_url:
+        try:
+            from packages.core.dual_gpu import get_best_gpu_for_task
+            _comp_url = get_best_gpu_for_task("keyframe")
+        except ImportError:
+            _comp_url = None
+
+    if is_comfyui_queue_busy(comfyui_url=_comp_url):
         logger.warning(f"ComfyUI queue busy — skipping composite for {char_a} + {char_b}")
         return None
 
-    logger.info(f"Submitting composite workflow: {char_a} + {char_b}")
-    prompt_id = submit_workflow(workflow)
+    logger.info(f"Submitting composite workflow: {char_a} + {char_b} → {_comp_url or COMFYUI_URL}")
+    prompt_id = submit_workflow(workflow, comfyui_url=_comp_url)
     if not prompt_id:
         logger.error("Failed to submit composite workflow")
         return None
 
     logger.info(f"Composite workflow submitted: {prompt_id}, polling...")
-    result = poll_completion(prompt_id, timeout=300)
+    result = poll_completion(prompt_id, timeout=300, comfyui_url=_comp_url)
 
     if result and result.exists():
         logger.info(f"Composite image generated: {result}")
@@ -457,6 +469,7 @@ async def generate_simple_keyframe(
     controlnet_image: str | None = None,
     controlnet_strength: float = 0.7,
     controlnet_type: str = "openpose",
+    comfyui_url: str | None = None,
 ) -> Path | None:
     """Generate a keyframe image that matches the shot's composition requirements.
 
@@ -483,10 +496,19 @@ async def generate_simple_keyframe(
     char_design_prompts = []
     primary_lora = None
     char_home_project_id = None  # track if character comes from a different project
+    char_negative_prompts = []
+    char_lora_strength = None
+    char_checkpoint_override = None
+    char_lora_trigger = None
     if not is_environment:
+        _CHAR_QUERY = (
+            "SELECT name, design_prompt, lora_path, lora_trigger, lora_strength, "
+            "negative_prompt, checkpoint_override, identity_block, "
+            "visual_prompt_template, project_id FROM characters "
+        )
         for slug in characters[:2]:
             row = await conn.fetchrow(
-                "SELECT name, design_prompt, lora_path, project_id FROM characters "
+                _CHAR_QUERY +
                 "WHERE project_id = $2 AND ("
                 "  REGEXP_REPLACE(LOWER(REPLACE(name, ' ', '_')), '[^a-z0-9_-]', '', 'g') = $1 "
                 "  OR REGEXP_REPLACE(LOWER(REPLACE(name, ' ', '_')), '[^a-z0-9_-]', '', 'g') LIKE $1 || '_%'"
@@ -496,7 +518,7 @@ async def generate_simple_keyframe(
             if not row:
                 # Character not in this project — search all projects (cross-project ref)
                 row = await conn.fetchrow(
-                    "SELECT name, design_prompt, lora_path, project_id FROM characters "
+                    _CHAR_QUERY +
                     "WHERE archived = false AND ("
                     "  REGEXP_REPLACE(LOWER(REPLACE(name, ' ', '_')), '[^a-z0-9_-]', '', 'g') = $1 "
                     "  OR REGEXP_REPLACE(LOWER(REPLACE(name, ' ', '_')), '[^a-z0-9_-]', '', 'g') LIKE $1 || '_%'"
@@ -515,6 +537,18 @@ async def generate_simple_keyframe(
                     char_design_prompts.append(row["design_prompt"])
                 if not primary_lora and row["lora_path"]:
                     primary_lora = row["lora_path"]
+                # Character-level LoRA trigger (injected into prompt for LoRA activation)
+                if not char_lora_trigger and row.get("lora_trigger"):
+                    char_lora_trigger = row["lora_trigger"]
+                # Character-level LoRA strength
+                if char_lora_strength is None and row.get("lora_strength"):
+                    char_lora_strength = row["lora_strength"]
+                # Character-level negative prompt
+                if row.get("negative_prompt"):
+                    char_negative_prompts.append(row["negative_prompt"])
+                # Character-level checkpoint override
+                if not char_checkpoint_override and row.get("checkpoint_override"):
+                    char_checkpoint_override = row["checkpoint_override"]
 
         if not char_names:
             # Characters not in DB (extras like "villagers", "corporate_security")
@@ -558,8 +592,15 @@ async def generate_simple_keyframe(
     if is_environment:
         logger.info(f"generate_simple_keyframe: environment-only shot (no characters)")
     elif primary_lora:
-        # LoRA handles character appearance — name is enough
-        if len(char_names) > 1:
+        # LoRA trigger word MUST be in the prompt for LoRA to activate
+        if char_lora_trigger:
+            parts.append(char_lora_trigger)
+            logger.info(f"generate_simple_keyframe: injected LoRA trigger '{char_lora_trigger}'")
+        # LoRA + design_prompt for character identity reinforcement
+        if char_design_prompts:
+            parts.append(char_design_prompts[0])
+            logger.info(f"generate_simple_keyframe: LoRA + design_prompt for {char_names[0]}")
+        elif len(char_names) > 1:
             parts.append(f"{' and '.join(char_names)}")
         else:
             parts.append(char_names[0])
@@ -571,6 +612,14 @@ async def generate_simple_keyframe(
             parts.append(f"{' and '.join(char_names)}")
         else:
             parts.append(char_names[0])
+
+    # Apply character-level checkpoint override (e.g., different checkpoint for non-human chars)
+    if char_checkpoint_override:
+        _override = char_checkpoint_override
+        if not _override.endswith(".safetensors"):
+            _override += ".safetensors"
+        checkpoint_model = _override
+        logger.info(f"generate_simple_keyframe: checkpoint override → {_override}")
     # Fetch project generation style (resolution + prompt templates)
     # Use character's home project style when cross-project, so a human character
     # in a furry project scene still gets human-appropriate prompts/checkpoint.
@@ -609,12 +658,19 @@ async def generate_simple_keyframe(
         negative_parts = [style_row["negative_prompt_template"]]
     else:
         negative_parts = ["worst quality, low quality, blurry, deformed, extra limbs, bad anatomy, watermark, text"]
+    # Suppress sparkle/highlight artifacts from EVO and similar checkpoints
+    negative_parts.append("glowing dots on face, sparkles on skin, face highlights, shiny dots, light particles on face")
     if is_environment:
         negative_parts.append("person, people, human, character, face, hands, portrait, figure")
     elif shot_type in ("establishing", "wide"):
         negative_parts.append("portrait, headshot, close-up face, bust shot")
     elif shot_type == "action":
         negative_parts.append("static pose, standing still, portrait, peaceful, calm")
+
+    # Character-level negative prompts (e.g., "human skin" for symbiote characters)
+    if char_negative_prompts:
+        negative_parts.extend(char_negative_prompts)
+        logger.info(f"generate_simple_keyframe: added character negatives: {char_negative_prompts}")
 
     negative = ", ".join(negative_parts)
 
@@ -630,14 +686,20 @@ async def generate_simple_keyframe(
         else:
             kf_width, kf_height = 832, 1216   # portrait
 
-    # LoRA strength — OFF for establishing (env matters), low for wide, normal for close-up
-    lora_strength = {
+    # LoRA strength — shot-type defaults, overridden by character-level setting
+    _shot_lora_strength = {
         "establishing": 0.0,  # no LoRA — pure environment
         "wide": 0.3,
         "action": 0.5,
         "medium": 0.7,
         "close-up": 0.85,
     }.get(shot_type, 0.7)
+    # Character-level override (e.g., Venom Queen needs stronger LoRA to maintain symbiote look)
+    if char_lora_strength is not None and shot_type != "establishing":
+        lora_strength = char_lora_strength
+        logger.info(f"Keyframe: using character LoRA strength {char_lora_strength} (overrides shot default {_shot_lora_strength})")
+    else:
+        lora_strength = _shot_lora_strength
 
     # Build a simple txt2img workflow with optional LoRA
     ts = int(time.time())
@@ -769,17 +831,26 @@ async def generate_simple_keyframe(
             workflow["3"]["inputs"]["negative"] = ["42", 1]
             logger.info(f"Keyframe ControlNet: {controlnet_type} @ {controlnet_strength}")
 
-    if is_comfyui_queue_busy():
-        logger.warning(f"ComfyUI queue busy — skipping keyframe for {characters[:2]}")
+    # Smart GPU routing: pick best GPU for keyframe if no explicit URL given
+    _kf_url = comfyui_url
+    if not _kf_url:
+        try:
+            from packages.core.dual_gpu import get_best_gpu_for_task
+            _kf_url = get_best_gpu_for_task("keyframe")
+        except ImportError:
+            _kf_url = None
+
+    if is_comfyui_queue_busy(comfyui_url=_kf_url):
+        logger.warning(f"ComfyUI queue busy ({_kf_url}) — skipping keyframe for {characters[:2]}")
         return None
 
-    logger.info(f"Submitting simple keyframe workflow for {characters[:2]}")
-    prompt_id = submit_workflow(workflow)
+    logger.info(f"Submitting simple keyframe workflow for {characters[:2]} → {_kf_url or COMFYUI_URL}")
+    prompt_id = submit_workflow(workflow, comfyui_url=_kf_url)
     if not prompt_id:
         logger.error("Failed to submit keyframe workflow")
         return None
 
-    result = poll_completion(prompt_id, timeout=300)
+    result = poll_completion(prompt_id, timeout=300, comfyui_url=_kf_url)
     if result and result.exists():
         logger.info(f"Simple keyframe generated: {result}")
         return result

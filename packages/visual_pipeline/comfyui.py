@@ -351,12 +351,13 @@ def build_comfyui_workflow(
     return workflow
 
 
-def submit_comfyui_workflow(workflow: dict) -> str:
+def submit_comfyui_workflow(workflow: dict, comfyui_url: str | None = None) -> str:
     """Submit a workflow to ComfyUI and return the prompt_id."""
     import urllib.request
+    url = comfyui_url or COMFYUI_URL
     payload = json.dumps({"prompt": workflow}).encode()
     req = urllib.request.Request(
-        f"{COMFYUI_URL}/prompt",
+        f"{url}/prompt",
         data=payload,
         headers={"Content-Type": "application/json"},
     )
@@ -365,11 +366,12 @@ def submit_comfyui_workflow(workflow: dict) -> str:
     return result.get("prompt_id", "")
 
 
-def get_comfyui_progress(prompt_id: str) -> dict:
+def get_comfyui_progress(prompt_id: str, comfyui_url: str | None = None) -> dict:
     """Check ComfyUI generation progress for a given prompt_id."""
     import urllib.request
+    _base = comfyui_url or COMFYUI_URL
     try:
-        req = urllib.request.Request(f"{COMFYUI_URL}/queue")
+        req = urllib.request.Request(f"{_base}/queue")
         resp = urllib.request.urlopen(req, timeout=10)
         queue_data = json.loads(resp.read())
 
@@ -382,7 +384,7 @@ def get_comfyui_progress(prompt_id: str) -> dict:
                 return {"status": "pending", "progress": 0.1}
 
         # Check history for completion
-        req = urllib.request.Request(f"{COMFYUI_URL}/history/{prompt_id}")
+        req = urllib.request.Request(f"{_base}/history/{prompt_id}")
         resp = urllib.request.urlopen(req, timeout=10)
         history = json.loads(resp.read())
 

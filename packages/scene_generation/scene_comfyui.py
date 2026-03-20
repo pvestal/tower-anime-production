@@ -22,7 +22,7 @@ async def copy_to_comfyui_input(image_path: str) -> str:
     return src.name
 
 
-def is_source_already_queued(source_name: str) -> str | None:
+def is_source_already_queued(source_name: str, comfyui_url: str | None = None) -> str | None:
     """Check if a source image/video is already running or pending in ComfyUI.
 
     Inspects both queue_running and queue_pending for LoadImage or
@@ -30,9 +30,10 @@ def is_source_already_queued(source_name: str) -> str | None:
     prompt_id of the existing job if found, otherwise None.
     """
     import urllib.request
+    url = comfyui_url or COMFYUI_URL
 
     try:
-        req = urllib.request.Request(f"{COMFYUI_URL}/queue")
+        req = urllib.request.Request(f"{url}/queue")
         resp = urllib.request.urlopen(req, timeout=5)
         queue = json.loads(resp.read())
     except Exception:
@@ -51,15 +52,16 @@ def is_source_already_queued(source_name: str) -> str | None:
     return None
 
 
-async def poll_comfyui_completion(prompt_id: str, timeout_seconds: int = 1800) -> dict:
+async def poll_comfyui_completion(prompt_id: str, timeout_seconds: int = 1800, comfyui_url: str | None = None) -> dict:
     """Poll ComfyUI /history until the prompt completes or times out."""
     import urllib.request
     import time as _time
+    url = comfyui_url or COMFYUI_URL
     start = _time.time()
     _not_found_count = 0
     while (_time.time() - start) < timeout_seconds:
         try:
-            req = urllib.request.Request(f"{COMFYUI_URL}/history/{prompt_id}")
+            req = urllib.request.Request(f"{url}/history/{prompt_id}")
             resp = urllib.request.urlopen(req, timeout=10)
             history = json.loads(resp.read())
             if prompt_id not in history:
@@ -69,7 +71,7 @@ async def poll_comfyui_completion(prompt_id: str, timeout_seconds: int = 1800) -
                 if _not_found_count >= 24:
                     # Also check queue — if it's not running or pending, it's truly lost
                     try:
-                        _q_req = urllib.request.Request(f"{COMFYUI_URL}/queue")
+                        _q_req = urllib.request.Request(f"{url}/queue")
                         _q_resp = urllib.request.urlopen(_q_req, timeout=5)
                         _q_data = json.loads(_q_resp.read())
                         _running_ids = [r[1] for r in _q_data.get("queue_running", []) if len(r) > 1]

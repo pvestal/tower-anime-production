@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse
 from packages.core.config import BASE_PATH, COMFYUI_OUTPUT_DIR, COMFYUI_URL
 from packages.core.db import connect_direct, get_char_project_map
 from packages.core.auth import get_user_projects
-from packages.core.events import event_bus, SCENE_UPDATED, SHOT_UPDATED, SHOT_GENERATED
+from packages.core.events import event_bus, SCENE_UPDATED, SHOT_UPDATED, SHOT_GENERATED, KEYFRAME_UPDATED
 from packages.core.models import (
     SceneCreateRequest, ShotCreateRequest, ShotUpdateRequest,
     SceneUpdateRequest, SceneAudioRequest,
@@ -806,6 +806,13 @@ async def update_shot(scene_id: str, shot_id: str, body: ShotUpdateRequest):
                 "changed_fields": changed_fields,
             })
 
+        # Emit keyframe updated event when source_image_path changes
+        if getattr(body, "source_image_path", None) is not None:
+            await event_bus.emit(KEYFRAME_UPDATED, {
+                "shot_id": str(shid),
+                "scene_id": scene_id,
+            })
+
         return {"message": "Shot updated"}
     finally:
         await conn.close()
@@ -1075,7 +1082,10 @@ async def regenerate_shot(scene_id: str, shot_id: str):
     - wan22: Wan 2.2 (I2V with optional ref image)
     - framepack / framepack_f1: FramePack I2V (requires source image)
     - ltx: LTX Video
+    - dasiwa: DaSiWa SynthSeduction v9 I2V
     """
+    from ..core.config import get_comfyui_url
+    _video_url = get_comfyui_url("video")
     shid = uuid.UUID(shot_id)
     sid = uuid.UUID(scene_id)
     # Allow per-shot regeneration even when a scene-level task is running.
@@ -1173,8 +1183,10 @@ async def regenerate_shot(scene_id: str, shot_id: str):
                     logger.info(f"regenerate_shot: keyframe for {list(chars)[:2]} → {_kf.name}")
 
         # Re-run engine selector if multi-char now has source image
+        # Skip re-selection if engine was explicitly set (e.g. dasiwa)
         engine = shot["video_engine"] or "framepack"
-        if is_multi_char and shot["source_image_path"]:
+        _explicit_engines = {"dasiwa", "reference_v2v"}
+        if is_multi_char and shot["source_image_path"] and engine not in _explicit_engines:
             from .engine_selector import select_engine
             _proj_row = await conn.fetchrow("SELECT video_lora FROM projects p JOIN scenes s ON s.project_id = p.id WHERE s.id = $1", sid)
             _proj_lora = _proj_row["video_lora"] if _proj_row else None
@@ -1233,7 +1245,7 @@ async def regenerate_shot(scene_id: str, shot_id: str):
                 width=vid_w, height=vid_h, use_gguf=True,
                 negative_text=negative_text,
             )
-            comfyui_prompt_id = _submit_wan(workflow)
+            comfyui_prompt_id = _submit_wan(workflow, comfyui_url=_video_url)
         elif engine == "wan22":
             from .wan_video import build_wan22_workflow, _submit_comfyui_workflow as _submit_wan
             fps = 16
@@ -1246,7 +1258,7 @@ async def regenerate_shot(scene_id: str, shot_id: str):
                 negative_text=negative_text,
                 ref_image=image_filename,
             )
-            comfyui_prompt_id = _submit_wan(workflow)
+            comfyui_prompt_id = _submit_wan(workflow, comfyui_url=_video_url)
         elif engine == "wan22_14b":
             from .wan_video import build_wan22_14b_i2v_workflow, _submit_comfyui_workflow as _submit_wan
             if not image_filename:
@@ -1288,7 +1300,47 @@ async def regenerate_shot(scene_id: str, shot_id: str):
                 content_lora_low=_content_low if _content_low else None,
                 content_lora_strength=_content_strength,
             )
-            comfyui_prompt_id = _submit_wan(workflow)
+            comfyui_prompt_id = _submit_wan(workflow, comfyui_url=_video_url)
+        elif engine == "dasiwa":
+            from .wan_video import build_dasiwa_i2v_workflow, _submit_comfyui_workflow as _submit_dasiwa
+            if not image_filename:
+                raise HTTPException(status_code=400, detail="dasiwa requires a source image (I2V only)")
+            fps = 16
+            num_frames = max(9, int(shot_seconds * fps) + 1)
+            if not shot_seed:
+                import hashlib
+                _scene_seed_bytes = hashlib.sha256(str(sid).encode()).digest()
+                _scene_base_seed = int.from_bytes(_scene_seed_bytes[:8], "big") % (2**63)
+                shot_seed = _scene_base_seed + (shot["shot_number"] or 0)
+
+            # Resolve content LoRA pair from lora_name field
+            _content_high = None
+            _content_low = None
+            _content_strength = float(shot.get("lora_strength") or 0.6)
+            _shot_lora = shot.get("lora_name") or ""
+            if _shot_lora:
+                if "_HIGH" in _shot_lora.upper():
+                    _content_high = _shot_lora
+                    _content_low = _shot_lora.replace("_HIGH", "_LOW").replace("_high", "_low")
+                elif "_LOW" in _shot_lora.upper():
+                    _content_low = _shot_lora
+                    _content_high = _shot_lora.replace("_LOW", "_HIGH").replace("_low", "_high")
+                else:
+                    _content_high = _shot_lora
+
+            workflow, prefix = build_dasiwa_i2v_workflow(
+                prompt_text=prompt_text,
+                ref_image=image_filename,
+                width=vid_w, height=vid_h,
+                num_frames=num_frames, fps=fps,
+                total_steps=shot_steps,
+                seed=shot_seed,
+                negative_text=negative_text,
+                content_lora_high=_content_high if _content_high else None,
+                content_lora_low=_content_low if _content_low else None,
+                content_lora_strength=_content_strength,
+            )
+            comfyui_prompt_id = _submit_dasiwa(workflow, comfyui_url=_video_url)
         else:
             # framepack / framepack_f1
             if not image_filename:
@@ -1302,7 +1354,7 @@ async def regenerate_shot(scene_id: str, shot_id: str):
                 total_seconds=shot_seconds, steps=shot_steps, use_f1=use_f1,
                 seed=shot_seed, negative_text=negative_text,
                 gpu_memory_preservation=6.0, guidance_scale=shot_guidance)
-            comfyui_prompt_id = _submit_comfyui_workflow(workflow_data["prompt"])
+            comfyui_prompt_id = _submit_comfyui_workflow(workflow_data["prompt"], comfyui_url=_video_url)
 
         await conn.execute(
             "UPDATE shots SET status = 'generating', comfyui_prompt_id = $2, first_frame_path = $3 WHERE id = $1",
@@ -1451,15 +1503,25 @@ async def serve_scene_video(scene_id: str):
 
 
 @router.get("/scenes/{scene_id}/shots/{shot_id}/video")
-async def serve_shot_video(scene_id: str, shot_id: str):
-    """Serve individual shot video."""
+async def serve_shot_video(scene_id: str, shot_id: str, with_audio: bool = True):
+    """Serve individual shot video. Prefers audio-mixed version when available."""
     shid = uuid.UUID(shot_id)
     conn = await connect_direct()
     try:
-        path = await conn.fetchval("SELECT output_video_path FROM shots WHERE id = $1", shid)
+        row = await conn.fetchrow(
+            "SELECT output_video_path, sfx_audio_path FROM shots WHERE id = $1", shid
+        )
     finally:
         await conn.close()
-    if not path or not Path(path).exists():
+    if not row:
+        raise HTTPException(status_code=404, detail="Shot not found")
+    # Prefer the audio-mixed version (sfx_audio_path) which has video+voice+foley
+    path = None
+    if with_audio and row["sfx_audio_path"] and Path(row["sfx_audio_path"]).exists():
+        path = row["sfx_audio_path"]
+    elif row["output_video_path"] and Path(row["output_video_path"]).exists():
+        path = row["output_video_path"]
+    if not path:
         raise HTTPException(status_code=404, detail="Shot video not found")
     return FileResponse(path, media_type="video/mp4", filename=f"shot_{shot_id}.mp4")
 
@@ -2024,7 +2086,7 @@ class SelectEngineRequest(BaseModel):
     lora_strength: float = 0.8
 
 
-KNOWN_ENGINES = {"framepack", "framepack_f1", "ltx", "wan", "wan22", "wan22_14b", "reference_v2v"}
+KNOWN_ENGINES = {"framepack", "framepack_f1", "ltx", "wan", "wan22", "wan22_14b", "reference_v2v", "dasiwa"}
 
 
 @router.post("/scenes/{scene_id}/shots/{shot_id}/select-engine")

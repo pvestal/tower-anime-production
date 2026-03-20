@@ -36,32 +36,30 @@ class MotionParams:
     use_lightx2v: bool
     description: str
 
-# 12GB VRAM LOCKED PROFILE — 6 steps / split 3 / CFG 3.5 / no lightx2v.
-# Proven stable on RTX 3060 12GB: no OOM, 8-10 min gen time.
-# Quality comes from prompt/LoRA/motion guidance, NOT more steps/CFG.
-# Only content_lora_strength varies across tiers.
+# WAN22 14B quality tiers — RTX 3060 12GB compatible.
+# Low/medium fit comfortably; high/extreme may need ~10GB VRAM.
 MOTION_TIERS: dict[str, MotionParams] = {
     "low": MotionParams(
         tier="low",
-        total_steps=6, split_steps=3, cfg=3.5,
+        total_steps=20, split_steps=10, cfg=5.0,
         content_lora_strength=0.7, use_lightx2v=False,
         description="Subtle motion — style, softcore, static poses, enhancers",
     ),
     "medium": MotionParams(
         tier="medium",
-        total_steps=6, split_steps=3, cfg=3.5,
+        total_steps=20, split_steps=10, cfg=6.0,
         content_lora_strength=0.85, use_lightx2v=False,
         description="Moderate motion — camera moves, utility, gentle movement",
     ),
     "high": MotionParams(
         tier="high",
-        total_steps=6, split_steps=3, cfg=3.5,
+        total_steps=25, split_steps=13, cfg=6.0,
         content_lora_strength=0.95, use_lightx2v=False,
         description="Strong motion — positions, oral, action sequences",
     ),
     "extreme": MotionParams(
         tier="extreme",
-        total_steps=6, split_steps=3, cfg=3.5,
+        total_steps=30, split_steps=15, cfg=7.0,
         content_lora_strength=1.0, use_lightx2v=False,
         description="Maximum motion — fights, explosions, fast action",
     ),

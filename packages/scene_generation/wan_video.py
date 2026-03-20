@@ -70,6 +70,9 @@ WAN22_MODELS = {
 WAN22_14B_MODELS = {
     "unet_high": "Wan2.2-I2V-A14B-HighNoise-Q4_K_M.gguf",
     "unet_low": "Wan2.2-I2V-A14B-LowNoise-Q4_K_M.gguf",
+    # FP8 safetensors variants — required for LoRA patching (GGUF ignores LoRAs)
+    "unet_high_fp8": "wan22/wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors",
+    "unet_low_fp8": "wan22/wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors",
     "text_encoder": "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
     "clip_vision": "clip_vision_h.safetensors",
     "vae": "wan_2.1_vae.safetensors",  # 16-channel! Same as Wan 2.1
@@ -79,13 +82,25 @@ WAN22_14B_MODELS = {
     "walking_lora": "kxsr_walking_anim_v1-5.safetensors",
 }
 
+# DaSiWa — dual high/low noise models for WAN 2.2 14B I2V
+# v9 FP8 (14GB each on disk) OOMs on 16GB AMD RX 9070 XT — both UNETs + text encoder > 16GB
+# v8 Q4 GGUF (~5GB each in VRAM) fits with room for text encoder + VAE + CLIP
+# TODO: Upgrade to BoundBite v10 when Early Access expires on CivitAI
+# TODO: Switch back to v9 FP8 if a >16GB GPU becomes available
+DASIWA_MODELS = {
+    "unet_high": "DaSiWa_TastySin_v8_Q4_High.gguf",
+    "unet_low": "DaSiWa_TastySin_v8_Q4_Low.gguf",
+    "format": "gguf",
+}
 
-def _submit_comfyui_workflow(workflow: dict) -> str:
+
+def _submit_comfyui_workflow(workflow: dict, comfyui_url: str | None = None) -> str:
     """Submit a workflow to ComfyUI and return the prompt_id."""
     import urllib.request
+    url = comfyui_url or COMFYUI_URL
     payload = json.dumps({"prompt": workflow}).encode()
     req = urllib.request.Request(
-        f"{COMFYUI_URL}/prompt",
+        f"{url}/prompt",
         data=payload,
         headers={"Content-Type": "application/json"},
     )
@@ -1239,17 +1254,17 @@ def build_dasiwa_i2v_workflow(
     content_lora_strength: float = 0.6,
     skip_junk_frames: int = 6,
 ) -> tuple[dict, str]:
-    """Build a DaSiWa TastySin v8 I2V workflow.
+    """Build a DaSiWa SynthSeduction v9 I2V workflow.
 
     Same dual-model architecture as vanilla Wan 2.2 14B but with pre-baked
-    lightx2v distillation — no speed LoRA needed. Uses lower LoRA strengths
+    distillation — no speed LoRA needed. Uses lower LoRA strengths
     (0.3-0.6) since the merge already bakes in quality improvements.
 
     Key differences from build_wan22_14b_i2v_workflow:
     - No lightx2v LoRA (distillation is baked in)
-    - No DR34ML4Y style LoRA (TastySin has its own style baked in)
     - Lower LoRA strengths recommended (0.3-0.6 vs 0.8-1.0)
     - CFG=1 always, 4 steps always
+    - Better prompt adherence, motion stability, anime consistency (v9)
     - Optional junk frame stripping (first N frames are often garbage)
     """
     import random as _random
@@ -1259,19 +1274,34 @@ def build_dasiwa_i2v_workflow(
     workflow = {}
     nid = 1
 
-    # --- Load dual DaSiWa models ---
+    # --- Load dual models ---
+    # When content LoRAs are requested, use WAN 2.2 14B FP8 (safetensors)
+    # because GGUF models silently ignore LoRA patching.
+    _has_loras = bool(content_lora_high or content_lora_low or motion_lora)
+    if _has_loras and WAN22_14B_MODELS.get("unet_high_fp8"):
+        _loader_class = "UNETLoader"
+        _loader_inputs_high = {"unet_name": WAN22_14B_MODELS["unet_high_fp8"], "weight_dtype": "fp8_e4m3fn"}
+        _loader_inputs_low = {"unet_name": WAN22_14B_MODELS["unet_low_fp8"], "weight_dtype": "fp8_e4m3fn"}
+        logger.info("DaSiWa: switched to WAN 2.2 14B FP8 for LoRA compatibility")
+    else:
+        _loader_class = "UNETLoader" if DASIWA_MODELS.get("format") == "safetensors" else "UnetLoaderGGUF"
+        _loader_inputs_high = {"unet_name": DASIWA_MODELS["unet_high"]}
+        _loader_inputs_low = {"unet_name": DASIWA_MODELS["unet_low"]}
+        if _loader_class == "UNETLoader":
+            _loader_inputs_high["weight_dtype"] = "fp8_e4m3fn"
+            _loader_inputs_low["weight_dtype"] = "fp8_e4m3fn"
 
     high_unet_node = str(nid)
     workflow[high_unet_node] = {
-        "class_type": "UnetLoaderGGUF",
-        "inputs": {"unet_name": DASIWA_MODELS["unet_high"]},
+        "class_type": _loader_class,
+        "inputs": _loader_inputs_high,
     }
     nid += 1
 
     low_unet_node = str(nid)
     workflow[low_unet_node] = {
-        "class_type": "UnetLoaderGGUF",
-        "inputs": {"unet_name": DASIWA_MODELS["unet_low"]},
+        "class_type": _loader_class,
+        "inputs": _loader_inputs_low,
     }
     nid += 1
 
@@ -1556,16 +1586,18 @@ def build_dasiwa_i2v_workflow(
 
 
 def check_dasiwa_ready() -> tuple[bool, str]:
-    """Check if DaSiWa TastySin v8 models are available."""
+    """Check if DaSiWa SynthSeduction v9 models are available."""
     from pathlib import Path
     base = Path("/opt/ComfyUI/models/unet")
     missing = []
     for key, fname in DASIWA_MODELS.items():
+        if key == "format":
+            continue
         if not (base / fname).exists():
             missing.append(f"{key}: {fname}")
     if missing:
         return False, f"Missing DaSiWa models: {', '.join(missing)}"
-    return True, "DaSiWa TastySin v8 ready"
+    return True, "DaSiWa SynthSeduction v9 ready"
 
 
 

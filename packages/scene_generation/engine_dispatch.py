@@ -14,7 +14,7 @@ import time
 from abc import ABC, abstractmethod
 from pathlib import Path
 
-from packages.core.config import COMFYUI_OUTPUT_DIR, COMFYUI_INPUT_DIR
+from packages.core.config import COMFYUI_OUTPUT_DIR, COMFYUI_INPUT_DIR, get_comfyui_url
 
 from .lora_resolver import resolve_content_loras, gate_nsfw_lora, resolve_motion_lora
 from .shot_context import derive_scene_seed, resolve_video_dimensions, resolve_checkpoint
@@ -69,6 +69,7 @@ class EngineDispatcher(ABC):
         character_slug: str | None,
         motion_prompt: str | None,
         skip_postprocess: bool = False,
+        comfyui_url: str | None = None,
     ) -> dict | None:
         """Build workflow, submit to ComfyUI, return result dict or None on failure.
 
@@ -251,6 +252,7 @@ class ReferenceV2VDispatcher(EngineDispatcher):
         shot_use_f1, engine_sel, project_video_lora, project_rating,
         project_width, project_height, style_anchor, auto_approve,
         character_slug, motion_prompt, skip_postprocess=False,
+        comfyui_url=None,
     ):
         ref_video = shot_dict.get("source_video_path")
         if not ref_video or not Path(ref_video).exists():
@@ -312,10 +314,13 @@ class ReferenceV2VDispatcher(EngineDispatcher):
                 upscale=False, interpolate=True, color_grade=True, target_fps=30,
             )
 
+        from packages.core.dual_gpu import gpu_label_for_url
+        _gpu_label = gpu_label_for_url(comfyui_url) if comfyui_url else None
         completion = await complete_shot(
             conn, shot_id, video_path, scene_id, project_id,
             current_prompt, current_negative, gen_time,
             shot_dict, auto_approve=auto_approve,
+            gpu_source=_gpu_label,
         )
         return {
             "prompt_id": None,
@@ -342,6 +347,7 @@ class Wan22Dispatcher(EngineDispatcher):
         shot_use_f1, engine_sel, project_video_lora, project_rating,
         project_width, project_height, style_anchor, auto_approve,
         character_slug, motion_prompt, skip_postprocess=False,
+        comfyui_url=None,
     ):
         from .wan_video import build_wan22_workflow, _submit_comfyui_workflow as _submit_wan_workflow
 
@@ -369,13 +375,15 @@ class Wan22Dispatcher(EngineDispatcher):
             lora_strength=wan22_lora_str,
             ref_image=wan22_ref,
         )
-        prompt_id = _submit_wan_workflow(workflow)
+        _url = comfyui_url or get_comfyui_url("video")
+        prompt_id = _submit_wan_workflow(workflow, comfyui_url=_url)
         return {
             "prompt_id": prompt_id,
             "video_path": None,
             "gen_time": None,
             "motion_ctx": None,
             "skip_poll": False,
+            "comfyui_url": _url,
         }
 
 
@@ -397,6 +405,7 @@ class Wan22_14B_Dispatcher(EngineDispatcher):
         shot_use_f1, engine_sel, project_video_lora, project_rating,
         project_width, project_height, style_anchor, auto_approve,
         character_slug, motion_prompt, skip_postprocess=False,
+        comfyui_url=None,
     ):
         from .wan_video import build_wan22_14b_i2v_workflow, _submit_comfyui_workflow as _submit_wan_workflow
 
@@ -426,13 +435,19 @@ class Wan22_14B_Dispatcher(EngineDispatcher):
         # Content rating gate
         clh, cll = gate_nsfw_lora(clh, cll, project_rating)
 
-        # Motion LoRA
+        # Motion LoRA — skip on 3060 (no VRAM headroom)
+        from packages.core.dual_gpu import should_skip_motion_lora
+        _skip_motion = should_skip_motion_lora(comfyui_url) if comfyui_url else False
         has_any_content = bool(clh or cll)
         ml_desc = shot_dict.get("scene_description") or shot_dict.get("description") or ""
-        motion_lora, motion_str = resolve_motion_lora(
-            shot_dict, engine_sel, motion_prompt, ml_desc,
-            project_rating, has_any_content,
-        )
+        if _skip_motion:
+            motion_lora, motion_str = None, 0.0
+            logger.info(f"Shot {shot_id}: skipping motion LoRA (3060 VRAM constraint)")
+        else:
+            motion_lora, motion_str = resolve_motion_lora(
+                shot_dict, engine_sel, motion_prompt, ml_desc,
+                project_rating, has_any_content,
+            )
 
         if clh or cll:
             logger.info(
@@ -513,6 +528,7 @@ class Wan22_14B_Dispatcher(EngineDispatcher):
                 content_lora_high=clh,
                 content_lora_low=cll,
                 content_lora_strength=cl_str,
+                comfyui_url=comfyui_url,
             )
             if rf_result["video_path"]:
                 video_path = rf_result["video_path"]
@@ -528,11 +544,14 @@ class Wan22_14B_Dispatcher(EngineDispatcher):
                     f"{rf_result['segment_count']} segs, "
                     f"{rf_result['total_duration']:.1f}s"
                 )
+                from packages.core.dual_gpu import gpu_label_for_url
+                _gpu_label = gpu_label_for_url(comfyui_url) if comfyui_url else None
                 completion = await complete_shot(
                     conn, shot_id, video_path, scene_id, project_id,
                     current_prompt, current_negative, gen_time,
                     shot_dict, auto_approve=auto_approve,
                     motion_ctx=motion_ctx,
+                    gpu_source=_gpu_label,
                 )
                 return {
                     "prompt_id": None,
@@ -576,18 +595,20 @@ class Wan22_14B_Dispatcher(EngineDispatcher):
             content_lora_strength=cl_str,
         )
         # Dedup: skip if source image already in ComfyUI queue
-        existing = is_source_already_queued(image_filename) if image_filename else None
+        _url = comfyui_url or get_comfyui_url("video")
+        existing = is_source_already_queued(image_filename, comfyui_url=_url) if image_filename else None
         if existing:
             logger.warning(f"Shot {shot_id}: source {image_filename} already queued (prompt={existing}), skipping duplicate")
             return None
 
-        prompt_id = _submit_wan_workflow(workflow)
+        prompt_id = _submit_wan_workflow(workflow, comfyui_url=_url)
         return {
             "prompt_id": prompt_id,
             "video_path": None,
             "gen_time": None,
             "motion_ctx": motion_ctx,
             "skip_poll": False,
+            "comfyui_url": _url,
         }
 
 
@@ -609,6 +630,7 @@ class DaSiWaDispatcher(EngineDispatcher):
         shot_use_f1, engine_sel, project_video_lora, project_rating,
         project_width, project_height, style_anchor, auto_approve,
         character_slug, motion_prompt, skip_postprocess=False,
+        comfyui_url=None,
     ):
         from .wan_video import (
             build_dasiwa_i2v_workflow, build_wan22_14b_i2v_workflow,
@@ -643,13 +665,15 @@ class DaSiWaDispatcher(EngineDispatcher):
                 negative_text=current_negative, output_prefix=file_prefix,
                 use_lightx2v=False,
             )
-            prompt_id = _submit_wan_workflow(workflow)
+            _url = comfyui_url or get_comfyui_url("video")
+            prompt_id = _submit_wan_workflow(workflow, comfyui_url=_url)
             return {
                 "prompt_id": prompt_id,
                 "video_path": None,
                 "gen_time": None,
                 "motion_ctx": None,
                 "skip_poll": False,
+                "comfyui_url": _url,
             }
 
         # DaSiWa is ready — build the workflow
@@ -668,13 +692,19 @@ class DaSiWaDispatcher(EngineDispatcher):
         # Content rating gate
         dasi_clh, dasi_cll = gate_nsfw_lora(dasi_clh, dasi_cll, project_rating)
 
-        # Motion LoRA resolution
+        # Motion LoRA resolution — skip on 3060 (no VRAM headroom for motion LoRAs)
+        from packages.core.dual_gpu import should_skip_motion_lora
+        _skip_motion = should_skip_motion_lora(comfyui_url) if comfyui_url else False
         has_any_dasi_content = bool(dasi_clh or dasi_cll)
         ml_desc = shot_dict.get("scene_description") or shot_dict.get("description") or ""
-        dasi_motion_lora, dasi_motion_str = resolve_motion_lora(
-            shot_dict, engine_sel, motion_prompt, ml_desc,
-            project_rating, has_any_dasi_content,
-        )
+        if _skip_motion:
+            dasi_motion_lora, dasi_motion_str = None, 0.0
+            logger.info(f"Shot {shot_id}: skipping motion LoRA (3060 VRAM constraint)")
+        else:
+            dasi_motion_lora, dasi_motion_str = resolve_motion_lora(
+                shot_dict, engine_sel, motion_prompt, ml_desc,
+                project_rating, has_any_dasi_content,
+            )
 
         # Dynamic motion intensity — DaSiWa-specific tier mapping
         dasi_motion_tier = classify_motion_intensity(shot_dict)
@@ -742,6 +772,7 @@ class DaSiWaDispatcher(EngineDispatcher):
                 content_lora_low=dasi_cll,
                 content_lora_strength=dasi_cl_str,
                 engine="dasiwa",
+                comfyui_url=comfyui_url,
             )
             if rf_result["video_path"]:
                 video_path = rf_result["video_path"]
@@ -752,11 +783,14 @@ class DaSiWaDispatcher(EngineDispatcher):
                         scale_factor=2, target_fps=30,
                     )
                 gen_time = time.time() - attempt_start
+                from packages.core.dual_gpu import gpu_label_for_url
+                _gpu_label = gpu_label_for_url(comfyui_url) if comfyui_url else None
                 completion = await complete_shot(
                     conn, shot_id, video_path, scene_id, project_id,
                     current_prompt, current_negative, gen_time,
                     shot_dict, auto_approve=auto_approve,
                     motion_ctx=dasi_motion_ctx,
+                    gpu_source=_gpu_label,
                 )
                 return {
                     "prompt_id": None,
@@ -789,13 +823,15 @@ class DaSiWaDispatcher(EngineDispatcher):
             content_lora_low=dasi_cll,
             content_lora_strength=dasi_cl_str,
         )
-        prompt_id = _submit_wan_workflow(workflow)
+        _url = comfyui_url or get_comfyui_url("video")
+        prompt_id = _submit_wan_workflow(workflow, comfyui_url=_url)
         return {
             "prompt_id": prompt_id,
             "video_path": None,
             "gen_time": None,
             "motion_ctx": dasi_motion_ctx,
             "skip_poll": False,
+            "comfyui_url": _url,
         }
 
 
@@ -814,6 +850,7 @@ class WanT2VDispatcher(EngineDispatcher):
         shot_use_f1, engine_sel, project_video_lora, project_rating,
         project_width, project_height, style_anchor, auto_approve,
         character_slug, motion_prompt, skip_postprocess=False,
+        comfyui_url=None,
     ):
         from .wan_video import build_wan_t2v_workflow, _submit_comfyui_workflow as _submit_wan_workflow
 
@@ -833,13 +870,15 @@ class WanT2VDispatcher(EngineDispatcher):
             output_prefix=file_prefix,
         )
         logger.info(f"Shot {shot_id}: Wan seed={shot_seed} cfg={wan_cfg} frames={num_frames}")
-        prompt_id = _submit_wan_workflow(workflow)
+        _url = comfyui_url or get_comfyui_url("video")
+        prompt_id = _submit_wan_workflow(workflow, comfyui_url=_url)
         return {
             "prompt_id": prompt_id,
             "video_path": None,
             "gen_time": None,
             "motion_ctx": None,
             "skip_poll": False,
+            "comfyui_url": _url,
         }
 
 
@@ -858,6 +897,7 @@ class LTXDispatcher(EngineDispatcher):
         shot_use_f1, engine_sel, project_video_lora, project_rating,
         project_width, project_height, style_anchor, auto_approve,
         character_slug, motion_prompt, skip_postprocess=False,
+        comfyui_url=None,
     ):
         from .ltx_video import build_ltx_workflow, _submit_comfyui_workflow as _submit_ltx_workflow
 
@@ -874,13 +914,15 @@ class LTXDispatcher(EngineDispatcher):
             lora_name=ltx_lora,
             lora_strength=ltx_lora_str,
         )
-        prompt_id = _submit_ltx_workflow(workflow)
+        _url = comfyui_url or get_comfyui_url("video")
+        prompt_id = _submit_ltx_workflow(workflow, comfyui_url=_url)
         return {
             "prompt_id": prompt_id,
             "video_path": None,
             "gen_time": None,
             "motion_ctx": None,
             "skip_poll": False,
+            "comfyui_url": _url,
         }
 
 
@@ -899,6 +941,7 @@ class LTXLongDispatcher(EngineDispatcher):
         shot_use_f1, engine_sel, project_video_lora, project_rating,
         project_width, project_height, style_anchor, auto_approve,
         character_slug, motion_prompt, skip_postprocess=False,
+        comfyui_url=None,
     ):
         from .ltx_video import build_ltxv_looping_workflow, _submit_comfyui_workflow as _submit_ltx_workflow
 
@@ -934,13 +977,15 @@ class LTXLongDispatcher(EngineDispatcher):
             cond_image_strength=ltx_cond_img,
             adain_factor=ltx_adain,
         )
-        prompt_id = _submit_ltx_workflow(workflow)
+        _url = comfyui_url or get_comfyui_url("video")
+        prompt_id = _submit_ltx_workflow(workflow, comfyui_url=_url)
         return {
             "prompt_id": prompt_id,
             "video_path": None,
             "gen_time": None,
             "motion_ctx": None,
             "skip_poll": False,
+            "comfyui_url": _url,
         }
 
 
@@ -959,12 +1004,14 @@ class FramePackDispatcher(EngineDispatcher):
         shot_use_f1, engine_sel, project_video_lora, project_rating,
         project_width, project_height, style_anchor, auto_approve,
         character_slug, motion_prompt, skip_postprocess=False,
+        comfyui_url=None,
     ):
         from .framepack import build_framepack_workflow, _submit_comfyui_workflow
         from .scene_comfyui import is_source_already_queued
 
         # Dedup: skip if source image already in ComfyUI queue
-        existing = is_source_already_queued(image_filename) if image_filename else None
+        _url = comfyui_url or get_comfyui_url("video")
+        existing = is_source_already_queued(image_filename, comfyui_url=_url) if image_filename else None
         if existing:
             logger.warning(f"Shot {shot_id}: source {image_filename} already queued (prompt={existing}), skipping duplicate")
             return None
@@ -977,13 +1024,14 @@ class FramePackDispatcher(EngineDispatcher):
             gpu_memory_preservation=6.0, guidance_scale=shot_guidance,
             output_prefix=file_prefix,
         )
-        prompt_id = _submit_comfyui_workflow(workflow_data["prompt"])
+        prompt_id = _submit_comfyui_workflow(workflow_data["prompt"], comfyui_url=_url)
         return {
             "prompt_id": prompt_id,
             "video_path": None,
             "gen_time": None,
             "motion_ctx": None,
             "skip_poll": False,
+            "comfyui_url": _url,
         }
 
 

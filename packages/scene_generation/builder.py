@@ -17,7 +17,7 @@ import os
 import shutil
 from pathlib import Path
 
-from packages.core.config import BASE_PATH, COMFYUI_URL, COMFYUI_OUTPUT_DIR, COMFYUI_INPUT_DIR
+from packages.core.config import BASE_PATH, COMFYUI_URL, COMFYUI_OUTPUT_DIR, COMFYUI_INPUT_DIR, get_comfyui_url
 from packages.core.db import connect_direct
 from packages.core.audit import log_decision
 from packages.core.events import event_bus, SHOT_GENERATED
@@ -418,6 +418,7 @@ async def roll_forward_wan_shot(
     content_lora_low: str | None = None,
     content_lora_strength: float = 0.85,
     engine: str = "wan22_14b",
+    comfyui_url: str | None = None,
 ) -> dict:
     """Generate a long video by chaining multiple I2V segments.
 
@@ -494,8 +495,9 @@ async def roll_forward_wan_shot(
             f"source={current_source} seed={seg_seed}"
         )
 
-        comfyui_prompt_id = _submit_wan_workflow(workflow)
-        result = await poll_comfyui_completion(comfyui_prompt_id)
+        _video_url = comfyui_url or get_comfyui_url("video")
+        comfyui_prompt_id = _submit_wan_workflow(workflow, comfyui_url=_video_url)
+        result = await poll_comfyui_completion(comfyui_prompt_id, comfyui_url=_video_url)
 
         if result["status"] != "completed" or not result["output_files"]:
             logger.error(
@@ -547,6 +549,103 @@ async def roll_forward_wan_shot(
         "segment_count": len(segment_paths),
         "total_duration": dur,
     }
+
+
+async def _flush_inflight_jobs(
+    inflight: list[dict],
+    conn,
+    scene_id: str,
+    project_id: int,
+    auto_approve: bool,
+    skip_postprocess: bool,
+) -> list[dict | None]:
+    """Poll all inflight GPU jobs concurrently, then complete each shot.
+
+    Used by the dual-GPU pipeline to overlap polling across GPUs.
+    For single-GPU mode, called with a single job (same behavior as before).
+
+    Returns list of completion dicts (or None for failed shots).
+    """
+    import time as _time
+
+    if not inflight:
+        return []
+
+    # Poll all jobs concurrently
+    poll_coros = [
+        poll_comfyui_completion(job["prompt_id"], comfyui_url=job["comfyui_url"])
+        for job in inflight
+    ]
+    poll_results = await asyncio.gather(*poll_coros, return_exceptions=True)
+
+    completions = []
+    for job, result in zip(inflight, poll_results):
+        shot_id = job["shot_id"]
+        gen_time = _time.time() - job["attempt_start"]
+
+        if isinstance(result, Exception):
+            logger.error(f"Shot {shot_id}: poll exception: {result}")
+            await conn.execute(
+                "UPDATE shots SET status = 'failed', error_message = $2 WHERE id = $1",
+                shot_id, f"Poll error: {str(result)[:400]}",
+            )
+            completions.append(None)
+            continue
+
+        if result["status"] != "completed" or not result["output_files"]:
+            await conn.execute(
+                "UPDATE shots SET status = 'failed', error_message = $2 WHERE id = $1",
+                shot_id, f"ComfyUI {result['status']}",
+            )
+            completions.append(None)
+            continue
+
+        video_filename = result["output_files"][0]
+        video_path = str(COMFYUI_OUTPUT_DIR / video_filename)
+
+        # Post-process
+        if not skip_postprocess:
+            video_path = await postprocess_video(
+                video_path, job["shot_engine"], job["style_anchor"],
+                interpolate=True, color_grade=True, scale_factor=2, target_fps=30,
+            )
+
+        # Record source image effectiveness
+        source_path = job["shot_dict"].get("source_image_path")
+        if source_path:
+            parts = source_path.replace("\\", "/").split("/")
+            if len(parts) >= 3 and parts[-2] == "images":
+                eff_slug = parts[0] if len(parts) == 3 else parts[-3]
+                try:
+                    await conn.execute("""
+                        INSERT INTO source_image_effectiveness
+                            (character_slug, image_name, shot_id, video_quality_score, video_engine)
+                        VALUES ($1, $2, $3, NULL, $4)
+                    """, eff_slug, parts[-1], shot_id, job["shot_engine"])
+                except Exception:
+                    pass
+
+        # Complete the shot
+        _motion_ctx = job["dispatch_result"].get("motion_ctx")
+        _completion = await complete_shot(
+            conn, shot_id, video_path, scene_id, project_id,
+            job["current_prompt"], job["current_negative"], gen_time,
+            job["shot_dict"], auto_approve=auto_approve,
+            motion_ctx=_motion_ctx,
+            gpu_source=job.get("gpu_label"),
+        )
+
+        completions.append({
+            "video_path": video_path,
+            "last_frame": _completion["last_frame"],
+            "character_slug": job["character_slug"],
+            "gpu_label": job.get("gpu_label"),
+        })
+
+        if job.get("gpu_label"):
+            logger.info(f"Shot {shot_id}: completed on {job['gpu_label']} in {gen_time:.0f}s")
+
+    return completions
 
 
 async def _generate_scene_impl(scene_id: str, auto_approve: bool = False, skip_postprocess: bool = False):
@@ -721,6 +820,8 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False, skip_p
         completed_count = 0
         prev_last_frame = None
         prev_character = None
+        _inflight_jobs = []  # Pipeline queue for concurrent GPU polling
+        _dispatch_count = 0  # Separate counter for GPU round-robin (not reset by flush)
 
         for shot in shots:
             shot_id = shot["id"]
@@ -834,7 +935,8 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False, skip_p
                 # Helper: look up character by short or full slug
                 async def _find_character(slug):
                     return await conn.fetchrow(
-                        "SELECT name, design_prompt FROM characters "
+                        "SELECT name, design_prompt, lora_trigger, negative_prompt, "
+                        "lora_strength, checkpoint_override FROM characters "
                         "WHERE project_id = $2 AND ("
                         "  REGEXP_REPLACE(LOWER(REPLACE(name, ' ', '_')), '[^a-z0-9_-]', '', 'g') = $1 "
                         "  OR REGEXP_REPLACE(LOWER(REPLACE(name, ' ', '_')), '[^a-z0-9_-]', '', 'g') LIKE $1 || '_%'"
@@ -912,9 +1014,10 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False, skip_p
                         char_row = await _find_character(character_slug)
                         if char_row and char_row["design_prompt"]:
                             appearance = _condense_for_video(char_row["design_prompt"], genre_profile, shot_engine)
-                            # Build FramePack prompt with same structure as Wan:
-                            # style anchor → scene context → character → motion
                             fp_parts = []
+                            # LoRA trigger first for maximum activation weight
+                            if char_row.get("lora_trigger"):
+                                fp_parts.append(char_row["lora_trigger"])
                             if style_anchor:
                                 fp_parts.append(style_anchor)
                             if scene_location:
@@ -939,13 +1042,19 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False, skip_p
                     # Character → action → scene context → style (5B handles longer prompts well).
                     try:
                         char_descriptions = []
+                        _lora_triggers = []
                         for cslug in chars:
                             char_row = await _find_character(cslug)
                             if char_row and char_row["design_prompt"]:
                                 cname = char_row["name"]
                                 appearance = _condense_for_video(char_row["design_prompt"], genre_profile, shot_engine)
                                 char_descriptions.append(f"{cname} ({appearance})")
+                                if char_row.get("lora_trigger"):
+                                    _lora_triggers.append(char_row["lora_trigger"])
                         prompt_parts = []
+                        # 0. LoRA triggers first for activation
+                        if _lora_triggers:
+                            prompt_parts.append(", ".join(_lora_triggers))
                         # 1. Character descriptions (5B has enough attention for full descriptions)
                         if char_descriptions:
                             prompt_parts.append("; ".join(char_descriptions))
@@ -975,14 +1084,20 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False, skip_p
                     # Wan 1.3B has limited attention — explicit terms must be near the start.
                     try:
                         char_descriptions = []
+                        _lora_triggers = []
                         for cslug in chars:
                             char_row = await _find_character(cslug)
                             if char_row and char_row["design_prompt"]:
                                 cname = char_row["name"]
                                 appearance = _condense_for_video(char_row["design_prompt"], genre_profile, shot_engine)
                                 char_descriptions.append(f"{cname} ({appearance})")
-                        # Build structured prompt: ACTION → characters → scene
+                                if char_row.get("lora_trigger"):
+                                    _lora_triggers.append(char_row["lora_trigger"])
+                        # Build structured prompt: triggers → ACTION → characters → scene
                         prompt_parts = []
+                        # 0. LoRA triggers (short, early = high attention weight)
+                        if _lora_triggers:
+                            prompt_parts.append(", ".join(_lora_triggers))
                         # 1. Action/motion FIRST — this is what the shot is about
                         if motion_prompt and motion_prompt.lower() != "static":
                             prompt_parts.append(motion_prompt)
@@ -1055,6 +1170,16 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False, skip_p
                 if _shot_nsm and character_slug and character_slug in _shot_nsm:
                     _nsm_neg = _shot_nsm[character_slug].get("negative_additions", "")
                 current_negative = _build_video_negative(style_anchor, genre_profile, _nsm_neg)
+
+                # Inject character-level negative prompts (e.g., "human skin" for symbiote)
+                if character_slug:
+                    try:
+                        _neg_row = await _find_character(character_slug)
+                        if _neg_row and _neg_row.get("negative_prompt"):
+                            current_negative = f"{current_negative}, {_neg_row['negative_prompt']}"
+                            logger.info(f"Shot {shot_id}: added character negative: {_neg_row['negative_prompt'][:60]}")
+                    except Exception:
+                        pass
                 # Engine-tuned defaults from video_models.yaml config
                 _eng_cfg = get_engine_defaults(shot_engine) if shot_engine else {}
                 _default_steps = _eng_cfg.get("steps", 20) if _eng_cfg else (20 if shot_engine in ("wan", "wan22") else 25)
@@ -1254,6 +1379,7 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False, skip_p
 
                 # Dispatch to video engine via engine_dispatch module
                 from .engine_dispatch import get_dispatcher
+                from packages.core.dual_gpu import is_dual_video_enabled, get_video_targets, gpu_label_for_url
                 _dispatcher = get_dispatcher(shot_engine)
                 if not _dispatcher:
                     logger.error(f"Shot {shot_id}: no dispatcher for engine '{shot_engine}'")
@@ -1262,6 +1388,15 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False, skip_p
                         shot_id, f"No dispatcher for engine '{shot_engine}'",
                     )
                     continue
+
+                # Dual-GPU: assign this shot to a specific GPU via round-robin
+                _dual_mode = is_dual_video_enabled()
+                _video_targets = get_video_targets() if _dual_mode else [get_comfyui_url("video")]
+                _shot_gpu_idx = _dispatch_count % len(_video_targets)
+                _shot_comfyui_url = _video_targets[_shot_gpu_idx]
+                _shot_gpu_label = gpu_label_for_url(_shot_comfyui_url) if _dual_mode else None
+                if _dual_mode:
+                    logger.info(f"Shot {shot_id}: assigned to GPU {_shot_gpu_label} ({_shot_comfyui_url})")
 
                 _project_rating = (scene_row.get("content_rating") if scene_row else None) or "R"
                 _dispatch_result = await _dispatcher.build_and_submit(
@@ -1290,6 +1425,7 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False, skip_p
                     character_slug=character_slug,
                     motion_prompt=motion_prompt,
                     skip_postprocess=skip_postprocess,
+                    comfyui_url=_shot_comfyui_url,
                 )
 
                 if _dispatch_result is None:
@@ -1309,102 +1445,51 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False, skip_p
 
                 # Standard path: poll ComfyUI, postprocess, complete
                 comfyui_prompt_id = _dispatch_result["prompt_id"]
+                _poll_url = _dispatch_result.get("comfyui_url") or _shot_comfyui_url
 
                 await conn.execute(
                     "UPDATE shots SET comfyui_prompt_id = $2, first_frame_path = $3 WHERE id = $1",
                     shot_id, comfyui_prompt_id, first_frame_path,
                 )
 
-                result = await poll_comfyui_completion(comfyui_prompt_id)
-                gen_time = _time_inner.time() - attempt_start
+                # Dual-GPU pipeline: add to inflight queue, flush when full
+                # This enables concurrent polling across GPUs
+                _inflight_jobs.append({
+                    "shot_id": shot_id,
+                    "prompt_id": comfyui_prompt_id,
+                    "comfyui_url": _poll_url,
+                    "attempt_start": attempt_start,
+                    "shot_engine": shot_engine,
+                    "shot_dict": shot_dict,
+                    "current_prompt": current_prompt,
+                    "current_negative": current_negative,
+                    "style_anchor": style_anchor,
+                    "character_slug": character_slug,
+                    "dispatch_result": _dispatch_result,
+                    "shot_seed": shot_seed,
+                    "shot_guidance": shot_guidance,
+                    "file_prefix": _file_prefix,
+                    "shot_seconds": shot_seconds,
+                    "gpu_label": _shot_gpu_label,
+                })
 
-                if result["status"] != "completed" or not result["output_files"]:
-                    await conn.execute(
-                        "UPDATE shots SET status = 'failed', error_message = $2 WHERE id = $1",
-                        shot_id, f"ComfyUI {result['status']}",
+                _dispatch_count += 1
+
+                # Flush inflight jobs when we hit the batch size:
+                # 2 for dual-GPU (one per GPU), 1 for single GPU (same as before)
+                _flush_size = 2 if (_dual_mode and len(_video_targets) >= 2) else 1
+                if len(_inflight_jobs) >= _flush_size:
+                    _flush_results = await _flush_inflight_jobs(
+                        _inflight_jobs, conn, scene_id, project_id,
+                        auto_approve, skip_postprocess,
                     )
-                    continue
-
-                video_filename = result["output_files"][0]
-                video_path = str(COMFYUI_OUTPUT_DIR / video_filename)
-
-                # FramePack V2V refinement — now handled by video_refinement
-                # orchestrator phase (work_video_refinement). Inline disabled.
-                if False and shot_engine in ("wan", "wan22") and video_path:
-                    try:
-                        from .framepack_refine import refine_wan_video
-                        # Auto-detect kohya-format FramePack LoRA for refinement
-                        _fp_lora = None
-                        if character_slug:
-                            for _suffix in ("_framepack_lora", "_framepack"):
-                                _lp = Path(f"/opt/ComfyUI/models/loras/{character_slug}{_suffix}.safetensors")
-                                if _lp.exists():
-                                    try:
-                                        from safetensors import safe_open
-                                        with safe_open(str(_lp), framework="pt") as _sf:
-                                            _k0 = list(_sf.keys())[0] if _sf.keys() else ""
-                                        if _k0.startswith("lora_unet_"):
-                                            _fp_lora = _lp.name
-                                        else:
-                                            logger.warning(f"Skipping incompatible LoRA {_lp.name} for refinement")
-                                    except Exception:
-                                        pass
-                                    break
-                        refined = await refine_wan_video(
-                            wan_video_path=video_path,
-                            prompt_text=current_prompt,
-                            negative_text=current_negative,
-                            denoise_strength=0.4,
-                            total_seconds=shot_seconds,
-                            steps=25,
-                            seed=shot_seed,
-                            guidance_scale=shot_guidance,
-                            lora_name=_fp_lora,
-                            output_prefix=f"{_file_prefix}_refined",
-                        )
-                        if refined:
-                            video_path = refined
-                            logger.info(f"Shot {shot_id}: FramePack V2V refinement done → {Path(refined).name}")
-                    except Exception as e:
-                        logger.warning(f"Shot {shot_id}: V2V refinement failed: {e}, using raw Wan output")
-
-                # Post-process all video outputs: interpolation + upscale + color grade
-                # Wan gets upscale (512->1024), FramePack gets interpolation + color only
-                if not skip_postprocess:
-                    video_path = await postprocess_video(
-                        video_path, shot_engine, style_anchor,
-                        interpolate=True, color_grade=True, scale_factor=2, target_fps=30,
-                    )
-                else:
-                    logger.info(f"Shot {shot_id}: skipping postprocess (raw video mode)")
-
-                # Record source image effectiveness for the feedback loop
-                source_path = shot_dict.get("source_image_path")
-                if source_path:
-                    parts = source_path.replace("\\", "/").split("/")
-                    if len(parts) >= 3 and parts[-2] == "images":
-                        eff_slug = parts[0] if len(parts) == 3 else parts[-3]
-                        try:
-                            await conn.execute("""
-                                INSERT INTO source_image_effectiveness
-                                    (character_slug, image_name, shot_id, video_quality_score, video_engine)
-                                VALUES ($1, $2, $3, NULL, $4)
-                            """, eff_slug, parts[-1], shot_id, shot_engine)
-                        except Exception:
-                            pass
-
-                # Persist generation params including motion tier from dispatcher
-                _motion_ctx = _dispatch_result.get("motion_ctx")
-                _completion = await complete_shot(
-                    conn, shot_id, video_path, scene_id, project_id,
-                    current_prompt, current_negative, gen_time,
-                    shot_dict, auto_approve=auto_approve,
-                    motion_ctx=_motion_ctx,
-                )
-                completed_count += 1
-                completed_videos.append(video_path)
-                prev_last_frame = _completion["last_frame"]
-                prev_character = character_slug
+                    for _fr in _flush_results:
+                        if _fr:
+                            completed_count += 1
+                            completed_videos.append(_fr["video_path"])
+                            prev_last_frame = _fr["last_frame"]
+                            prev_character = _fr["character_slug"]
+                    _inflight_jobs.clear()
 
             except Exception as e:
                 logger.error(f"Shot {shot_id} generation failed: {e}")
@@ -1417,6 +1502,23 @@ async def _generate_scene_impl(scene_id: str, auto_approve: bool = False, skip_p
                 "UPDATE scenes SET completed_shots = $2 WHERE id = $1",
                 scene_id, completed_count,
             )
+
+        # Flush any remaining inflight jobs (e.g. odd number of shots in dual mode)
+        if _inflight_jobs:
+            try:
+                _flush_results = await _flush_inflight_jobs(
+                    _inflight_jobs, conn, scene_id, project_id,
+                    auto_approve, skip_postprocess,
+                )
+                for _fr in _flush_results:
+                    if _fr:
+                        completed_count += 1
+                        completed_videos.append(_fr["video_path"])
+                        prev_last_frame = _fr["last_frame"]
+                        prev_character = _fr["character_slug"]
+                _inflight_jobs.clear()
+            except Exception as _flush_err:
+                logger.error(f"Final inflight flush failed: {_flush_err}")
 
         # Check if all shots are approved — only then assemble
         all_approved = False

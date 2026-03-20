@@ -33,12 +33,13 @@ LTX_MODELS = {
 }
 
 
-def _submit_comfyui_workflow(workflow: dict) -> str:
+def _submit_comfyui_workflow(workflow: dict, comfyui_url: str | None = None) -> str:
     """Submit a workflow to ComfyUI and return the prompt_id."""
     import urllib.request
+    url = comfyui_url or COMFYUI_URL
     payload = json.dumps({"prompt": workflow}).encode()
     req = urllib.request.Request(
-        f"{COMFYUI_URL}/prompt",
+        f"{url}/prompt",
         data=payload,
         headers={"Content-Type": "application/json"},
     )
