@@ -27,6 +27,7 @@ from packages.core.db import init_pool, get_pool, run_migrations
 from packages.core.logging_config import setup_logging
 from packages.core.events import event_bus
 from packages.core.gpu_router import get_system_status
+from packages.core import gpu_arbiter
 import packages.core.learning as learning  # registers EventBus handlers on import
 import packages.core.auto_correction as auto_correction  # registers EventBus handler on import
 import packages.core.replenishment as replenishment  # registers EventBus handler on import
@@ -131,6 +132,10 @@ async def startup():
     from packages.core.events import register_sfx_handlers
     register_sfx_handlers()
 
+    # Register keyframe update handler (resets shot to pending for auto video regen)
+    from packages.core.events import register_keyframe_handlers
+    register_keyframe_handlers()
+
     # Register NSM EventBus handlers
     from packages.narrative_state.hooks import register_nsm_handlers
     register_nsm_handlers()
@@ -151,7 +156,10 @@ async def startup():
     from packages.interactive.session_store import store as interactive_store
     interactive_store.start_cleanup()
 
-    logger.info("Tower Anime Studio v3.5 started — 10 packages + graph + orchestrator + NSM + interactive mounted")
+    # Initialize GPU Arbiter — pins embed model, sets up VRAM coordination
+    await gpu_arbiter.initialize()
+
+    logger.info("Tower Anime Studio v3.5 started — 10 packages + graph + orchestrator + NSM + interactive + GPU arbiter mounted")
 
 
 # ── System Endpoints ─────────────────────────────────────────────────────
@@ -178,7 +186,94 @@ async def db_health():
 @app.get("/api/system/gpu/status")
 async def gpu_status():
     """Full GPU dashboard — both GPUs + Ollama + ComfyUI."""
-    return get_system_status()
+    status = get_system_status()
+    status["arbiter"] = gpu_arbiter.get_arbiter_status()
+    return status
+
+
+@app.get("/api/system/gpu/dual-video")
+async def dual_video_status():
+    """Dual-GPU video generation status."""
+    from packages.core.dual_gpu import (
+        is_dual_video_enabled, get_3060_mode, get_video_targets,
+    )
+    return {
+        "enabled": is_dual_video_enabled(),
+        "3060_mode": get_3060_mode().value,
+        "video_targets": get_video_targets(),
+    }
+
+
+@app.post("/api/system/gpu/test-dual-video")
+async def test_dual_video():
+    """Test swap 3060 to video mode and back. Does NOT submit any workflows."""
+    from packages.core.dual_gpu import (
+        is_dual_video_enabled, swap_3060_to_video, swap_3060_to_keyframe,
+        get_3060_mode, _get_nvidia_free_mb,
+    )
+    if not is_dual_video_enabled():
+        return {"error": "DUAL_VIDEO_MODE not enabled (set env DUAL_VIDEO_MODE=1)"}
+
+    free_before = _get_nvidia_free_mb()
+    swap_ok = await swap_3060_to_video()
+    free_after = _get_nvidia_free_mb()
+    mode_during = get_3060_mode().value
+
+    await swap_3060_to_keyframe()
+    mode_after = get_3060_mode().value
+
+    return {
+        "swap_to_video_ok": swap_ok,
+        "vram_free_before_mb": free_before,
+        "vram_free_after_mb": free_after,
+        "mode_during_test": mode_during,
+        "mode_after_restore": mode_after,
+    }
+
+
+@app.get("/api/system/gpu/arbiter")
+async def arbiter_status():
+    """GPU Arbiter status — model lifecycle, claims, VRAM budget."""
+    await gpu_arbiter.refresh_state()
+    return gpu_arbiter.get_arbiter_status()
+
+
+@app.post("/api/system/gpu/arbiter/claim")
+async def arbiter_claim(body: dict):
+    """Claim AMD GPU for exclusive work. Body: {type, caller, duration_s}."""
+    try:
+        claim_type = gpu_arbiter.ClaimType(body["type"])
+    except (KeyError, ValueError):
+        raise HTTPException(400, f"Invalid claim type. Use: {[c.value for c in gpu_arbiter.ClaimType]}")
+    granted, result = await gpu_arbiter.claim_gpu(
+        claim_type=claim_type,
+        caller=body.get("caller", "unknown"),
+        estimated_duration_s=body.get("duration_s", 300),
+        model_needed=body.get("model"),
+    )
+    return {"granted": granted, "claim_id": result if granted else None, "reason": result}
+
+
+@app.post("/api/system/gpu/arbiter/release")
+async def arbiter_release(body: dict):
+    """Release a GPU claim. Body: {claim_id}."""
+    claim_id = body.get("claim_id", "")
+    released = await gpu_arbiter.release_gpu(claim_id)
+    return {"released": released, "claim_id": claim_id}
+
+
+@app.post("/api/system/gpu/arbiter/warm-vision")
+async def arbiter_warm_vision():
+    """Pre-warm the vision model (gemma3:12b) for upcoming QC work."""
+    success = await gpu_arbiter.warm_vision_model()
+    return {"success": success, "model": gpu_arbiter.VISION_MODEL, "warm": success}
+
+
+@app.post("/api/system/gpu/arbiter/release-vision")
+async def arbiter_release_vision():
+    """Unload vision model to free VRAM for ComfyUI-ROCm."""
+    success = await gpu_arbiter.release_vision_model()
+    return {"success": success, "model": gpu_arbiter.VISION_MODEL, "unloaded": success}
 
 
 @app.get("/api/system/events/stats")
@@ -377,4 +472,4 @@ async def get_character_readiness(project_name: str = None):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8401)
+    uvicorn.run(app, host="127.0.0.1", port=8401)

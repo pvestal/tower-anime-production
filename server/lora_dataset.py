@@ -45,7 +45,9 @@ class LoRADataset(Dataset):
         self.image_paths = []
         self.captions = []
 
-        for img_path in sorted(self.images_dir.glob("*.png")):
+        for img_path in sorted(
+            [p for ext in ("*.png", "*.jpg", "*.jpeg") for p in self.images_dir.glob(ext)]
+        ):
             status = approval_status.get(img_path.name, "pending")
             if status != "approved":
                 continue
