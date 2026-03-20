@@ -134,8 +134,18 @@ async def _run_vision_qc(
                     cfg=shot_dict.get("guidance_scale"),
                     steps=shot_dict.get("steps"),
                 )
+                # Invalidate adaptive cache so next generation picks up new data
+                from .motion_intensity import invalidate_adaptive_cache
+                invalidate_adaptive_cache()
             except Exception as _mp_err:
                 logger.debug(f"Shot {shot_id}: motion pattern record failed: {_mp_err}")
+
+        # Trigger LoRA effectiveness refresh so learned params update promptly
+        try:
+            from .lora_effectiveness import refresh_effectiveness
+            await refresh_effectiveness()
+        except Exception as _eff_err:
+            logger.debug(f"Shot {shot_id}: effectiveness refresh failed: {_eff_err}")
 
         # All shots go to review — no auto-approve
         review_status = "pending_review"

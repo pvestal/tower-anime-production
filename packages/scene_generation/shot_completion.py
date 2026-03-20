@@ -75,6 +75,7 @@ async def complete_shot(
     shot_dict: dict,
     auto_approve: bool = False,
     motion_ctx: dict | None = None,
+    gpu_source: str | None = None,
 ) -> dict:
     """Handle shot completion: extract last frame, QC, update DB, emit event, save continuity.
 
@@ -91,6 +92,7 @@ async def complete_shot(
         auto_approve: If True, skip vision QC and auto-approve.
         motion_ctx: Optional dict with motion tier params:
             {tier, cfg, steps, split, lightx2v, clh, cll}
+        gpu_source: Optional GPU label for A/B tracking ("nvidia_q4" or "amd_q4").
 
     Returns:
         dict with keys: video_path, last_frame, review_status, generation_time
@@ -116,25 +118,32 @@ async def complete_shot(
 
     # 4. Update DB — build the UPDATE dynamically based on whether we have motion context
     if motion_ctx and any(v is not None for v in motion_ctx.values()):
-        await conn.execute("""
+        _gpu_src_clause = ", gpu_source = $13" if gpu_source else ""
+        _gpu_src_args = [gpu_source] if gpu_source else []
+        await conn.execute(f"""
             UPDATE shots SET status = 'completed', output_video_path = $2,
                    last_frame_path = $3, generation_time_seconds = $4,
                    review_status = $5,
                    motion_tier = $6, guidance_scale = $7, steps = $8,
                    gen_split_steps = $9, gen_lightx2v = $10,
                    content_lora_high = $11, content_lora_low = $12
+                   {_gpu_src_clause}
             WHERE id = $1
         """, shot_id, video_path, last_frame, generation_time, review_status,
             motion_ctx.get("tier"), motion_ctx.get("cfg"), motion_ctx.get("steps"),
             motion_ctx.get("split"), motion_ctx.get("lightx2v"),
-            motion_ctx.get("clh"), motion_ctx.get("cll"))
+            motion_ctx.get("clh"), motion_ctx.get("cll"), *_gpu_src_args)
     else:
-        await conn.execute("""
+        _gpu_src_clause = ", gpu_source = $6" if gpu_source else ""
+        _gpu_src_args = [gpu_source] if gpu_source else []
+        await conn.execute(f"""
             UPDATE shots SET status = 'completed', output_video_path = $2,
                    last_frame_path = $3, generation_time_seconds = $4,
                    review_status = $5
+                   {_gpu_src_clause}
             WHERE id = $1
-        """, shot_id, video_path, last_frame, generation_time, review_status)
+        """, shot_id, video_path, last_frame, generation_time, review_status,
+            *_gpu_src_args)
 
     # 5. Save continuity frame for cross-scene reuse
     scene_number = shot_dict.get("scene_number")
@@ -179,6 +188,7 @@ async def complete_shot(
         "auto_approve": auto_approve,
         "motion_tier": motion_ctx.get("tier") if motion_ctx else None,
         "lora_name": shot_dict.get("lora_name"),
+        "gpu_source": gpu_source,
     })
 
     logger.info(f"Shot {shot_id}: generated in {generation_time:.0f}s → {review_status}")

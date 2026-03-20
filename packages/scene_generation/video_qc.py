@@ -17,8 +17,9 @@ import logging
 import random
 import time
 from pathlib import Path
+from shutil import copy2
 
-from packages.core.config import COMFYUI_OUTPUT_DIR
+from packages.core.config import BASE_PATH, COMFYUI_OUTPUT_DIR
 from packages.core.audit import log_decision
 
 # Re-export vision functions so external callers can still import from video_qc
@@ -136,6 +137,151 @@ def build_prompt_fixes(
         "applied_fixes": applied_fixes,
         "unfixable_issues": [i for i in issues if not _ISSUE_FIXES.get(i, {}).get("fixable", True)],
     }
+
+
+# ── LoRA Dataset Router ─────────────────────────────────────────────
+# Continuous improvement loop: QC-approved frames auto-curate into
+# training datasets. A manifest tracks quality scores so lower-scoring
+# candidates get pruned when better ones arrive.
+#
+# Structure: datasets/{character_slug}/lora_candidates/
+#   ├── manifest.json   ← {shot_id: {quality, char_match, routed_at, frames}}
+#   ├── {shot_id}_frame0.png + .txt
+#   └── ...
+#
+# Pruning: when candidates exceed _MAX_CANDIDATES, the lowest-quality
+# entries are removed to keep the dataset tight.
+
+_LORA_ROUTE_MIN_QUALITY = 0.70
+_LORA_ROUTE_MIN_CHAR_MATCH = 6.0
+_MAX_CANDIDATES = 300  # prune beyond this to keep best-of-best
+
+
+def _load_manifest(target_dir: Path) -> dict:
+    """Load or create the candidate manifest."""
+    manifest_path = target_dir / "manifest.json"
+    if manifest_path.exists():
+        try:
+            return json.loads(manifest_path.read_text())
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {}
+
+
+def _save_manifest(target_dir: Path, manifest: dict):
+    """Write manifest atomically."""
+    manifest_path = target_dir / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2, default=str))
+
+
+def _prune_candidates(target_dir: Path, manifest: dict) -> int:
+    """Remove lowest-quality candidates when over _MAX_CANDIDATES."""
+    if len(manifest) <= _MAX_CANDIDATES:
+        return 0
+
+    # Sort by quality ascending — prune the worst
+    ranked = sorted(manifest.items(), key=lambda kv: kv[1].get("quality", 0))
+    to_remove = len(manifest) - _MAX_CANDIDATES
+    pruned = 0
+
+    for shot_id, entry in ranked[:to_remove]:
+        for frame_file in entry.get("frames", []):
+            fp = target_dir / frame_file
+            fp.unlink(missing_ok=True)
+            # Also remove caption
+            caption = fp.with_suffix(".txt")
+            caption.unlink(missing_ok=True)
+        del manifest[shot_id]
+        pruned += 1
+
+    return pruned
+
+
+async def _route_to_lora_dataset(
+    conn,
+    shot_id: int,
+    shot_data: dict,
+    video_path: str,
+    quality_score: float,
+    category_averages: dict,
+):
+    """Route QC frames into LoRA training candidate folders.
+
+    Continuous improvement: tracks quality in manifest.json, prunes
+    lowest-scoring candidates when the pool exceeds _MAX_CANDIDATES.
+    Only routes if quality and character_match meet thresholds.
+    """
+    if quality_score < _LORA_ROUTE_MIN_QUALITY:
+        return
+
+    char_match = category_averages.get("character_match")
+    if char_match is not None and char_match < _LORA_ROUTE_MIN_CHAR_MATCH:
+        logger.debug(f"Shot {shot_id}: skipping LoRA route, character_match={char_match}")
+        return
+
+    chars = shot_data.get("characters_present")
+    if not chars or not isinstance(chars, list) or len(chars) == 0:
+        return
+    character_slug = chars[0]
+
+    target_dir = BASE_PATH / character_slug / "lora_candidates"
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    # Load manifest
+    sid = str(shot_id)
+    manifest = _load_manifest(target_dir)
+
+    # Skip if already routed with equal or better quality
+    existing = manifest.get(sid)
+    if existing and existing.get("quality", 0) >= quality_score:
+        return
+
+    # Copy QC frames
+    video_p = Path(video_path)
+    base = str(video_p.with_suffix(""))
+    frame_names = []
+    for i in range(3):
+        frame_src = Path(f"{base}_qc_frame_{i}.png")
+        if not frame_src.exists():
+            continue
+        dest_name = f"{shot_id}_frame{i}.png"
+        copy2(frame_src, target_dir / dest_name)
+        frame_names.append(dest_name)
+
+        if i == 0:
+            caption = (shot_data.get("motion_prompt") or
+                       shot_data.get("generation_prompt") or "")
+            (target_dir / f"{shot_id}_frame0.txt").write_text(caption)
+
+    if not frame_names:
+        return
+
+    # Update manifest
+    manifest[sid] = {
+        "quality": quality_score,
+        "char_match": char_match,
+        "routed_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "frames": frame_names,
+        "lora_used": shot_data.get("lora_name"),
+        "engine": shot_data.get("video_engine"),
+    }
+
+    # Prune if over limit
+    pruned = _prune_candidates(target_dir, manifest)
+    _save_manifest(target_dir, manifest)
+
+    try:
+        await conn.execute(
+            "UPDATE shots SET lora_dataset_routed = TRUE WHERE id = $1",
+            shot_id,
+        )
+    except Exception:
+        pass  # Column may not exist yet — non-fatal
+
+    msg = f"Shot {shot_id}: routed {len(frame_names)} frames to {target_dir} (q={quality_score:.2f})"
+    if pruned:
+        msg += f", pruned {pruned} low-quality candidates"
+    logger.info(msg)
 
 
 async def run_qc_loop(
@@ -480,6 +626,12 @@ async def run_qc_loop(
                     review.get("category_averages", {}),
                 )
 
+                # Route high-quality frames to LoRA training datasets
+                await _route_to_lora_dataset(
+                    conn, shot_id, shot_data, video_path,
+                    shot_quality, review.get("category_averages", {}),
+                )
+
                 return {
                     "accepted": True,
                     "video_path": video_path,
@@ -559,6 +711,11 @@ async def run_qc_loop(
         )
         await _record_source_image_effectiveness(
             conn, shot_data, best_quality, {},
+        )
+
+        # Route high-quality frames to LoRA training datasets
+        await _route_to_lora_dataset(
+            conn, shot_id, shot_data, best_video, best_quality, {},
         )
 
     return {

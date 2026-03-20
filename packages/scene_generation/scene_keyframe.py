@@ -115,13 +115,21 @@ async def keyframe_blitz(conn, scene_id: str, skip_existing: bool = True,
         if shot.get("image_lora"):
             _extra_loras.append((shot["image_lora"], shot.get("image_lora_strength") or 0.7))
 
-        # Generate keyframe
+        # Generate keyframe — smart route to least-busy GPU
+        _kf_gpu_url = None
+        try:
+            from packages.core.dual_gpu import get_best_gpu_for_task
+            _kf_gpu_url = get_best_gpu_for_task("keyframe")
+        except ImportError:
+            pass
+
         try:
             kf_path = await generate_simple_keyframe(
                 conn, project_id, chars, prompt, checkpoint,
                 shot_type=shot.get("shot_type") or "medium",
                 camera_angle=shot.get("camera_angle") or "eye-level",
                 extra_loras=_extra_loras or None,
+                comfyui_url=_kf_gpu_url,
             )
             if kf_path and kf_path.exists():
                 # Update source image AND reset any queued (not yet generating) video job
@@ -138,6 +146,14 @@ async def keyframe_blitz(conn, scene_id: str, skip_existing: bool = True,
                         f"Shot {shot_id[:8]}: keyframe updated while video is generating — "
                         f"current video will use OLD keyframe. Re-queue after completion."
                     )
+
+                # Emit keyframe updated event → handler resets status to pending
+                from packages.core.events import event_bus, KEYFRAME_UPDATED
+                await event_bus.emit(KEYFRAME_UPDATED, {
+                    "shot_id": shot_id,
+                    "scene_id": str(scene_id),
+                })
+
                 generated += 1
                 shot_result = {
                     "shot_id": shot_id, "shot_number": shot["shot_number"],

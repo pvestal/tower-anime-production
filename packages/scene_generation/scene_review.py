@@ -96,6 +96,7 @@ async def get_pending_videos(
                 "lora_name": r["lora_name"],
                 "lora_strength": float(r["lora_strength"]) if r["lora_strength"] else None,
                 "sfx_audio_path": r["sfx_audio_path"],
+                "has_audio": bool(r["sfx_audio_path"] and Path(r["sfx_audio_path"]).exists()),
                 "dialogue_text": r["dialogue_text"],
                 "dialogue_character": r["dialogue_character_slug"],
                 "scene_title": r["scene_title"],

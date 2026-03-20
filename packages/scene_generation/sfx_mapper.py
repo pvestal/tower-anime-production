@@ -166,6 +166,107 @@ def match_lora_to_sfx(
     return result
 
 
+# Vocalization patterns — these should use SFX clips, NOT TTS
+_VOCALIZATION_PATTERNS = {
+    # pattern → (sfx_category, weight)
+    # Patterns are matched against cleaned text (lowered, punctuation stripped)
+    "mmm": ("moan_soft", 0.6),
+    "ahh": ("moan_soft", 0.6),
+    "oh": ("gasp", 0.5),
+    "ooh": ("moan_soft", 0.5),
+    "oh god": ("moan_intense", 0.6),
+    "oh fuck": ("moan_intense", 0.7),
+    "yes": ("moan_soft", 0.5),
+    "harder": ("moan_intense", 0.7),
+    "don't stop": ("moan_intense", 0.6),
+    "more": ("moan_intense", 0.5),
+    "please": ("whimper", 0.5),
+    "rrr": ("growl_vibration", 0.5),
+    "grr": ("growl_vibration", 0.5),
+    "ugh": ("grunt", 0.5),
+    "hyah": ("grunt", 0.6),
+    "aarrgh": ("grunt", 0.6),
+    "take it": ("grunt", 0.5),
+    "so good": ("moan_soft", 0.5),
+    "feels good": ("moan_soft", 0.6),
+    "right there": ("moan_soft", 0.6),
+    "keep going": ("moan_intense", 0.6),
+    "that's it": ("moan_soft", 0.5),
+}
+
+
+def is_vocalization(text: str) -> bool:
+    """Check if text is a short vocalization that should use SFX clips instead of TTS.
+
+    Returns True for things like "Mmm...", "Oh...", "Ahh... yes..." —
+    sounds that TTS engines butcher into robotic speech.
+    Real dialogue like "The Sultan will forget we exist!" returns False.
+    """
+    if not text:
+        return False
+    clean = text.strip().rstrip("!.").lower()
+    # Short vocalizations (under 5 words, mostly filler sounds)
+    words = clean.split()
+    if len(words) > 6:
+        return False
+    # Check against known vocalization patterns
+    for pattern in _VOCALIZATION_PATTERNS:
+        if pattern in clean:
+            return True
+    return False
+
+
+def vocalization_to_sfx(text: str, gender: str = "female") -> list[dict]:
+    """Convert a vocalization text into SFX clips from the library.
+
+    Instead of TTS saying "Mmm..." robotically, pick a real moan/gasp/whimper clip.
+    """
+    if not text:
+        return []
+    clean = text.strip().rstrip("!.").lower()
+    manifest = _load_manifest()
+    categories = manifest.get("categories", {})
+
+    matched = []
+    for pattern, (cat, weight) in _VOCALIZATION_PATTERNS.items():
+        if pattern in clean:
+            clips = categories.get(cat, [])
+            if not clips:
+                continue
+            gender_clips = [c for c in clips if c.get("gender") == gender]
+            pool = gender_clips if gender_clips else clips
+            clip = random.choice(pool)
+            clip_path = clip.get("path", "")
+            if clip_path and Path(clip_path).exists():
+                matched.append({
+                    "category": cat,
+                    "weight": weight,
+                    "gender": gender,
+                    "clip_path": clip_path,
+                    "clip_name": clip.get("name", ""),
+                    "duration": clip.get("duration", 0),
+                })
+            break  # One match is enough — don't stack
+
+    # Fallback: if nothing matched but it's still short, use a generic moan_soft
+    if not matched:
+        clips = categories.get("moan_soft", [])
+        if clips:
+            clip = random.choice(clips)
+            clip_path = clip.get("path", "")
+            if clip_path and Path(clip_path).exists():
+                matched.append({
+                    "category": "moan_soft",
+                    "weight": 0.5,
+                    "gender": gender,
+                    "clip_path": clip_path,
+                    "clip_name": clip.get("name", ""),
+                    "duration": clip.get("duration", 0),
+                })
+
+    return matched
+
+
 def match_lora_to_voice_lines(
     lora_name: Optional[str],
     character_genders: Optional[dict[str, str]] = None,
@@ -273,11 +374,9 @@ def overlay_sfx_on_video(
     sfx_clips: list[dict],
     output_path: Optional[str] = None,
 ) -> Optional[str]:
-    """Overlay SFX clips onto a video using ffmpeg.
+    """Overlay SFX clips onto a video with proper loudness normalization.
 
-    Each clip is mixed at its specified weight. The original video audio
-    (if any) is preserved as the base layer.
-
+    All clips are loudness-normalized to -16 LUFS before mixing.
     Returns the output path, or None on failure.
     """
     if not sfx_clips:
@@ -299,7 +398,6 @@ def overlay_sfx_on_video(
         logger.warning(f"Cannot determine video duration: {video_path}")
         return None
 
-    # Build ffmpeg command with audio mixing
     inputs = ["-i", video_path]
     for clip in sfx_clips:
         inputs.extend(["-i", clip["clip_path"]])
@@ -307,26 +405,28 @@ def overlay_sfx_on_video(
     n_clips = len(sfx_clips)
     filters = []
 
-    filters.append(f"[0:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,volume=1.0[base]")
-
     for i, clip in enumerate(sfx_clips):
         idx = i + 1
         w = clip["weight"]
+        # Normalize each clip to -16 LUFS, then trim to video duration
         filters.append(
-            f"[{idx}:a]aloop=loop=-1:size=2e+09,atrim=duration={vid_dur:.2f},"
+            f"[{idx}:a]loudnorm=I=-16:TP=-1.5:LRA=11,"
+            f"atrim=duration={vid_dur:.2f},"
+            f"apad=whole_dur={vid_dur:.2f},"
             f"aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,"
             f"volume={w:.2f}[sfx{i}]"
         )
 
-    mix_inputs = "[base]" + "".join(f"[sfx{i}]" for i in range(n_clips))
-    filters.append(f"{mix_inputs}amix=inputs={n_clips + 1}:duration=shortest:normalize=0[out]")
-
-    filter_complex = ";".join(filters)
+    if n_clips == 1:
+        filters.append("[sfx0]acopy[out]")
+    else:
+        mix_inputs = "".join(f"[sfx{i}]" for i in range(n_clips))
+        filters.append(f"{mix_inputs}amix=inputs={n_clips}:duration=longest:dropout_transition=0:normalize=0[out]")
 
     cmd = [
         "ffmpeg", "-y",
         *inputs,
-        "-filter_complex", filter_complex,
+        "-filter_complex", ";".join(filters),
         "-map", "0:v",
         "-map", "[out]",
         "-c:v", "copy",
@@ -341,7 +441,7 @@ def overlay_sfx_on_video(
             logger.info(f"SFX overlay complete: {output_path} ({n_clips} clips)")
             return output_path
         else:
-            logger.info("Retrying SFX overlay without base audio stream")
+            # Retry without base audio
             return _overlay_sfx_no_base_audio(video_path, sfx_clips, output_path, vid_dur)
     except subprocess.TimeoutExpired:
         logger.error(f"SFX overlay timed out for {video_path}")
@@ -357,10 +457,11 @@ def mix_voice_and_sfx(
     sfx_clips: list[dict],
     output_path: Optional[str] = None,
 ) -> Optional[str]:
-    """Mix voice dialogue WAV + foley SFX clips onto a video.
+    """Mix voice/vocalization WAV + foley SFX onto a video.
 
-    Voice is placed at full volume, SFX at their configured weights.
-    Returns output path or None on failure.
+    Voice is loudness-normalized to -14 LUFS (foreground).
+    SFX clips normalized to -16 LUFS then weighted (background).
+    Final output normalized to -16 LUFS integrated.
     """
     video_path = str(video_path)
     if not Path(video_path).exists():
@@ -380,31 +481,37 @@ def mix_voice_and_sfx(
         inputs.extend(["-i", clip["clip_path"]])
 
     filters = []
-    # Voice track (input 1) — pad/trim to video duration
+    # Voice track — normalize to -14 LUFS (louder, foreground), trim to video
     filters.append(
-        f"[1:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,"
-        f"apad=whole_dur={vid_dur:.2f},atrim=duration={vid_dur:.2f},volume=0.85[voice]"
+        f"[1:a]loudnorm=I=-14:TP=-1.5:LRA=11,"
+        f"atrim=duration={vid_dur:.2f},"
+        f"apad=whole_dur={vid_dur:.2f},"
+        f"aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo[voice]"
     )
 
     n_clips = len(sfx_clips)
     if n_clips == 0:
-        # Voice only — no SFX to mix
-        filters.append("[voice]acopy[out]")
+        # Voice only — final normalize
+        filters.append("[voice]loudnorm=I=-16:TP=-1.5:LRA=11[out]")
     else:
-        # SFX tracks
         for i, clip in enumerate(sfx_clips):
-            idx = i + 2  # offset by video + voice
+            idx = i + 2
             w = clip["weight"]
             filters.append(
-                f"[{idx}:a]aloop=loop=-1:size=2e+09,atrim=duration={vid_dur:.2f},"
+                f"[{idx}:a]loudnorm=I=-16:TP=-1.5:LRA=11,"
+                f"atrim=duration={vid_dur:.2f},"
+                f"apad=whole_dur={vid_dur:.2f},"
                 f"aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,"
                 f"volume={w:.2f}[sfx{i}]"
             )
 
-        # Mix voice + all SFX
         mix_inputs = "[voice]" + "".join(f"[sfx{i}]" for i in range(n_clips))
         total = 1 + n_clips
-        filters.append(f"{mix_inputs}amix=inputs={total}:duration=shortest:normalize=0[out]")
+        # Mix then final loudness normalize the whole thing
+        filters.append(
+            f"{mix_inputs}amix=inputs={total}:duration=longest:dropout_transition=0:normalize=0,"
+            f"loudnorm=I=-16:TP=-1.5:LRA=11[out]"
+        )
 
     cmd = [
         "ffmpeg", "-y",
@@ -445,16 +552,21 @@ def _overlay_sfx_no_base_audio(
         idx = i + 1
         w = clip["weight"]
         filters.append(
-            f"[{idx}:a]aloop=loop=-1:size=2e+09,atrim=duration={vid_dur:.2f},"
+            f"[{idx}:a]loudnorm=I=-16:TP=-1.5:LRA=11,"
+            f"atrim=duration={vid_dur:.2f},"
+            f"apad=whole_dur={vid_dur:.2f},"
             f"aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,"
             f"volume={w:.2f}[sfx{i}]"
         )
 
     if n_clips == 1:
-        filters.append("[sfx0]acopy[out]")
+        filters.append("[sfx0]loudnorm=I=-16:TP=-1.5:LRA=11[out]")
     else:
         mix_inputs = "".join(f"[sfx{i}]" for i in range(n_clips))
-        filters.append(f"{mix_inputs}amix=inputs={n_clips}:duration=shortest:normalize=0[out]")
+        filters.append(
+            f"{mix_inputs}amix=inputs={n_clips}:duration=longest:dropout_transition=0:normalize=0,"
+            f"loudnorm=I=-16:TP=-1.5:LRA=11[out]"
+        )
 
     cmd = [
         "ffmpeg", "-y",
