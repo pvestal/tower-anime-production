@@ -206,6 +206,12 @@ async def generate_batch(
     style_override: str | None = None,
     checkpoint_override: str | None = None,
     custom_poses: list[str] | None = None,
+    lora_name: str | None = None,
+    lora_strength: float | None = None,
+    pose_tag: str | None = None,
+    session_id: str | None = None,
+    source: str = "manual",
+    comfyui_url: str | None = None,
 ) -> list[dict]:
     """Generate N images using the full visual pipeline, poll, copy to dataset, register.
 
@@ -391,10 +397,19 @@ async def generate_batch(
             lora_trigger=db_info.get("lora_trigger"),
         )
 
+        # Smart GPU routing: pick best GPU if no explicit URL given
+        _batch_url = comfyui_url
+        if not _batch_url:
+            try:
+                from packages.core.dual_gpu import get_best_gpu_for_task
+                _batch_url = get_best_gpu_for_task("keyframe")
+            except ImportError:
+                _batch_url = None
+
         # Acquire semaphore slot before submitting — limits ComfyUI queue depth
         async with _comfyui_slot:
             try:
-                prompt_id = submit_comfyui_workflow(workflow)
+                prompt_id = submit_comfyui_workflow(workflow, comfyui_url=_batch_url)
             except Exception as e:
                 logger.error(f"generate_batch: ComfyUI submission failed for {character_slug}: {e}")
                 continue
@@ -417,6 +432,11 @@ async def generate_batch(
                 scheduler=norm_scheduler,
                 width=db_info.get("width"),
                 height=db_info.get("height"),
+                pose_tag=pose_tag,
+                lora_name=lora_name,
+                lora_strength=lora_strength,
+                session_id=session_id,
+                source=source,
             )
 
             if fire_events:
@@ -466,6 +486,7 @@ async def generate_batch(
             project_name=project_name,
             character_name=db_info.get("name"),
             pose=pose,
+            source=source,
         )
 
         for img_name in copied_images:
@@ -646,6 +667,7 @@ def _copy_to_dataset(
     project_name: str = None,
     character_name: str = None,
     pose: str = None,
+    source: str = "manual",
 ) -> list[str]:
     """Copy generated images from ComfyUI output to dataset directory.
 
@@ -679,7 +701,7 @@ def _copy_to_dataset(
             "pose": pose or "",
             "project_name": project_name or "",
             "character_name": character_name or "",
-            "source": "generate_batch",
+            "source": source,
             "generated_at": datetime.now(timezone.utc).isoformat(),
         }
         dest.with_suffix(".meta.json").write_text(json.dumps(meta, indent=2))

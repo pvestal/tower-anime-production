@@ -129,6 +129,16 @@ class VisionReviewRequest(BaseModel):
     include_rejected: bool = False  # re-review rejected images (scores only, no auto-reject)
 
 
+class DirectVisionReviewRequest(BaseModel):
+    """Single-image direct vision review — for interactive QC inspection."""
+    character_slug: Optional[str] = None
+    image_name: Optional[str] = None
+    image_path: Optional[str] = None  # arbitrary filesystem path
+    character_name: Optional[str] = None  # override character name for review context
+    design_prompt: Optional[str] = None  # override design prompt
+    model: Optional[str] = None  # override VISION_MODEL
+
+
 class ProjectCreate(BaseModel):
     name: str
     description: Optional[str] = None
@@ -248,7 +258,7 @@ class ShotCreateRequest(BaseModel):
     dialogue_character_slug: Optional[str] = None
     transition_type: str = "dissolve"  # dissolve, fade, fadeblack, wipeleft, slideup, etc.
     transition_duration: float = 0.3  # seconds of crossfade overlap
-    video_engine: str = "framepack"  # framepack, framepack_f1, ltx
+    video_engine: str = "dasiwa"  # dasiwa (AMD, fastest), wan22_14b, framepack (NVIDIA, slow)
     guidance_scale: Optional[float] = None  # FramePack guidance (default 6.0)
     lora_name: Optional[str] = None
     lora_strength: float = 0.85

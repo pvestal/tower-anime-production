@@ -260,6 +260,7 @@ async def _generate_and_review(character_slug: str, project_name: str = None, co
         results = await generate_batch(
             character_slug=character_slug,
             count=count,
+            source="replenishment",
         )
     except Exception as e:
         logger.error(f"Replenishment generation error for {character_slug}: {e}")

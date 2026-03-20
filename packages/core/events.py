@@ -57,6 +57,13 @@ VOICE_TRAINING_SUBMITTED = "voice.training.submitted"
 VOICE_TRAINING_COMPLETED = "voice.training.completed"
 VOICE_SYNTHESIS_COMPLETED = "voice.synthesis.completed"
 
+# Generation Loop events
+GENERATION_LOOP_STARTED = "generation_loop.started"
+GENERATION_LOOP_STOPPED = "generation_loop.stopped"
+GENERATION_LOOP_KEYFRAME = "generation_loop.keyframe"
+GENERATION_LOOP_VIDEO = "generation_loop.video"
+GENERATION_LOOP_BURST = "generation_loop.burst"
+
 # Narrative State Machine events
 STATE_INITIALIZED = "state.initialized"
 STATE_UPDATED = "state.updated"
@@ -65,6 +72,7 @@ SCENE_UPDATED = "scene.updated"
 SHOT_UPDATED = "shot.updated"
 EPISODE_UPDATED = "episode.updated"
 REGENERATION_NEEDED = "regeneration.needed"
+KEYFRAME_UPDATED = "keyframe.updated"
 
 
 class EventBus:
@@ -165,7 +173,7 @@ def register_sfx_handlers():
             from packages.scene_generation.sfx_mapper import (
                 match_lora_to_sfx, match_lora_to_voice_lines,
                 overlay_sfx_on_video, mix_voice_and_sfx,
-                detect_pairing,
+                detect_pairing, is_vocalization, vocalization_to_sfx,
             )
             from packages.core.db import connect_direct
 
@@ -206,56 +214,81 @@ def register_sfx_handlers():
                 # Detect pairing type (mm, ff, anthro, or None)
                 pairing = detect_pairing(char_genders, project_genre)
 
-                # --- Foley SFX ---
-                sfx_clips = match_lora_to_sfx(lora_name, pairing=pairing)
-
-                # --- Voice dialogue ---
+                # --- Determine audio strategy ---
                 voice_wav = None
                 voice_line = None
                 voice_slug = None
+                output = None
 
-                # Use existing dialogue_text if set, otherwise auto-generate from LoRA
+                existing_dialogue = row["dialogue_text"]
                 if existing_dialogue:
                     voice_line = existing_dialogue
                     voice_slug = row["dialogue_character_slug"]
-                else:
-                    voice_results = match_lora_to_voice_lines(
-                        lora_name, char_genders, pairing=pairing
-                    )
-                    if voice_results:
-                        # Pick the first character's line (usually female lead)
-                        pick = voice_results[0]
-                        voice_line = pick["line"]
-                        voice_slug = pick["character_slug"]
-                        # Save auto-generated dialogue to shot
-                        await conn.execute(
-                            "UPDATE shots SET dialogue_text = $2, dialogue_character_slug = $3 "
-                            "WHERE id = $1", shot_id, voice_line, voice_slug
-                        )
 
-                # Synthesize voice if we have a line
-                if voice_line and voice_slug:
+                # Determine primary gender
+                primary_gender = "female"
+                if char_genders:
+                    genders = list(char_genders.values())
+                    primary_gender = max(set(genders), key=genders.count)
+
+                # Check content rating — use sequencer for NSFW, simple overlay for SFW
+                content_rating = proj_row["content_rating"] if proj_row else "PG"
+                is_nsfw = content_rating in ("R", "NC-17", None)
+
+                if is_nsfw and lora_name:
+                    # --- NSFW: BPM-synced multi-layer sequencer ---
                     try:
-                        from packages.voice_pipeline.synthesis import synthesize_dialogue
-                        result = await synthesize_dialogue(
-                            character_slug=voice_slug,
-                            text=voice_line,
-                        )
-                        if result.get("output_path"):
-                            voice_wav = result["output_path"]
-                            logger.info(
-                                f"Shot {shot_id}: voice synthesized for {voice_slug}: "
-                                f"{voice_line[:50]!r} ({result.get('engine_used')})"
-                            )
-                    except Exception as ve:
-                        logger.warning(f"Shot {shot_id}: voice synthesis failed: {ve}")
+                        from packages.scene_generation.audio_sequencer import sequence_for_video
+                        from packages.scene_generation.sfx_mapper import get_video_duration
 
-                # --- Mix audio layers ---
+                        seq_wav = await asyncio.get_event_loop().run_in_executor(
+                            None, sequence_for_video, video_path, lora_name,
+                            primary_gender, pairing
+                        )
+                        if seq_wav:
+                            voice_wav = seq_wav
+                            logger.info(f"Shot {shot_id}: sequenced audio for {lora_name} ({primary_gender})")
+                    except Exception as seq_err:
+                        logger.warning(f"Shot {shot_id}: sequencer failed ({seq_err}), falling back")
+
+                # If sequencer didn't produce audio, handle dialogue
+                if not voice_wav:
+                    if voice_line and is_vocalization(voice_line):
+                        # Vocalization — try Bark, fall back to SFX library
+                        try:
+                            from packages.voice_pipeline.bark_gen import vocalization_for_text
+                            bark_wav = await asyncio.get_event_loop().run_in_executor(
+                                None, vocalization_for_text, voice_line, primary_gender
+                            )
+                            if bark_wav:
+                                voice_wav = bark_wav
+                        except Exception:
+                            sfx_clips = match_lora_to_sfx(lora_name, pairing=pairing)
+                            voc_clips = vocalization_to_sfx(voice_line, gender=primary_gender)
+                            sfx_clips.extend(voc_clips)
+                        voice_line = None
+                    elif voice_line and voice_slug:
+                        # Real dialogue — synthesize with TTS
+                        try:
+                            from packages.voice_pipeline.synthesis import synthesize_dialogue
+                            result = await synthesize_dialogue(
+                                character_slug=voice_slug, text=voice_line,
+                            )
+                            if result.get("output_path"):
+                                voice_wav = result["output_path"]
+                                logger.info(
+                                    f"Shot {shot_id}: voice synthesized for {voice_slug}: "
+                                    f"{voice_line[:50]!r} ({result.get('engine_used')})"
+                                )
+                        except Exception as ve:
+                            logger.warning(f"Shot {shot_id}: voice synthesis failed: {ve}")
+
+                # --- Mix onto video ---
+                sfx_clips = match_lora_to_sfx(lora_name, pairing=pairing) if not voice_wav else []
+
                 if voice_wav and sfx_clips:
                     output = mix_voice_and_sfx(video_path, voice_wav, sfx_clips)
                 elif voice_wav:
-                    # Voice only, no foley
-                    from packages.scene_generation.sfx_mapper import mix_voice_and_sfx
                     output = mix_voice_and_sfx(video_path, voice_wav, [])
                 elif sfx_clips:
                     output = overlay_sfx_on_video(video_path, sfx_clips)
@@ -284,3 +317,50 @@ def register_sfx_handlers():
 
     event_bus.subscribe(SHOT_GENERATED, _auto_apply_audio)
     logger.info("EventBus: unified audio handler registered (foley + voice)")
+
+
+def register_keyframe_handlers():
+    """Register handler that resets shot status when a keyframe is updated.
+
+    When a new keyframe is assigned to a shot (via PATCH, keyframe_blitz, or manual upload),
+    the shot's video output is stale. This handler resets the shot to 'pending' so the
+    orchestrator picks it up for re-generation automatically.
+    """
+
+    async def _on_keyframe_updated(data: dict):
+        shot_id = data.get("shot_id")
+        if not shot_id:
+            return
+
+        from packages.core.db import connect_direct
+        import uuid
+
+        conn = await connect_direct()
+        try:
+            shot_uuid = uuid.UUID(shot_id) if isinstance(shot_id, str) else shot_id
+            row = await conn.fetchrow(
+                "SELECT status FROM shots WHERE id = $1", shot_uuid
+            )
+            if not row:
+                return
+
+            # Don't interrupt active generation or user-approved results
+            if row["status"] in ("generating", "accepted_best"):
+                logger.info(
+                    f"Keyframe updated for shot {shot_id[:8]}, but status is "
+                    f"'{row['status']}' — skipping reset"
+                )
+                return
+
+            await conn.execute(
+                "UPDATE shots SET status = 'pending', comfyui_prompt_id = NULL, "
+                "output_video_path = NULL, error_message = NULL "
+                "WHERE id = $1",
+                shot_uuid,
+            )
+            logger.info(f"Keyframe updated → shot {shot_id[:8]} reset to pending")
+        finally:
+            await conn.close()
+
+    event_bus.subscribe(KEYFRAME_UPDATED, _on_keyframe_updated)
+    logger.info("EventBus: keyframe update handler registered")

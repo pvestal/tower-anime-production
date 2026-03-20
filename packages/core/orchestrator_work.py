@@ -188,7 +188,7 @@ async def work_training_data(slug: str, project_id: int, gate_result: dict, trai
         )
 
     try:
-        results = await generate_batch(character_slug=slug, count=3)
+        results = await generate_batch(character_slug=slug, count=3, source="orchestrator")
         # Check if any images were actually produced
         actual_images = sum(len(r.get("images", [])) for r in results)
         if actual_images == 0:
@@ -199,14 +199,26 @@ async def work_training_data(slug: str, project_id: int, gate_result: dict, trai
         logger.error(f"Orchestrator: generation failed for {slug}: {e}")
         return
 
-    await _trigger_vision_review(slug, project_name)
+    # GPU Arbiter: swap AMD from ComfyUI-ROCm → Ollama for vision review
+    from . import gpu_arbiter
+    vision_ready, vision_claim = await gpu_arbiter.prepare_for_vision(
+        caller=f"training_data_{slug}",
+        estimated_images=10,
+    )
+    try:
+        if vision_ready:
+            await _trigger_vision_review(slug, project_name)
+        else:
+            logger.warning(f"Orchestrator: vision QC deferred for {slug} (AMD GPU busy)")
+    finally:
+        await gpu_arbiter.finish_vision(vision_claim)
 
     await log_decision(
         decision_type="orchestrator_training_data",
         character_slug=slug,
         project_name=project_name,
         input_context=gate_result,
-        decision_made="generated_and_reviewed",
+        decision_made="generated_and_reviewed" if vision_ready else "generated_vision_deferred",
         confidence_score=0.9,
         reasoning=f"Character needs {gate_result.get('deficit', '?')} more approved images",
     )
@@ -563,6 +575,25 @@ async def work_video_generation(conn, project_id: int):
 
     logger.info(f"Orchestrator: starting video generation for scene {scene_id} ({scene['title']})")
 
+    # GPU Arbiter: claim AMD for ComfyUI-ROCm, unload gemma3 if loaded
+    from . import gpu_arbiter
+    from .dual_gpu import is_dual_video_enabled, swap_3060_to_video, swap_3060_to_keyframe
+    video_ready, video_claim = await gpu_arbiter.prepare_for_video_gen(
+        caller=f"video_gen_scene_{scene_id[:8]}",
+    )
+    if not video_ready:
+        logger.warning(f"Orchestrator: AMD GPU claim denied for video gen, deferring scene {scene_id}")
+        return
+
+    # Dual-GPU: swap 3060 to video mode if enabled
+    _dual_mode = is_dual_video_enabled()
+    if _dual_mode:
+        _swap_ok = await swap_3060_to_video()
+        if _swap_ok:
+            logger.info("Orchestrator: 3060 swapped to video mode (dual-GPU enabled)")
+        else:
+            logger.warning("Orchestrator: 3060 swap failed, continuing with AMD only")
+
     sentinel = asyncio.get_event_loop().create_future()
     _scene_generation_tasks[scene_id] = sentinel
 
@@ -582,6 +613,10 @@ async def work_video_generation(conn, project_id: int):
         _scene_generation_tasks.pop(scene_id, None)
         if not sentinel.done():
             sentinel.set_result(None)
+        await gpu_arbiter.finish_video_gen(video_claim)
+        # Dual-GPU: swap 3060 back to keyframe mode
+        if _dual_mode:
+            await swap_3060_to_keyframe()
 
     await log_decision(
         decision_type="orchestrator_video_gen",
@@ -667,7 +702,10 @@ async def _auto_assemble_scenes(conn, project_id: int):
 
 
 async def work_video_qc(conn, project_id: int):
-    """Run QC refinement pass on shots below quality threshold."""
+    """Run QC refinement pass on shots below quality threshold.
+
+    Uses gemma3 on AMD GPU — arbiter swaps VRAM from ComfyUI-ROCm first.
+    """
     from packages.scene_generation.video_qc import run_qc_loop
 
     shots = await conn.fetch("""
@@ -687,6 +725,17 @@ async def work_video_qc(conn, project_id: int):
     shot_id = shot["id"]
     logger.info(f"Orchestrator: running QC refinement on shot {shot_id} (quality={shot.get('quality_score')})")
 
+    # GPU Arbiter: swap AMD from ComfyUI-ROCm → Ollama for vision QC
+    from . import gpu_arbiter
+    qc_ready, qc_claim = await gpu_arbiter.prepare_for_vision(
+        caller=f"video_qc_{str(shot_id)[:8]}",
+        estimated_images=3,  # 3 frames per shot
+    )
+    if not qc_ready:
+        logger.warning(f"Orchestrator: AMD GPU busy, deferring QC for shot {shot_id}")
+        return
+
+    qc_result = {}
     try:
         shot["_prev_last_frame"] = None
         prev = await conn.fetchrow(
@@ -717,13 +766,15 @@ async def work_video_qc(conn, project_id: int):
             logger.info(f"Orchestrator: QC refinement complete for shot {shot_id}, quality={qc_result['quality_score']:.2f}")
     except Exception as e:
         logger.error(f"Orchestrator: QC refinement failed for shot {shot_id}: {e}")
+    finally:
+        await gpu_arbiter.finish_vision(qc_claim)
 
     await log_decision(
         decision_type="orchestrator_video_qc",
         project_name=str(project_id),
         input_context={"shot_id": str(shot_id), "original_quality": shot.get("quality_score")},
         decision_made="qc_refinement_pass",
-        confidence_score=qc_result.get("quality_score", 0) if 'qc_result' in dir() else 0,
+        confidence_score=qc_result.get("quality_score", 0) if qc_result else 0,
         reasoning=f"QC refinement pass on shot with quality below threshold",
     )
 

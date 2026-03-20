@@ -529,6 +529,12 @@ async def _tick_loop():
                         await refresh_effectiveness()
                     except Exception as _le_err:
                         logger.debug(f"LoRA effectiveness refresh failed: {_le_err}")
+                # GPU Arbiter: clean up stale claims every tick
+                try:
+                    from packages.core import gpu_arbiter
+                    await gpu_arbiter.cleanup_stale_claims()
+                except Exception:
+                    pass
         except Exception as e:
             logger.error(f"Orchestrator tick error: {e}")
         await asyncio.sleep(_tick_interval)
@@ -673,7 +679,7 @@ async def _graph_sync_loop():
             result = full_sync()
             if asyncio.iscoroutine(result):
                 result = await result
-            logger.info(f"Periodic graph sync complete: {result}")
+            logger.debug(f"Periodic graph sync complete: {result}")
         except Exception as e:
             logger.warning(f"Periodic graph sync failed (non-fatal): {e}")
         await asyncio.sleep(_graph_sync_interval)

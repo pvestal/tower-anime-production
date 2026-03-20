@@ -29,6 +29,11 @@ async def log_generation(
     scheduler: str = None,
     width: int = None,
     height: int = None,
+    pose_tag: str = None,
+    lora_name: str = None,
+    lora_strength: float = None,
+    session_id: str = None,
+    source: str = "manual",
 ) -> int | None:
     """Record a generation submission to generation_history. Returns row ID."""
     try:
@@ -38,13 +43,16 @@ async def log_generation(
                 INSERT INTO generation_history
                     (character_slug, project_name, comfyui_prompt_id, generation_type,
                      checkpoint_model, prompt, negative_prompt, seed,
-                     cfg_scale, steps, sampler, scheduler, width, height)
-                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+                     cfg_scale, steps, sampler, scheduler, width, height,
+                     pose_tag, lora_name, lora_strength, session_id, source)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,
+                        $18::uuid, $19)
                 RETURNING id
             """,
                 character_slug, project_name, comfyui_prompt_id, generation_type,
                 checkpoint_model, prompt, negative_prompt, seed,
                 cfg_scale, steps, sampler, scheduler, width, height,
+                pose_tag, lora_name, lora_strength, session_id, source,
             )
         return row["id"] if row else None
     except Exception as e:

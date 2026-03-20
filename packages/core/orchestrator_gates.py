@@ -136,6 +136,22 @@ def _check_comfyui_health() -> bool:
         return False
 
 
+async def _check_amd_available(task: str = "vision_review") -> tuple[bool, str]:
+    """Check if AMD GPU is available for the given task via GPU Arbiter."""
+    try:
+        from . import gpu_arbiter
+        from .gpu_arbiter import ClaimType
+        claim_map = {
+            "vision_review": ClaimType.VISION_REVIEW,
+            "comfyui_rocm": ClaimType.COMFYUI_ROCM,
+        }
+        claim_type = claim_map.get(task, ClaimType.VISION_REVIEW)
+        return await gpu_arbiter.is_amd_available_for(claim_type)
+    except Exception as e:
+        # Arbiter not available — don't block work
+        return True, f"Arbiter unavailable ({e}), proceeding"
+
+
 async def _gate_trailer_validation(conn, project_id: int) -> dict:
     """Check if project has at least one approved trailer.
 

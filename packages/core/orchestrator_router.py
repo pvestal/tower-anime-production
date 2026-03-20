@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from . import orchestrator
+from . import generation_loop
 
 router = APIRouter()
 
@@ -118,3 +119,85 @@ async def get_priorities():
     """Get all project priorities with pending phase counts."""
     priorities = await orchestrator.get_project_priorities()
     return {"projects": priorities}
+
+
+# ── Generation Loop Endpoints ─────────────────────────────────────────
+
+
+class GenLoopEnableRequest(BaseModel):
+    enabled: bool = True
+
+
+class GenLoopStartRequest(BaseModel):
+    project_id: int
+    config: dict | None = None
+
+
+class GenLoopConfigRequest(BaseModel):
+    project_id: int
+    auto_approve_threshold: float | None = None
+    burst_enabled: bool | None = None
+    burst_budget_cap: float | None = None
+    burst_queue_threshold: int | None = None
+    target_keyframes_per_lora: int | None = None
+    max_concurrent_videos: int | None = None
+    tick_interval_seconds: int | None = None
+    video_enabled: bool | None = None
+    assembly_enabled: bool | None = None
+    dry_run: bool | None = None
+    keyframe_batch_size: int | None = None
+
+
+@router.post("/generation-loop/enable")
+async def enable_gen_loop(req: GenLoopEnableRequest):
+    """Enable or disable the generation loop system. Must be called before starting any loops."""
+    return await generation_loop.enable(req.enabled)
+
+
+@router.post("/generation-loop/start")
+async def start_gen_loop(req: GenLoopStartRequest):
+    """Start a continuous generation loop for a project. Requires enable() first."""
+    return await generation_loop.start_loop(req.project_id, req.config)
+
+
+@router.post("/generation-loop/stop")
+async def stop_gen_loop(req: GenLoopStartRequest):
+    """Stop a generation loop for a project."""
+    return await generation_loop.stop_loop(req.project_id)
+
+
+@router.get("/generation-loop/status")
+async def gen_loop_status(project_id: int | None = None):
+    """Get status of generation loops."""
+    return await generation_loop.get_status(project_id)
+
+
+@router.put("/generation-loop/config")
+async def update_gen_loop_config(req: GenLoopConfigRequest):
+    """Update generation loop config for a running loop (or save to DB for next start)."""
+    loop = generation_loop.get_loop(req.project_id)
+
+    # Build config update from non-None fields
+    updates = {k: v for k, v in req.model_dump().items() if v is not None and k != "project_id"}
+
+    if loop and loop._running:
+        loop.config.update(updates)
+        return {"status": "updated", "project_id": req.project_id, "config": loop.config}
+
+    # Save to DB for next start
+    from .db import connect_direct
+    import json
+    conn = await connect_direct()
+    try:
+        existing = await conn.fetchval(
+            "SELECT gen_loop_config FROM projects WHERE id = $1", req.project_id,
+        )
+        current = json.loads(existing) if existing else {}
+        current.update(updates)
+        await conn.execute(
+            "UPDATE projects SET gen_loop_config = $2 WHERE id = $1",
+            req.project_id, json.dumps(current),
+        )
+        return {"status": "saved", "project_id": req.project_id, "config": current}
+    finally:
+        await conn.close()

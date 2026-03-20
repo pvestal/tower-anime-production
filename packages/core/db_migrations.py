@@ -443,6 +443,26 @@ async def run_migrations():
                 """, gate_name[:50], gate_type[:30], gate_type[:30], threshold_value,
                     gate_name, gate_type, threshold_value, desc)
 
+        # Convergence loop columns on generation_history
+        for col, coltype in [
+            ("pose_tag", "VARCHAR(100)"),
+            ("lora_name", "VARCHAR(255)"),
+            ("lora_strength", "FLOAT"),
+            ("session_id", "UUID"),
+        ]:
+            await conn.execute(f"""
+                DO $$ BEGIN
+                    ALTER TABLE generation_history ADD COLUMN {col} {coltype};
+                EXCEPTION WHEN duplicate_column THEN NULL;
+                END $$
+            """)
+
+        for idx_sql in [
+            "CREATE INDEX IF NOT EXISTS idx_gh_session ON generation_history(session_id)",
+            "CREATE INDEX IF NOT EXISTS idx_gh_pose_tag ON generation_history(pose_tag)",
+        ]:
+            await conn.execute(idx_sql)
+
         # Consistency columns on generation_history
         for col, coltype in [
             ("correction_of", "INTEGER"),
@@ -1024,7 +1044,96 @@ async def run_migrations():
             "CREATE INDEX IF NOT EXISTS idx_shot_feedback_shot_id ON shot_feedback(shot_id)"
         )
 
+        # --- Convergence Loop V2: video tracking + converged clips ---
+
+        # Video tracking columns on generation_history
+        for col, coltype in [
+            ("video_path", "TEXT"),
+            ("video_score", "FLOAT"),
+            ("video_prompt_id", "TEXT"),
+        ]:
+            await conn.execute(f"""
+                DO $$ BEGIN
+                    ALTER TABLE generation_history ADD COLUMN {col} {coltype};
+                EXCEPTION WHEN duplicate_column THEN NULL;
+                END $$
+            """)
+
+        # Converged clips — image+video approved combos for trailer integration
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS converged_clips (
+                id SERIAL PRIMARY KEY,
+                session_id UUID NOT NULL,
+                character_slug TEXT NOT NULL,
+                project_id INTEGER NOT NULL,
+                lora_name TEXT NOT NULL,
+                pose_tag TEXT,
+                keyframe_path TEXT NOT NULL,
+                video_path TEXT NOT NULL,
+                image_score FLOAT,
+                video_score FLOAT,
+                motion_prompt TEXT,
+                generation_params JSONB,
+                eligible_for_trailer BOOLEAN DEFAULT TRUE,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_cc_project ON converged_clips(project_id, character_slug)"
+        )
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_cc_session ON converged_clips(session_id)"
+        )
+
+        # Video score decomposition on converged_clips
+        for col, coltype in [
+            ("video_character_match", "FLOAT"),
+            ("video_style_match", "FLOAT"),
+            ("video_motion_execution", "FLOAT"),
+            ("video_technical_quality", "FLOAT"),
+            ("video_composition", "FLOAT"),
+        ]:
+            await conn.execute(f"""
+                DO $$ BEGIN
+                    ALTER TABLE converged_clips ADD COLUMN {col} {coltype};
+                EXCEPTION WHEN duplicate_column THEN NULL;
+                END $$
+            """)
+
+        # ── Generation Loop columns on projects ─────────────────────────
+        for col, coltype, default in [
+            ("gen_loop_enabled", "BOOLEAN", "FALSE"),
+            ("gen_loop_config", "JSONB", "'{}'"),
+        ]:
+            await conn.execute(f"""
+                DO $$ BEGIN
+                    ALTER TABLE projects ADD COLUMN {col} {coltype} DEFAULT {default};
+                EXCEPTION WHEN duplicate_column THEN NULL;
+                END $$
+            """)
+
+        # Generation loop session log — tracks cost and throughput per run
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS generation_loop_sessions (
+                id SERIAL PRIMARY KEY,
+                project_id INTEGER NOT NULL,
+                started_at TIMESTAMP DEFAULT NOW(),
+                stopped_at TIMESTAMP,
+                config JSONB DEFAULT '{}',
+                keyframes_generated INTEGER DEFAULT 0,
+                videos_generated INTEGER DEFAULT 0,
+                videos_burst INTEGER DEFAULT 0,
+                scenes_assembled INTEGER DEFAULT 0,
+                burst_spend FLOAT DEFAULT 0.0,
+                tick_count INTEGER DEFAULT 0,
+                last_error TEXT
+            )
+        """)
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_gls_project ON generation_loop_sessions(project_id)"
+        )
+
         await conn.close()
-        logger.info("Schema migrations completed successfully (incl. Phase 1 autonomy + NSM + multi-user + quality loop + feedback tables)")
+        logger.info("Schema migrations completed successfully (incl. Phase 1 autonomy + NSM + multi-user + quality loop + feedback + convergence v2 + generation loop tables)")
     except Exception as e:
         logger.warning(f"Schema migration failed (non-fatal): {e}")
